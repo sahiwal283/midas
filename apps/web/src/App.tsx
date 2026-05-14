@@ -1,0 +1,75 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { Layout } from './components/Layout';
+import { Login } from './pages/Login';
+import { Dashboard } from './pages/Dashboard';
+import { ExpenseList } from './pages/ExpenseList';
+import { ExpenseNew } from './pages/ExpenseNew';
+import { ExpenseDetail } from './pages/ExpenseDetail';
+import { AccountantQueue } from './pages/AccountantQueue';
+import { Captures } from './pages/Captures';
+import { Admin } from './pages/Admin';
+import { PaymentMethods } from './pages/PaymentMethods';
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+});
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+
+            <Route
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/expenses" element={<ExpenseList />} />
+              <Route path="/expenses/new" element={<ExpenseNew />} />
+              <Route path="/expenses/:id" element={<ExpenseDetail />} />
+              <Route path="/captures" element={<Captures />} />
+
+              <Route
+                path="/accountant"
+                element={
+                  <ProtectedRoute roles={['accountant', 'admin']}>
+                    <AccountantQueue />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute roles={['admin']}>
+                    <Admin />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/payment-methods"
+                element={
+                  <ProtectedRoute roles={['admin']}>
+                    <PaymentMethods />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
+
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
