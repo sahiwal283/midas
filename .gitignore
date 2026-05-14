@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+*.tgz
+
+# Uploads (local dev only — use volume in Docker)
+apps/api/uploads/
+
+# Build outputs
+apps/web/dist/
+extension/dist/
+extension/dist-*/
+
+# Drizzle generated (generate fresh, never commit stale snapshots)
+# Keep: drizzle/migrations/*.sql  — DO commit migration files
+# Skip: drizzle/meta/           — generated, recreatable
+apps/api/drizzle/meta/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code session data
+.claude/
