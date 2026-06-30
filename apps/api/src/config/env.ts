@@ -27,6 +27,9 @@ const schema = z.object({
   ZOHO_MODE: z.enum(['mock', 'service']).default('mock'),
   ZOHO_SERVICE_URL: z.string().optional(),
   ZOHO_SERVICE_TOKEN: z.string().optional(),
+  ZOHO_DEFAULT_BRAND: z.string().default('haute_brands'),
+  // Dry-run gate: when true the service adapter logs the payload but skips the real POST.
+  ZOHO_DRY_RUN: z.string().transform((v) => v === 'true').default('true'),
   STORAGE_MODE: z.enum(['local', 's3']).default('local'),
   // Optional integrations
   TELEGRAM_BOT_TOKEN: z.string().optional(),

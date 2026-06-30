@@ -1,5 +1,5 @@
 import client from './client';
-import type { Expense, ExpenseCategory, Receipt, ExpenseMessage, PaymentMethod, AuditLogEntry } from '../types';
+import type { Expense, ExpenseCategory, Receipt, ExpenseMessage, PaymentMethod, AuditLogEntry, ZohoReadinessResult } from '../types';
 
 export const expenseApi = {
   list: (params?: Record<string, string>) =>
@@ -57,6 +57,9 @@ export const expenseApi = {
 
   postMessage: (expenseId: string, body: string) =>
     client.post<{ message: ExpenseMessage }>(`/expenses/${expenseId}/messages`, { body }).then((r) => r.data.message),
+
+  zohoReadiness: (expenseId: string) =>
+    client.get<{ readiness: ZohoReadinessResult }>(`/expenses/${expenseId}/zoho-readiness`).then((r) => r.data.readiness),
 };
 
 export const accountantApi = {

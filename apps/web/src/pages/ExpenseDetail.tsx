@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Paperclip, Send, Upload, AlertCircle, CheckCircle2,
-  Clock, XCircle, RefreshCw, CreditCard, Tag, FileX, Building2,
+  Clock, XCircle, RefreshCw, CreditCard,
 } from 'lucide-react';
 import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge, ReimbursementBadge } from '../components/StatusBadge';
@@ -70,42 +70,100 @@ function StatusBanner({ status, isPrivileged }: { status: string; isPrivileged: 
   );
 }
 
-// ── Zoho readiness panel (accountant only) ────────────────────────────────────
+// ── Zoho readiness panel (accountant/admin only) ──────────────────────────────
 
-function ZohoReadinessPanel({ expense }: { expense: Expense }) {
-  if (!expense) return null;
-  const flags = expense.flags ?? [];
+function ZohoReadinessPanel({ expenseId }: { expenseId: string }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['zoho-readiness', expenseId],
+    queryFn: () => expenseApi.zohoReadiness(expenseId),
+    staleTime: 30_000,
+  });
 
-  const checks = [
-    { label: 'Approved', pass: expense.status === 'approved' || expense.status === 'zoho_sync_failed', icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
-    { label: 'Category set', pass: !!expense.categoryId, icon: <Tag className="h-3.5 w-3.5" /> },
-    { label: 'Payment method set', pass: !!expense.paymentMethodId, icon: <CreditCard className="h-3.5 w-3.5" /> },
-    { label: 'Accounting entity set', pass: !!expense.zohoEntity, icon: <Building2 className="h-3.5 w-3.5" /> },
-    { label: 'Receipt attached', pass: (expense.receipts?.length ?? 0) > 0, icon: <FileX className="h-3.5 w-3.5" /> },
-    { label: 'Not yet pushed to Zoho', pass: !expense.zohoExpenseId, icon: <RefreshCw className="h-3.5 w-3.5" /> },
-  ];
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold text-gray-700">Zoho Readiness</h2>
+        <p className="text-xs text-gray-400">Evaluating…</p>
+      </div>
+    );
+  }
 
-  const allPass = checks.every((c) => c.pass);
-  const isSynced = !!expense.zohoExpenseId;
+  if (isError || !data) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold text-gray-700">Zoho Readiness</h2>
+        <p className="text-xs text-red-500">Could not load readiness data.</p>
+      </div>
+    );
+  }
+
+  const { ready, checks, missing, warnings, zohoMode, mappedPayload } = data;
+  const modeColor = zohoMode === 'live' ? 'text-red-700 bg-red-50' : zohoMode === 'dry-run' ? 'text-blue-700 bg-blue-50' : 'text-amber-700 bg-amber-50';
+  const modeLabel = zohoMode === 'live' ? 'Live mode — real Zoho writes enabled' : zohoMode === 'dry-run' ? 'Dry-run mode — no live Zoho writes' : 'Mock mode — no real sync occurs';
 
   return (
-    <div className={`rounded-xl border p-4 ${isSynced ? 'border-green-200 bg-green-50' : allPass ? 'border-teal-200 bg-teal-50' : 'border-gray-200 bg-white'}`}>
-      <h2 className="mb-1 text-sm font-semibold text-gray-700">
+    <div className={`rounded-xl border p-4 ${ready ? 'border-teal-200 bg-teal-50' : 'border-gray-200 bg-white'}`}>
+      <h2 className="mb-1 text-sm font-semibold text-gray-700 flex items-center gap-2">
         Zoho Readiness
-        {isSynced && <span className="ml-2 text-xs text-green-700 font-medium">Synced</span>}
-        {!isSynced && allPass && <span className="ml-2 text-xs text-teal-700 font-medium">Ready</span>}
+        {ready
+          ? <span className="text-xs font-medium text-teal-700">Ready</span>
+          : <span className="text-xs font-medium text-gray-400">Not ready</span>
+        }
       </h2>
-      <p className="mb-3 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">Zoho is in mock mode — no real sync occurs</p>
+
+      <p className={`mb-3 rounded px-2 py-1 text-xs ${modeColor}`}>{modeLabel}</p>
+
       <ul className="space-y-1.5">
         {checks.map((c) => (
           <li key={c.label} className={`flex items-center gap-2 text-xs ${c.pass ? 'text-green-700' : 'text-red-600'}`}>
-            <span className={c.pass ? 'text-green-600' : 'text-red-400'}>{c.icon}</span>
+            {c.pass
+              ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+              : <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+            }
             {c.label}
           </li>
         ))}
       </ul>
-      {isSynced && expense.zohoExpenseId && (
-        <p className="mt-2 text-xs text-green-700 font-medium">Zoho ID: {expense.zohoExpenseId}</p>
+
+      {missing.length > 0 && (
+        <div className="mt-3 rounded bg-red-50 border border-red-200 px-2 py-1.5">
+          <p className="text-xs font-semibold text-red-700 mb-1">Missing:</p>
+          <ul className="space-y-0.5">
+            {missing.map((m) => (
+              <li key={m} className="text-xs text-red-600">• {m}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {warnings.filter((w) => !w.includes('mode')).map((w) => (
+            <p key={w} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">{w}</p>
+          ))}
+        </div>
+      )}
+
+      {ready && mappedPayload && (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+            Proposed Zoho payload (preview only)
+          </summary>
+          <div className="mt-2 rounded bg-gray-50 border border-gray-200 p-2 text-xs text-gray-600 space-y-1">
+            <p><span className="font-medium">Merchant:</span> {mappedPayload.merchant}</p>
+            <p><span className="font-medium">Amount:</span> {mappedPayload.currency} {mappedPayload.amount}</p>
+            <p><span className="font-medium">Date:</span> {mappedPayload.date}</p>
+            <p><span className="font-medium">Entity:</span> {mappedPayload.zohoEntity}</p>
+            <p><span className="font-medium">Category:</span> {mappedPayload.categoryName ?? '—'}</p>
+            <p><span className="font-medium">Payment method:</span> {mappedPayload.paymentMethodLabel ?? '—'}</p>
+            <p><span className="font-medium">Brand:</span> {mappedPayload.brand}</p>
+            {mappedPayload.description && <p><span className="font-medium">Description:</span> {mappedPayload.description}</p>}
+          </div>
+        </details>
+      )}
+
+      {!ready && zohoMode !== 'live' && (
+        <p className="mt-3 text-xs text-gray-400">No live Zoho write — resolve missing items above first.</p>
       )}
     </div>
   );
@@ -417,12 +475,42 @@ export function ExpenseDetail() {
             {expense.receipts && expense.receipts.length > 0 ? (
               <div className="space-y-2">
                 {expense.receipts.map((r) => (
-                  <div key={r.id} className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-                    <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
-                    <span className="flex-1 truncate text-sm text-gray-700">{r.filename}</span>
-                    <span className={`text-xs ${r.ocrStatus === 'done' ? 'text-green-600' : r.ocrStatus === 'failed' ? 'text-red-500' : 'text-gray-400'}`}>
-                      OCR: {r.ocrStatus} [mock]
-                    </span>
+                  <div key={r.id} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
+                      <span className="flex-1 truncate text-sm text-gray-700">{r.filename}</span>
+                      <span className={`text-xs font-medium ${
+                        r.ocrStatus === 'done' ? 'text-green-600' :
+                        r.ocrStatus === 'failed' ? 'text-red-500' :
+                        r.ocrStatus === 'processing' ? 'text-blue-500' :
+                        'text-gray-400'
+                      }`}>
+                        {isPrivileged
+                          ? `OCR: ${r.ocrStatus}`
+                          : r.ocrStatus === 'done' ? 'Receipt scan complete'
+                          : r.ocrStatus === 'failed' ? 'Receipt scan needs review'
+                          : r.ocrStatus === 'processing' ? 'Receipt scan in progress'
+                          : 'Receipt scan pending'}
+                      </span>
+                    </div>
+                    {isPrivileged && r.ocrProvider && (
+                      <div className="pl-6 space-y-0.5">
+                        <p className="text-xs text-gray-500">
+                          Provider: <span className="font-medium">{r.ocrProvider}</span>
+                          {r.ocrOverallConfidence != null && (
+                            <> · Confidence: <span className="font-medium">{Math.round(Number(r.ocrOverallConfidence) * 100)}%</span></>
+                          )}
+                        </p>
+                        {r.ocrNeedsReview && (
+                          <p className="text-xs font-medium text-amber-700">
+                            Suggested: needs review{r.ocrReviewReasons?.length ? ` — ${r.ocrReviewReasons.join(', ')}` : ''}
+                          </p>
+                        )}
+                        {r.ocrStatus === 'failed' && r.ocrErrorSummary && (
+                          <p className="text-xs text-red-600">{r.ocrErrorSummary}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -533,9 +621,9 @@ export function ExpenseDetail() {
             </div>
           )}
 
-          {/* Zoho readiness — accountant only */}
+          {/* Zoho readiness — accountant/admin only */}
           {isPrivileged && (
-            <ZohoReadinessPanel expense={expense} />
+            <ZohoReadinessPanel expenseId={expense.id} />
           )}
 
           {/* Recent Activity — accountant only */}

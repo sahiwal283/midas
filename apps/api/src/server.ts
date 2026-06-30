@@ -19,6 +19,7 @@ import extRouter from './routes/ext';
 import extensionRouter from './routes/extensionExpenses';
 import paymentMethodsRouter from './routes/paymentMethods';
 import metaRouter from './routes/meta';
+import zohoRouter from './routes/zoho';
 
 const app = express();
 
@@ -73,6 +74,7 @@ app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/ext', extRouter);             // app-to-app API (Bearer API key auth)
 app.use('/api/v1/extension', extensionRouter); // browser extension (session cookie auth)
 app.use('/api/v1/payment-methods', paymentMethodsRouter);
+app.use('/api/v1/expenses', zohoRouter); // GET /expenses/:id/zoho-readiness
 app.use('/api/v1/meta', metaRouter);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────

@@ -215,6 +215,35 @@ export interface ExtCreateExpensePayload extends CreateExpensePayload {
 }
 
 
+// ── Zoho readiness (returned by GET /expenses/:id/zoho-readiness) ────────────
+
+export interface ZohoReadinessCheck {
+  label: string;
+  pass: boolean;
+}
+
+export interface ZohoMappedPayload {
+  expenseId: string;
+  merchant: string;
+  amount: string;
+  currency: string;
+  date: string;
+  description: string | null;
+  zohoEntity: string;
+  categoryName: string | null;
+  paymentMethodLabel: string | null;
+  brand: string;
+}
+
+export interface ZohoReadinessResult {
+  ready: boolean;
+  missing: string[];
+  warnings: string[];
+  zohoMode: 'mock' | 'dry-run' | 'live';
+  mappedPayload: ZohoMappedPayload | null;
+  checks: ZohoReadinessCheck[];
+}
+
 // ── Audit log entry (returned by GET /accountant/expenses/:id/audit) ─────────
 
 export interface AuditLogEntry {
