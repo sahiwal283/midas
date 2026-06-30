@@ -1,5 +1,5 @@
 import { useState, FormEvent, ChangeEvent } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Paperclip, Send, Upload, AlertCircle, CheckCircle2,
@@ -256,8 +256,14 @@ export function ExpenseDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const [message, setMessage] = useState('');
+  // Set when arriving here from New Expense after the draft was created but the
+  // receipt upload failed. Dismissed once a receipt is successfully uploaded.
+  const [receiptUploadFailed, setReceiptUploadFailed] = useState(
+    () => (location.state as { receiptUploadFailed?: boolean } | null)?.receiptUploadFailed ?? false,
+  );
 
   const { data: expense, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -280,7 +286,10 @@ export function ExpenseDetail() {
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => expenseApi.uploadReceipt(id!, file),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['expense', id] }),
+    onSuccess: () => {
+      setReceiptUploadFailed(false);
+      qc.invalidateQueries({ queryKey: ['expense', id] });
+    },
   });
 
   const resolveMutation = useMutation({
@@ -358,6 +367,19 @@ export function ExpenseDetail() {
           {expense.currency} {Number(expense.amount).toFixed(2)}
         </p>
       </div>
+
+      {/* Receipt upload failed during creation — prompt a retry */}
+      {receiptUploadFailed && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border-2 border-amber-400 bg-amber-50 p-4">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div>
+            <p className="text-sm font-semibold text-amber-900">Receipt not attached</p>
+            <p className="mt-0.5 text-sm text-amber-800">
+              This draft was created, but the receipt image didn&apos;t upload. Use the <span className="font-medium">Upload</span> button under Receipts below to add it.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Status banner — user-facing only */}
       {!isPrivileged && <StatusBanner status={expense.status} isPrivileged={false} />}
