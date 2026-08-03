@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, Upload, X, FileText, AlertCircle } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
+import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
 
 export function ExpenseNew() {
   const navigate = useNavigate();
@@ -81,42 +82,60 @@ export function ExpenseNew() {
     }
 
     setSaving(true);
+    const payload = {
+      merchant: form.merchant,
+      amount: Number(form.amount),
+      date: form.date,
+      currency: form.currency,
+      categoryId: form.categoryId || undefined,
+      paymentMethodId: form.paymentMethodId || undefined,
+      description: form.description || undefined,
+    };
+
     try {
-      // Step 1 — create the draft (skip if we already created it on a prior
-      // attempt and only the receipt upload failed).
+      // Live sync path — create draft then upload receipt (OCR completes in the upload response).
       let expenseId = createdId;
       if (!expenseId) {
-        const expense = await expenseApi.create({
-          merchant: form.merchant,
-          amount: Number(form.amount),
-          date: form.date,
-          currency: form.currency,
-          categoryId: form.categoryId || undefined,
-          paymentMethodId: form.paymentMethodId || undefined,
-          description: form.description || undefined,
-        });
+        const expense = await expenseApi.create(payload);
         expenseId = expense.id;
         setCreatedId(expense.id);
         qc.invalidateQueries({ queryKey: ['expenses'] });
       }
 
-      // Step 2 — upload the receipt to the new draft.
       try {
         await expenseApi.uploadReceipt(expenseId, receipt);
-      } catch {
-        // The draft exists but has no receipt. Don't pretend it's complete —
-        // send the user to the detail page, where they can retry the upload,
-        // with a visible warning passed via router state.
+      } catch (uploadErr) {
+        if (isLikelyOfflineOrNetworkError(uploadErr)) {
+          await enqueueUpload({
+            payload,
+            receipt,
+            expenseId,
+            lastError: 'Receipt upload failed — queued for retry',
+          });
+          void qc.invalidateQueries({ queryKey: ['upload-queue-count'] });
+          navigate('/to-upload');
+          return;
+        }
+        // Draft exists but receipt failed for a non-network reason — retry on detail page.
         qc.invalidateQueries({ queryKey: ['expense', expenseId] });
         navigate(`/expenses/${expenseId}`, { state: { receiptUploadFailed: true } });
         return;
       }
 
-      // Both steps succeeded — refresh caches and open the new expense.
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['expense', expenseId] });
       navigate(`/expenses/${expenseId}`);
-    } catch {
+    } catch (err) {
+      if (isLikelyOfflineOrNetworkError(err) && receipt) {
+        await enqueueUpload({
+          payload,
+          receipt,
+          lastError: 'Could not reach Midas — saved to To upload',
+        });
+        void qc.invalidateQueries({ queryKey: ['upload-queue-count'] });
+        navigate('/to-upload');
+        return;
+      }
       setError('Failed to create expense. Please try again.');
     } finally {
       setSaving(false);

@@ -351,7 +351,7 @@ describe('env schema — OCR validation', () => {
   };
 
   it('mock mode works without OCR_BASE_URL or token', () => {
-    // When OCR_MODE=mock (default), no OCR connection details are required.
+    // When OCR_MODE=mock, no OCR connection details are required.
     // Verify this by confirming MockOcrAdapter works with no URL/token configured.
     const adapter = new MockOcrAdapter();
     expect(adapter.process).toBeDefined();

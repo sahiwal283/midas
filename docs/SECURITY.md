@@ -14,12 +14,26 @@ Midas is currently deployed on a private LAN (Proxmox, no public routing). The s
 - `withCredentials: true` on all Axios calls.
 - Token lifetime: `JWT_EXPIRES_IN` (default `8h`).
 
+### Authentik OIDC (active as of 2026-05-20; auto-provisioning enabled 2026-05-21)
+
+`AUTH_MODE=authentik` is live on CT 3120. All logins go through Authentik OIDC at `https://auth.booute.duckdns.org/`. Local break-glass login remains enabled (`ALLOW_LOCAL_BREAK_GLASS=true`). Client secret rotated 2026-05-21.
+
+- Group-to-role mapping: `midas-admins`→admin, `midas-accountants`→accountant, `midas-users`→user.
+- Role is synced from Authentik groups on every SSO login (Authentik groups are source of truth).
+- `AUTHENTIK_AUTO_CREATE_USERS=true` — users in approved groups are auto-created on first SSO login.
+- Users with no approved Midas group are denied regardless of auto-create setting.
+- SSO links stored in `sso_links` table by `(provider, subject)`.
+- Auto-provisioned users have `passwordHash=null` — they cannot use local login unless an admin sets a local password via reset-password.
+- All SSO provisioning events are recorded in `audit_logs` (`sso.user_auto_created`, `sso.user_linked_by_email`, `sso.login_denied_no_group`, `sso.login_denied_inactive_user`, `sso.login_success`).
+
+See `docs/AUTHENTIK_SETUP.md` for full details.
+
 ### Known gaps
 - **No HTTPS yet**: `COOKIE_SECURE=false` — the JWT cookie is transmitted in plaintext over HTTP. Acceptable on a closed LAN; must flip to `true` before any external access.
 - **No token refresh**: Long-lived tokens (8h). No refresh token mechanism.
-- **No auth event audit**: Login, logout, and failed login attempts are not recorded in `audit_logs`.
-- **No account lockout**: Brute force on `POST /api/v1/auth/login` is not rate-limited at the auth layer beyond the global `express-rate-limit`.
-- **Local user database**: Passwords are bcrypt-hashed (rounds: 12) in the `users` table. SSO via Authentik (CT 111) is planned but not yet wired.
+- **HS256 token signing**: The Midas Authentik provider uses HMAC-SHA256 (client secret as key) because no certificate keypair is assigned. Upgrade path: assign an RSA certificate in Authentik admin UI → provider switches to RS256 automatically. Midas code handles both.
+- **In-memory OIDC state store**: PKCE state is held in-memory; API restart invalidates in-flight OIDC sessions. Single-instance only.
+- **Client secret rotation recommended**: The `AUTHENTIK_CLIENT_SECRET` (prefix `L4Dq`) appeared in session transcripts. Rotate via Authentik admin UI → Providers → Midas → Edit → regenerate, then update CT 3120 `.env` and run `docker compose up -d api`.
 
 ---
 
@@ -35,12 +49,11 @@ Rotate again using:
 pct exec 3120 -- bash /opt/midas/scripts/rotate-credentials.sh
 ```
 
-Remaining auth risk until Authentik is wired:
-- Local users in the `users` table are the only identity source.
-- If credentials are compromised, there is no SSO revocation path — admin must deactivate the account via `PATCH /api/v1/admin/users/:id` or directly in the DB.
+With `AUTH_MODE=authentik` active:
+- Identity is managed by Authentik. Disable an account by removing the user from all Midas groups in Authentik.
+- Local bcrypt accounts remain for break-glass. If credentials are compromised, deactivate the account via `PATCH /api/v1/admin/users/:id` or directly in the DB.
 - Password reset: admin can generate a temporary password via `POST /api/v1/admin/users/:id/reset-password`. Plaintext is returned once and never stored.
-
-**Local user management is scoped to the pre-SSO phase.** Once Authentik OIDC is connected, identity moves to OIDC. Local accounts may remain as break-glass logins only. Do not build permanent identity workflows against local auth.
+- The `AUTHENTIK_CLIENT_SECRET` is in `/opt/midas/.env`. Treat it as a high-value secret — it is used to verify ID token signatures in HS256 mode.
 
 ---
 
@@ -124,14 +137,6 @@ Do not open public routing until HTTPS is configured.
 
 ---
 
-## Future: Authentik SSO (CT 111)
-
-Authentik at `192.168.1.164` (currently DHCP — assign static IP first).
-
-Planned integration: OIDC callback to replace local bcrypt auth. Architecture is designed to be compatible — the `authenticate` middleware in `apps/api/src/middleware/auth.ts` only inspects the cookie; switching issuance to OIDC requires no route changes.
-
-See `docs/PROXMOX_DEPLOYMENT.md` for the full migration path.
-
 ---
 
 ## Checklist: before opening external access
@@ -139,7 +144,8 @@ See `docs/PROXMOX_DEPLOYMENT.md` for the full migration path.
 - [ ] HTTPS configured (NPM or certbot)
 - [ ] `COOKIE_SECURE=true` in `.env`
 - [ ] Seed credentials rotated
-- [ ] Authentik SSO wired (optional but recommended before external users)
+- [x] Authentik SSO wired *(2026-05-20 — AUTH_MODE=authentik, ALLOW_LOCAL_BREAK_GLASS=true)*
+- [ ] Assign RSA certificate to Midas Authentik provider (upgrade from HS256 to RS256)
 - [ ] JWT_SECRET rotated to fresh value in production `.env`
 - [ ] DB not exposed publicly (verify `pg_hba.conf`)
 - [ ] Backup solution verified and tested restore performed

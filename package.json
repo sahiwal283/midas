@@ -1,7 +1,10 @@
 {
   "name": "midas",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
     "build": "npm run build --workspaces --if-present",
@@ -11,6 +14,7 @@
     "db:studio": "npm run db:studio -w apps/api"
   },
   "devDependencies": {
+    "@esbuild/darwin-arm64": "^0.27.7",
     "concurrently": "^9.1.0"
   }
 }

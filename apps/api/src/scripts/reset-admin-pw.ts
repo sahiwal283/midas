@@ -1,12 +1,16 @@
 // One-shot admin password reset for recovery situations.
-// Usage: docker compose exec api npx tsx src/scripts/reset-admin-pw.ts
-// Override password: ADMIN_PASSWORD=mynewpassword docker compose exec api npx tsx src/scripts/reset-admin-pw.ts
+// Usage: ADMIN_PASSWORD=<newpassword> npx tsx src/scripts/reset-admin-pw.ts
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/index';
 import { users } from '../db/schema';
 
-const NEW_PASSWORD = process.env.ADMIN_PASSWORD ?? 'Midas@Admin2026';
+if (!process.env.ADMIN_PASSWORD) {
+  console.error('ADMIN_PASSWORD env var is required.');
+  console.error('Usage: ADMIN_PASSWORD=<newpassword> npx tsx src/scripts/reset-admin-pw.ts');
+  process.exit(1);
+}
+const NEW_PASSWORD: string = process.env.ADMIN_PASSWORD;
 
 async function run() {
   const hash = await bcrypt.hash(NEW_PASSWORD, 12);

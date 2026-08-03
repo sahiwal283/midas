@@ -44,8 +44,10 @@ export const expenseApi = {
   uploadReceipt: (expenseId: string, file: File) => {
     const form = new FormData();
     form.append('file', file);
-    return client.post<{ receipt: Receipt }>(`/expenses/${expenseId}/receipts`, form, {
+    // Default path is sync OCR — response includes ocrStatus done/failed.
+    return client.post<{ receipt: Receipt; ocrMode?: 'sync' | 'async' }>(`/expenses/${expenseId}/receipts`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 130_000,
     }).then((r) => r.data.receipt);
   },
 

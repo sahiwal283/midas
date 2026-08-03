@@ -1,15 +1,13 @@
 import { Router } from 'express';
 import multer from 'multer';
-import path from 'path';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/index';
 import { receipts, expenses } from '../db/schema';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { storage } from '../lib/storage';
-import { ocr, OcrAuthError } from '../lib/ocr';
+import { runReceiptOcr } from '../lib/runReceiptOcr';
 import { auditLog } from '../lib/audit';
-import { env } from '../config/env';
 
 const router = Router({ mergeParams: true });
 router.use(authenticate);
@@ -40,13 +38,15 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json({ receipts: rows });
 }));
 
-// Upload receipt
+// Upload receipt — sync-primary: awaits OCR unless ?async=1
 router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) throw createError('No file uploaded', 400, 'NO_FILE');
 
   const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.expenseId) });
   if (!expense) throw notFound('Expense not found');
   if (expense.userId !== req.user!.id) throw forbidden();
+
+  const runAsync = req.query.async === '1' || req.query.async === 'true';
 
   const stored = await storage.save(req.file.buffer, req.file.originalname, req.file.mimetype);
 
@@ -61,44 +61,15 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
 
   await auditLog({ entityType: 'receipt', entityId: receipt.id, userId: req.user!.id, action: 'uploaded', after: { expenseId: receipt.expenseId } });
 
-  // Kick off OCR in the background — don't block the response
-  void (async () => {
-    const submittedAt = new Date();
-    await db.update(receipts)
-      .set({ ocrStatus: 'processing', ocrSubmittedAt: submittedAt })
-      .where(eq(receipts.id, receipt.id));
-    try {
-      const fullPath = path.join(env.UPLOADS_DIR, stored.storagePath);
-      const result = await ocr.process(fullPath, receipt.id);
-      await db.update(receipts)
-        .set({
-          ocrStatus: 'done',
-          ocrText: result.text,
-          ocrData: result,
-          ocrRequestId: result.requestId || null,
-          ocrProvider: result.provider || null,
-          ocrConfidence: result.ocrConfidence != null ? String(result.ocrConfidence) : null,
-          ocrOverallConfidence: result.overallConfidence != null ? String(result.overallConfidence) : null,
-          ocrNeedsReview: result.needsReview,
-          ocrReviewReasons: result.reviewReasons ?? null,
-          ocrCostEstimateUsd: result.costEstimateUsd != null ? String(result.costEstimateUsd) : null,
-          ocrErrorSummary: null,
-          ocrCompletedAt: new Date(),
-        })
-        .where(eq(receipts.id, receipt.id));
-    } catch (err) {
-      const summary = err instanceof OcrAuthError
-        ? 'OCR auth error — check OCR_SERVICE_INTERNAL_TOKEN config'
-        : err instanceof Error
-          ? err.message.slice(0, 500)
-          : 'OCR processing failed';
-      await db.update(receipts)
-        .set({ ocrStatus: 'failed', ocrErrorSummary: summary, ocrCompletedAt: new Date() })
-        .where(eq(receipts.id, receipt.id));
-    }
-  })();
+  if (runAsync) {
+    // Escape hatch only — see docs/SYNC_AND_OFFLINE.md
+    void runReceiptOcr(receipt.id, stored.storagePath);
+    res.status(201).json({ receipt, ocrMode: 'async' });
+    return;
+  }
 
-  res.status(201).json({ receipt });
+  const withOcr = await runReceiptOcr(receipt.id, stored.storagePath);
+  res.status(201).json({ receipt: withOcr, ocrMode: 'sync' });
 }));
 
 // Delete a receipt

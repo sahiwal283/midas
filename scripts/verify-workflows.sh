@@ -1,6 +1,18 @@
 #!/bin/bash
 # Verify core Midas workflows end-to-end against deployed API.
 # Covers: request-info, resolve-request bugfix, payment methods, queue flags.
+#
+# Credentials must be supplied via environment variables — never hardcoded.
+# Quickstart:
+#   cp scripts/.env.test.example scripts/.env.test   # gitignored
+#   # fill in scripts/.env.test with real values
+#   source scripts/.env.test && bash scripts/verify-workflows.sh
+#
+# Or export directly:
+#   MIDAS_TEST_ADMIN_PASSWORD=<pass> \
+#   MIDAS_TEST_USER_PASSWORD=<pass> \
+#   MIDAS_TEST_ACCOUNTANT_PASSWORD=<pass> \
+#   bash scripts/verify-workflows.sh
 set -euo pipefail
 
 API=http://localhost:4000
@@ -8,6 +20,29 @@ PASS=0
 FAIL=0
 JAR_ADMIN=/tmp/wv_admin.jar
 JAR_USER=/tmp/wv_user.jar
+
+# ── Credential validation ─────────────────────────────────────────────────────
+
+ADMIN_EMAIL="${MIDAS_TEST_ADMIN_EMAIL:-admin@midas.local}"
+USER_EMAIL="${MIDAS_TEST_USER_EMAIL:-user@midas.local}"
+ACCOUNTANT_EMAIL="${MIDAS_TEST_ACCOUNTANT_EMAIL:-accountant@midas.local}"
+
+_missing=0
+for _var in MIDAS_TEST_ADMIN_PASSWORD MIDAS_TEST_USER_PASSWORD MIDAS_TEST_ACCOUNTANT_PASSWORD; do
+  if [ -z "${!_var:-}" ]; then
+    printf 'Error: %s is required.\n' "$_var" >&2
+    _missing=1
+  fi
+done
+if [ "$_missing" = "1" ]; then
+  echo "Usage: source scripts/.env.test && bash scripts/verify-workflows.sh" >&2
+  echo "       (copy scripts/.env.test.example to scripts/.env.test and fill in real values)" >&2
+  exit 1
+fi
+
+ADMIN_PASSWORD="$MIDAS_TEST_ADMIN_PASSWORD"
+USER_PASSWORD="$MIDAS_TEST_USER_PASSWORD"
+ACCOUNTANT_PASSWORD="$MIDAS_TEST_ACCOUNTANT_PASSWORD"
 
 green() { printf '\033[32m✓ %s\033[0m\n' "$*"; (( PASS++ )) || true; }
 red()   { printf '\033[31m✗ %s\033[0m\n' "$*"; (( FAIL++ )) || true; }
@@ -28,14 +63,14 @@ echo ""
 ADMIN_STATUS=$(curl -s -o /tmp/wv_admin_login -w "%{http_code}" \
   -X POST "$API/api/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@midas.local","password":"Midas@Admin2026"}' \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" \
   -c "$JAR_ADMIN")
 [ "$ADMIN_STATUS" = "200" ] && green "Admin login" || { red "Admin login ($ADMIN_STATUS)"; exit 1; }
 
 USER_STATUS=$(curl -s -o /tmp/wv_user_login -w "%{http_code}" \
   -X POST "$API/api/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"user@midas.local","password":"Midas@User2026"}' \
+  -d "{\"email\":\"$USER_EMAIL\",\"password\":\"$USER_PASSWORD\"}" \
   -c "$JAR_USER")
 [ "$USER_STATUS" = "200" ] && green "User login" || { red "User login ($USER_STATUS)"; exit 1; }
 
@@ -341,7 +376,7 @@ TEST_EMAIL="pilottest_$(date +%s)@midas.local"
 ACCT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
   -X POST "$API/api/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"accountant@midas.local","password":"Midas@Acct2026"}' \
+  -d "{\"email\":\"$ACCOUNTANT_EMAIL\",\"password\":\"$ACCOUNTANT_PASSWORD\"}" \
   -c "$JAR_ACCT")
 [ "$ACCT_STATUS" = "200" ] && green "Accountant login for ownership tests" || { red "Accountant login ($ACCT_STATUS)"; JAR_ACCT=""; }
 

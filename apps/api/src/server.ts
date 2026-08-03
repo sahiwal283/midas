@@ -19,7 +19,9 @@ import extRouter from './routes/ext';
 import extensionRouter from './routes/extensionExpenses';
 import paymentMethodsRouter from './routes/paymentMethods';
 import metaRouter from './routes/meta';
+import oidcAuthRouter from './routes/oidcAuth';
 import zohoRouter from './routes/zoho';
+import zohoServiceRouter from './routes/zohoService';
 
 const app = express();
 
@@ -43,8 +45,9 @@ app.use(cors({
 }));
 
 // ── Body parsing + cookies ────────────────────────────────────────────────────
-app.use(express.json({ limit: '20mb' })); // extension sends base64 images
-app.use(express.urlencoded({ extended: true }));
+// Import batches with base64 receipts need a large limit (see docs/TRADE_SHOW_MIGRATION_REPLY.md).
+app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: env.JSON_BODY_LIMIT }));
 app.use(cookieParser());
 
 // ── Logging ───────────────────────────────────────────────────────────────────
@@ -65,6 +68,7 @@ app.use('/api/v1/auth/login', authLimiter);
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/v1/health', healthRouter);
 app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/auth', oidcAuthRouter);
 app.use('/api/v1/expenses', expensesRouter);
 app.use('/api/v1/expenses/:expenseId/receipts', receiptsRouter);
 app.use('/api/v1/expenses/:expenseId/messages', messagesRouter);
@@ -74,7 +78,8 @@ app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/ext', extRouter);             // app-to-app API (Bearer API key auth)
 app.use('/api/v1/extension', extensionRouter); // browser extension (session cookie auth)
 app.use('/api/v1/payment-methods', paymentMethodsRouter);
-app.use('/api/v1/expenses', zohoRouter); // GET /expenses/:id/zoho-readiness
+app.use('/api/v1/expenses', zohoRouter);
+app.use('/api/v1/zoho', zohoServiceRouter);
 app.use('/api/v1/meta', metaRouter);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
@@ -86,9 +91,10 @@ app.use((_req, res) => {
 app.use(errorHandler);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(env.PORT, () => {
-  logger.info(`Midas API running on port ${env.PORT} (${env.NODE_ENV})`);
+app.listen(env.PORT, env.HOST, () => {
+  logger.info(`Midas API listening on http://${env.HOST}:${env.PORT} (${env.NODE_ENV})`);
   logger.info(`OCR mode: ${env.OCR_MODE} | Zoho mode: ${env.ZOHO_MODE} | Storage: ${env.STORAGE_MODE}`);
+  logger.info(`Web base (midasUrl): ${env.MIDAS_WEB_BASE_URL || env.CORS_ORIGIN}`);
 });
 
 export { app };

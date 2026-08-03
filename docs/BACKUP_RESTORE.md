@@ -3,78 +3,92 @@
 ## Overview
 
 Two backup targets:
-1. **PostgreSQL database** — `pg_dump` compressed SQL
-2. **Receipt uploads** — `tar.gz` of `/opt/midas/uploads/`
+1. **PostgreSQL database** — `pg_dump` compressed SQL, pulled from CT 3220 (192.168.1.211)
+2. **Receipt uploads** — `tar.gz` of `/opt/midas/uploads/` from CT 3120
 
-Backups run nightly via cron on **CT 3120** (midas-app-prod, 192.168.1.210).
-Backup files are stored locally at `/opt/midas/backups/`.
-Retention: 14 days.
+Backups run nightly via cron on **CT 3120** (midas-app-prod, 192.168.1.210).  
+Primary backup files: `/opt/midas/backups/` on CT 3120.  
+Secondary copy: `/mnt/ssd2/midas-backups/` on Proxmox host (separate physical SSD).  
+Retention: 14 days (primary). Secondary copy updated nightly.
 
-> **OFFSITE REPLICATION NOT YET CONFIGURED.** Local-only backups mean a CT 3120 disk failure loses both the app and its backups. An rsync/rclone step to a NAS or second Proxmox node must be added before this is considered a real backup strategy.
+> **OFFSITE REPLICATION NOT YET CONFIGURED.** Both the primary and secondary copies are on the same Proxmox host. A host-level failure or physical loss would still lose both copies. An offsite destination (NAS, cloud, PBS on a separate device) is required before this qualifies as a real backup strategy for production accounting data.
 
 ---
 
 ## Backup schedule
 
-Cron file: `/etc/cron.d/midas-backup` on CT 3120.
-
-```
-# Run at 02:00 daily
-0 2 * * * root bash /opt/midas/scripts/backup-midas.sh
-```
+| Cron | Host | Time | Action |
+|---|---|---|---|
+| `/etc/cron.d/midas-backup` | CT 3120 | 02:00 daily | Primary: pg_dump + uploads tar |
+| `/etc/cron.d/midas-backup-secondary` | Proxmox host | 02:15 daily | Secondary: pct pull to ssd2 |
 
 ---
 
 ## Manual backup run
 
 ```bash
-# From Proxmox host:
+# From Proxmox host — primary backup
 pct exec 3120 -- bash /opt/midas/scripts/backup-midas.sh
 
-# Or from inside CT 3120:
-bash /opt/midas/scripts/backup-midas.sh
+# From Proxmox host — secondary copy to ssd2 (run after primary)
+bash /root/scripts/midas-backup-secondary.sh
 ```
 
 ---
 
-## Verify backups exist
+## Validate backups
 
 ```bash
+# Quick status
 pct exec 3120 -- bash -c '
-  ls -lh /opt/midas/backups/
-  echo "--- Last DB backup ---"
-  ls -t /opt/midas/backups/db_*.sql.gz | head -1
-  echo "--- Last uploads backup ---"
-  ls -t /opt/midas/backups/uploads_*.tar.gz | head -1
-  echo "--- Backup log (last 10 lines) ---"
-  tail -10 /opt/midas/backups/backup.log
+  echo "=== Primary backup files ===" && ls -lh /opt/midas/backups/*.sql.gz /opt/midas/backups/*.tar.gz
+  echo "=== Last backup log ===" && tail -5 /opt/midas/backups/backup.log
 '
+
+# Validate latest DB backup integrity
+pct exec 3120 -- bash -c '
+  LATEST=$(ls -t /opt/midas/backups/db_*.sql.gz | head -1)
+  gzip -t "$LATEST" && echo "gzip -t PASS: $LATEST" || echo "FAIL: $LATEST"
+'
+
+# Validate latest uploads backup
+pct exec 3120 -- bash -c '
+  LATEST=$(ls -t /opt/midas/backups/uploads_*.tar.gz | head -1)
+  tar -tzf "$LATEST" | head -5 && echo "tar -tzf PASS" || echo "FAIL"
+'
+
+# Check secondary copy on ssd2
+ls -lh /mnt/ssd2/midas-backups/
+tail -5 /mnt/ssd2/midas-backups/secondary-backup.log
 ```
 
 ---
 
 ## Restore — database
 
-> **WARNING: Running these commands against the live database will overwrite all data. Read completely before running.**
+> **WARNING: Running these commands against the live database will overwrite all data. Read completely before running. Do not restore over the live DB without explicit operator approval.**
 
-### Test restore to a temporary database (safe — does not touch live DB)
+### Test restore to a temporary database (safe)
+
+Pulls the backup file from CT 3120 to the Proxmox host first, then pipes into CT 3220.
 
 ```bash
-# On CT 3220 or any host with psql access:
-BACKUP_FILE=/opt/midas/backups/db_YYYYMMDD_HHMMSS.sql.gz
+# 1. Pull the backup file to Proxmox host
+pct pull 3120 /opt/midas/backups/db_YYYYMMDD_HHMMSS.sql.gz /tmp/db_restore.sql.gz
 
-# Create a throwaway database to test the restore
-psql -U midas -h 192.168.1.211 -c "CREATE DATABASE midas_restore_test;"
+# 2. Create a throwaway database on CT 3220
+pct exec 3220 -- psql -U midas -h 127.0.0.1 -c "CREATE DATABASE midas_restore_test;"
 
-# Restore into it
-gunzip -c "$BACKUP_FILE" | psql -U midas -h 192.168.1.211 midas_restore_test
+# 3. Restore into it
+gunzip -c /tmp/db_restore.sql.gz | pct exec 3220 -- psql -U midas -h 127.0.0.1 midas_restore_test
 
-# Verify tables and row counts
-psql -U midas -h 192.168.1.211 midas_restore_test -c "\dt"
-psql -U midas -h 192.168.1.211 midas_restore_test -c "SELECT COUNT(*) FROM expenses;"
+# 4. Verify
+pct exec 3220 -- psql -U midas -h 127.0.0.1 midas_restore_test -c "\dt"
+pct exec 3220 -- psql -U midas -h 127.0.0.1 midas_restore_test -c "SELECT COUNT(*) FROM expenses;"
 
-# Drop the test database when done
-psql -U midas -h 192.168.1.211 -c "DROP DATABASE midas_restore_test;"
+# 5. Drop when done
+pct exec 3220 -- psql -U midas -h 127.0.0.1 -c "DROP DATABASE midas_restore_test;"
+rm /tmp/db_restore.sql.gz
 ```
 
 ### Full restore to live database (emergency only)
@@ -82,19 +96,23 @@ psql -U midas -h 192.168.1.211 -c "DROP DATABASE midas_restore_test;"
 Only do this if the live database is already lost or you have explicitly decided to overwrite it.
 
 ```bash
-# 1. Stop the application to prevent writes during restore
-pct exec 3120 -- docker compose -f /opt/midas/docker-compose.prod.yml stop api
+# 1. Stop the API to prevent writes during restore
+pct exec 3120 -- bash -c 'cd /opt/midas && docker compose stop api'
 
-# 2. On CT 3220 — drop and recreate the database
-pct exec 3220 -- psql -U midas -c "DROP DATABASE midas;"
-pct exec 3220 -- psql -U midas -c "CREATE DATABASE midas;"
+# 2. Pull backup to Proxmox host
+pct pull 3120 /opt/midas/backups/db_YYYYMMDD_HHMMSS.sql.gz /tmp/db_restore.sql.gz
 
-# 3. Restore from backup
-BACKUP_FILE=/opt/midas/backups/db_YYYYMMDD_HHMMSS.sql.gz
-gunzip -c "$BACKUP_FILE" | pct exec 3220 -- psql -U midas midas
+# 3. On CT 3220 — drop and recreate the database
+pct exec 3220 -- psql -U postgres -h 127.0.0.1 -c "DROP DATABASE midas;"
+pct exec 3220 -- psql -U postgres -h 127.0.0.1 -c "CREATE DATABASE midas OWNER midas;"
 
-# 4. Restart the application
-pct exec 3120 -- docker compose -f /opt/midas/docker-compose.prod.yml start api
+# 4. Restore
+gunzip -c /tmp/db_restore.sql.gz | pct exec 3220 -- psql -U midas -h 127.0.0.1 midas
+
+# 5. Restart API
+pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d api'
+
+rm /tmp/db_restore.sql.gz
 ```
 
 ---
@@ -102,18 +120,23 @@ pct exec 3120 -- docker compose -f /opt/midas/docker-compose.prod.yml start api
 ## Restore — uploads
 
 ```bash
-# List available backups
-ls -lh /opt/midas/backups/uploads_*.tar.gz
+# Pull backup to Proxmox host
+pct pull 3120 /opt/midas/backups/uploads_YYYYMMDD_HHMMSS.tar.gz /tmp/uploads_restore.tar.gz
 
-# Extract to a temp location first to inspect
-tar -tzf /opt/midas/backups/uploads_YYYYMMDD_HHMMSS.tar.gz | head -20
+# Inspect contents before restoring
+tar -tzf /tmp/uploads_restore.tar.gz | head -20
 
-# Restore to a temp dir for inspection
-tar -xzf /opt/midas/backups/uploads_YYYYMMDD_HHMMSS.tar.gz -C /tmp/
+# Extract to a temp dir to verify
+mkdir -p /tmp/uploads_check
+tar -xzf /tmp/uploads_restore.tar.gz -C /tmp/uploads_check
+ls /tmp/uploads_check/uploads/ | head -10
 
-# If confirmed correct, replace the uploads directory
-# WARNING: this overwrites current uploads
-rsync -av --delete /tmp/uploads/ /opt/midas/uploads/
+# If correct, restore (WARNING: overwrites current uploads)
+pct exec 3120 -- bash -c 'rm -rf /opt/midas/uploads && mkdir -p /opt/midas/uploads'
+tar -xzf /tmp/uploads_restore.tar.gz -C /tmp/uploads_check
+# Then push each file or tar into CT using pct push
+
+rm -rf /tmp/uploads_restore.tar.gz /tmp/uploads_check
 ```
 
 ---
@@ -122,7 +145,7 @@ rsync -av --delete /tmp/uploads/ /opt/midas/uploads/
 
 | Pattern | Contents |
 |---|---|
-| `db_YYYYMMDD_HHMMSS.sql.gz` | Full pg_dump of the `midas` database |
+| `db_YYYYMMDD_HHMMSS.sql.gz` | Full pg_dump of the `midas` database from CT 3220 |
 | `uploads_YYYYMMDD_HHMMSS.tar.gz` | Compressed tar of `/opt/midas/uploads/` |
 | `backup.log` | Rolling log of all backup runs |
 
@@ -130,74 +153,70 @@ rsync -av --delete /tmp/uploads/ /opt/midas/uploads/
 
 ## Retention
 
-Files older than 14 days are automatically deleted by the backup script.
-The deletion only matches `db_*.sql.gz` and `uploads_*.tar.gz` to prevent accidental removal of other files in the backup directory.
+Files older than 14 days are automatically deleted by the backup script. The deletion only matches `db_*.sql.gz` and `uploads_*.tar.gz` to prevent accidental removal of other files.
+
+The secondary copy on ssd2 is not automatically trimmed — old files accumulate until manually cleaned. ssd2 has ~182 GB free as of 2026-05-15.
+
+---
+
+## Secondary copy — ssd2 (implemented 2026-05-15)
+
+ssd2-local (`/dev/sdb`, 234 GB, separate physical SSD on Proxmox host) is used as a second local copy of all backup files. CT 3120's rootfs is on local-lvm (LVM thin), so it cannot be accessed as a directory from the Proxmox host. The secondary backup uses `pct pull` to extract files.
+
+| Item | Value |
+|---|---|
+| Script | `/root/scripts/midas-backup-secondary.sh` on Proxmox host |
+| Cron | `/etc/cron.d/midas-backup-secondary` (02:15 daily) |
+| Destination | `/mnt/ssd2/midas-backups/` |
+| Log | `/mnt/ssd2/midas-backups/secondary-backup.log` |
+
+This provides resilience against CT 3120 filesystem corruption but **not** against Proxmox host hardware failure or physical loss.
 
 ---
 
 ## Offsite replication
 
-Local-only backups are a starting point, not a complete backup strategy. A CT 3120 disk failure would lose both the app and its backups. Current Proxmox storage inventory (inspected 2026-05-08):
+Not yet configured. Both backup copies are on the same Proxmox host.
 
-| Name | Type | Path | Free | Backup-capable |
-|---|---|---|---|---|
-| local | dir | /var/lib/vz | ~37 GB | Yes |
-| local-lvm | lvmthin | (LVM pool) | ~43 GB | For VM images only |
-| ssd2-local | dir | /mnt/ssd2 | ~187 GB | **Yes — second physical disk** |
+### Available options (not yet evaluated/implemented)
+
+| Option | Notes |
+|---|---|
+| **Proxmox Backup Server** | Block-level, versioned CT snapshots. Best long-term solution. Requires PBS on separate device/VM. |
+| **rclone to cloud** | Requires internet-accessible Proxmox host. `rclone` not yet installed. Candidate remotes: Backblaze B2, Wasabi, S3. |
+| **rsync to NAS** | No NAS on 192.168.1.0/24 currently. Option D when NAS is added. |
+| **rsync from CT 3120 to remote** | Requires SSH key setup in CT 3120 (`rsync` not installed there as of 2026-05-15). |
 
 No NAS, no PBS, no remote storage is currently configured.
 
-### Recommended: use ssd2-local as a second local copy (immediate, zero config needed)
+---
 
-`/mnt/ssd2` is a separate physical SSD (ext4, 14.66% used). A copy there is not offsite but survives individual filesystem corruption and is immediately available:
+## Disk usage (checked 2026-05-15)
 
-```bash
-# Add to end of /opt/midas/scripts/backup-midas.sh:
-SECONDARY_BACKUP_DIR="/mnt/ssd2/midas-backups"
-mkdir -p "$SECONDARY_BACKUP_DIR"
-rsync -a --delete "$BACKUP_DIR/" "$SECONDARY_BACKUP_DIR/"
-log "Secondary copy synced to $SECONDARY_BACKUP_DIR"
-```
+| Storage | Size | Free | Notes |
+|---|---|---|---|
+| local (Proxmox) | 67 GB | 34 GB | CT images, ISO |
+| local-lvm | ~400 GB | 26 GB | **93.5% full — monitor closely** |
+| ssd2-local | 234 GB | 182 GB | Secondary backup target |
+| CT 3120 filesystem | 20 GB | 14 GB free | After Docker build cache prune (2026-05-15) |
+| CT 3220 filesystem | 20 GB | 18 GB free | PostgreSQL data, ssd2-local storage |
 
-Note: this copies from inside CT 3120 to the Proxmox host's `/mnt/ssd2`. This requires the path to be bind-mounted into CT 3120, or the copy must run directly on the Proxmox host.
+**local-lvm is at 93.5% capacity** — this is Proxmox-host wide across all CTs and VMs. Monitor with `pvesm status`. CT 3120's own disk is healthy (25% used) after Docker build cache was pruned. OCR CT 9500 disk is at ~99.8% used — that's an OCR team concern, not Midas.
 
-**Simpler path:** run a separate cron on the Proxmox host that copies from CT 3120's backup dir:
-```bash
-# On Proxmox host — /etc/cron.d/midas-backup-secondary
-15 2 * * * root rsync -a /var/lib/lxd/storage-pools/default/containers/3120/rootfs/opt/midas/backups/ /mnt/ssd2/midas-backups/
-```
-(Adjust the LXC rootfs path for your Proxmox storage layout.)
-
-### Option B — Proxmox Backup Server (PBS)
-
-PBS provides block-level deduplication and versioned CT snapshots. Install in a new VM/CT or on an external device. Once configured, add the CT 3120 and CT 3220 VMs to a PBS backup job. This is the cleanest long-term solution for the whole Proxmox node.
-
-### Option C — rclone to cloud (requires internet-accessible Proxmox host)
-
-```bash
-# Install rclone on Proxmox host, configure a remote (Backblaze B2 / Wasabi / S3)
-rclone config  # then:
-# Add to backup-midas.sh or a separate cron:
-rclone sync /opt/midas/backups/ b2:my-bucket/midas-backups/ --transfers 2
-```
-CT 3120 has confirmed internet access as of 2026-05-08.
-
-### Option D — rsync to NAS
-
-When a NAS is added to the 192.168.1.0/24 network:
-```bash
-# Requires SSH key auth from CT 3120 to NAS, or NFS mount
-rsync -az --delete /opt/midas/backups/ nas-host:/volume1/backups/midas/
-```
+**Docker cleanup performed 2026-05-15 on CT 3120:**
+- Removed orphaned `midas-web-test:latest` image (93 MB)
+- Pruned all Docker build cache (freed 11.12 GB)
+- Remaining reclaimable: `midas_pgdata` volume (46.7 MB, orphaned — no postgres container runs on CT 3120 in production). Do not remove without explicit approval.
+- `postgres:16-alpine` image (395 MB) is referenced by `docker-compose.local.yml` — do not remove.
 
 ---
 
-## Backup status check
+## Pre-production backup requirement
 
-```bash
-# Quick status: last backup time, count, log tail
-pct exec 3120 -- bash -c '
-  echo "=== Backup files ===" && ls -lh /opt/midas/backups/*.gz /opt/midas/backups/*.tar.gz 2>/dev/null
-  echo "=== Last backup log ===" && tail -5 /opt/midas/backups/backup.log
-'
-```
+Before Midas handles real accounting data at production scale, all three of the following must be complete:
+
+- [x] **Local backup validated**: `gzip -t` on latest DB backup and `tar -tzf` on latest uploads backup both pass. *(2026-05-15)*
+- [ ] **Offsite backup configured**: at least one option from the table above is running and has produced a successful offsite copy.
+- [x] **Restore-to-new-DB tested**: restore drill performed 2026-05-15 using `db_20260515_020001.sql.gz` into `midas_restore_verify_20260515` on CT 3220. All 9 tables present. Row counts matched live DB within expected daily delta. Temp DB dropped after verification. *(2026-05-15)*
+
+**Remaining blocker:** offsite backup not configured. Both the primary and secondary copies are on the same Proxmox host.

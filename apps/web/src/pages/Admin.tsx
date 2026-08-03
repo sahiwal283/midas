@@ -171,7 +171,15 @@ function UsersTab() {
                 <tr className="hover:bg-gray-50">
                   <td className="px-5 py-3 font-medium text-gray-900">{u.name}</td>
                   <td className="px-5 py-3 text-gray-600">{u.email}</td>
-                  <td className="px-5 py-3 capitalize text-gray-600">{u.role}</td>
+                  <td className="px-5 py-3 text-gray-600">
+                    <span className="capitalize">{u.role}</span>
+                    <span
+                      className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500"
+                      title="How this user can sign in"
+                    >
+                      {u.hasSso && u.hasPassword ? 'SSO + Local' : u.hasSso ? 'SSO-only' : u.hasPassword ? 'Local' : 'No login'}
+                    </span>
+                  </td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                       {u.isActive ? 'Active' : 'Inactive'}
@@ -286,9 +294,22 @@ function CategoriesTab() {
   );
 }
 
+const EXT_SCOPES = [
+  'expenses:create',
+  'expenses:read',
+  'expenses:update',
+  'expenses:delete',
+  'receipts:create',
+  'expenses:import',
+  'ocr:process',
+] as const;
+
+const TRADE_SHOW_DEFAULT_SCOPES = [...EXT_SCOPES];
+
 function ConnectionsTab() {
   const qc = useQueryClient();
   const [appName, setAppName] = useState('');
+  const [scopes, setScopes] = useState<string[]>([...TRADE_SHOW_DEFAULT_SCOPES]);
   const [newKey, setNewKey] = useState<string | null>(null);
   const { data: connections = [] } = useQuery({
     queryKey: ['admin-connections'],
@@ -296,7 +317,7 @@ function ConnectionsTab() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => client.post('/admin/connections', { appName }),
+    mutationFn: () => client.post('/admin/connections', { appName, permissions: scopes }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['admin-connections'] });
       setNewKey(res.data.apiKey);
@@ -304,23 +325,49 @@ function ConnectionsTab() {
     },
   });
 
+  const patchMutation = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; isActive?: boolean; permissions?: string[] }) =>
+      client.patch(`/admin/connections/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-connections'] }),
+  });
+
+  function toggleScope(scope: string) {
+    setScopes((prev) => (prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]));
+  }
+
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500">API keys allow other internal apps to create expenses in Midas via the <code>/api/v1/ext/</code> endpoints.</p>
-      <div className="flex gap-2">
+      <p className="text-sm text-gray-500">
+        API keys allow other internal apps to call <code>/api/v1/ext/</code>. Empty scopes deny all Ext routes.
+        Use app name <code>trade_show</code> with all scopes checked for the Trade Show BFF.
+      </p>
+      <div className="flex flex-wrap items-start gap-3">
         <input
           value={appName}
           onChange={(e) => setAppName(e.target.value)}
-          placeholder="App name (e.g. argo)"
+          placeholder="App name (e.g. trade_show)"
           className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none w-64"
         />
         <button
           onClick={() => createMutation.mutate()}
-          disabled={!appName.trim()}
+          disabled={!appName.trim() || scopes.length === 0 || createMutation.isPending}
           className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
         >
           Generate Key
         </button>
+      </div>
+      <div className="flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-white p-3">
+        {EXT_SCOPES.map((scope) => (
+          <label key={scope} className="flex items-center gap-1.5 text-xs text-gray-700">
+            <input
+              type="checkbox"
+              checked={scopes.includes(scope)}
+              onChange={() => toggleScope(scope)}
+              className="rounded border-gray-300"
+            />
+            {scope}
+          </label>
+        ))}
       </div>
 
       {newKey && (
@@ -331,15 +378,27 @@ function ConnectionsTab() {
       )}
 
       <div className="rounded-xl border border-gray-200 bg-white">
-        {connections.map((c: any) => (
-          <div key={c.id} className="flex items-center justify-between border-b border-gray-100 px-5 py-3 last:border-0">
-            <div>
+        {connections.map((c: { id: string; appName: string; permissions?: string[]; isActive: boolean }) => (
+          <div key={c.id} className="flex items-center justify-between gap-4 border-b border-gray-100 px-5 py-3 last:border-0">
+            <div className="min-w-0">
               <p className="font-medium text-gray-900">{c.appName}</p>
-              <p className="text-xs text-gray-400">{c.permissions?.join(', ') || 'all permissions'}</p>
+              <p className="text-xs text-gray-400 break-all">
+                {c.permissions?.length ? c.permissions.join(', ') : 'no scopes (all Ext calls denied)'}
+              </p>
             </div>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-              {c.isActive ? 'Active' : 'Revoked'}
-            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className={`rounded-full px-2.5 py-0.5 text-xs ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                {c.isActive ? 'Active' : 'Revoked'}
+              </span>
+              <button
+                type="button"
+                disabled={patchMutation.isPending}
+                onClick={() => patchMutation.mutate({ id: c.id, isActive: !c.isActive })}
+                className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+              >
+                {c.isActive ? 'Revoke' : 'Activate'}
+              </button>
+            </div>
           </div>
         ))}
       </div>

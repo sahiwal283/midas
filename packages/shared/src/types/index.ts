@@ -28,10 +28,41 @@ export interface PaymentMethod {
   updatedAt: string;
 }
 
+// ── Polymorphic ownership ─────────────────────────────────────────────────────
+//
+// Midas expenses can belong to an arbitrary external entity (a trade show booth,
+// a payroll run, a project, ...) without Midas knowing anything about that
+// entity's domain. This is implemented today as `sourceApp` + `sourceRefId` on
+// `expenses` (see apps/api/src/db/schema.ts) — those two columns ARE the
+// `ownerType` / `ownerId` polymorphic pair; `OwnerRef` below is just the
+// embedder-facing name for the same concept. No embedder-specific value
+// (e.g. a literal `'trade_show'`) is hardcoded anywhere in Midas — `ownerType`
+// is an opaque string chosen by the calling application.
+//
+// `sourceApp`/`sourceRefId` are kept as the wire/column names for backward
+// compatibility; new integrations are encouraged to think in terms of
+// `OwnerRef` and use `toOwnerRef` / `fromSourceFields` below.
+
+export interface OwnerRef {
+  /** Opaque identifier for the owning application/domain, e.g. 'trade_show', 'argo'. */
+  ownerType: string;
+  /** Opaque identifier for the specific owning record within that application. */
+  ownerId: string;
+}
+
+export function toOwnerRef(source: { sourceApp: string | null; sourceRefId: string | null }): OwnerRef | null {
+  if (!source.sourceApp || !source.sourceRefId) return null;
+  return { ownerType: source.sourceApp, ownerId: source.sourceRefId };
+}
+
+export function fromOwnerRef(owner: OwnerRef | null | undefined): { sourceApp: string | null; sourceRefId: string | null } {
+  return { sourceApp: owner?.ownerType ?? null, sourceRefId: owner?.ownerId ?? null };
+}
+
 // ── Expense ───────────────────────────────────────────────────────────────────
 
 export type ExpenseStatus = 'draft' | 'pending' | 'in_review' | 'awaiting_info' | 'approved' | 'zoho_sync_failed' | 'rejected';
-export type ReimbursementStatus = 'not_requested' | 'pending' | 'approved' | 'paid';
+export type ReimbursementStatus = 'not_requested' | 'pending' | 'approved' | 'rejected' | 'paid';
 
 export interface ExpenseCategory {
   id: string;

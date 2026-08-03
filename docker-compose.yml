@@ -16,6 +16,21 @@ services:
     ports:
       - "4000:4000"
 
+  # The canonical OCR engine (see services/ocr-engine/README.md). Not started by default —
+  # only needed when OCR_MODE=service. Local/dev defaults to free, local-only providers
+  # (rapidocr + tesseract); never enable document_ai/google_vision outside production.
+  ocr-engine:
+    build:
+      context: ./services/ocr-engine
+    restart: unless-stopped
+    env_file:
+      - path: ./services/ocr-engine/.env
+        required: false
+    profiles:
+      - ocr
+    ports:
+      - "8001:8000"
+
   web:
     build:
       context: .

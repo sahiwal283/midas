@@ -1,5 +1,17 @@
 # Midas Operations Runbook
 
+## Zoho Integration Service connectivity (v0.1.4-alpha)
+
+Midas talks to Zoho **only** through the Zoho Integration Service (CT 9503, `http://192.168.1.205:8000`); it never calls Zoho directly. Auth is `X-Internal-Token` + `X-Brand` headers (token in `/opt/midas/.env` `ZOHO_SERVICE_TOKEN`, never printed).
+
+Check connectivity (accountant/admin session required):
+```bash
+curl -s -b <cookiejar> https://midas.booute.duckdns.org/api/v1/zoho/service-health
+# Expect: service.reachable=true, serviceVersion, zohoMode=mock, dryRun=true, liveWritesEnabled=false
+```
+
+**Current blocker for any real Zoho call:** the integration service is **not authorized against Zoho** for the `haute_brands` org — its Zoho data endpoints return `ZOHO_AUTH_INVALID`. This is owned by the integration-service team, not Midas. Midas remains in `ZOHO_MODE=mock` / `ZOHO_DRY_RUN=true` (no live writes). See `docs/ZOHO_INTEGRATION.md`.
+
 ## Infrastructure
 
 | Component | Host | Address | Notes |
@@ -7,7 +19,9 @@
 | Proxmox host | pve | 192.168.1.190 | `ssh root@192.168.1.190` |
 | App CT 3120 | midas-app-prod | 192.168.1.210 | Docker host for api + web |
 | DB CT 3220 | midas-db-prod | 192.168.1.211 | PostgreSQL 15 |
-| Authentik CT 111 | authentik | 192.168.1.164 (DHCP) | Future SSO — not yet wired |
+| Zoho Integration Service CT 9503 | zoho-svc | 192.168.1.205:8000 | Proxies to Zoho Books; holds OAuth; inactive while `ZOHO_MODE=mock` |
+| OCR CT 9500 | ocr-service | 192.168.1.195:8000 | Live OCR engine (RapidOCR + Document AI fallback); used by Trade Show + Midas when `OCR_MODE=service` |
+| Authentik CT | authentik | 192.168.1.164 | SSO provider; `AUTH_MODE=authentik` live |
 
 All operations go through the Proxmox host via `pct exec`.
 
@@ -77,8 +91,8 @@ pct exec 3120 -- bash -c '
   curl -sf http://localhost:4000/api/v1/health && docker compose restart web
 '
 
-# Restart API only (env var changes, schema changes)
-pct exec 3120 -- docker compose -f /opt/midas/docker-compose.yml restart api
+# Recreate API only (required for env var changes — restart alone does not reload env_file)
+pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d api'
 
 # Restart web only (client-side changes already HMR'd but proxy cache stale)
 pct exec 3120 -- docker compose -f /opt/midas/docker-compose.yml restart web
@@ -116,8 +130,18 @@ New source files added to `apps/api/src/lib/` or `apps/web/src/` also hot-reload
 ### Changes requiring rebuild (Dockerfile, package.json, node_modules)
 
 ```bash
-ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose build --no-cache api && docker compose up -d api'"
+# API (runs as the dev/tsx target — base compose):
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d --no-deps --build api'"
 ```
+
+> ⚠️ **Rebuilding the WEB container — read this first.** The base `docker-compose.yml` `web` service is `target: dev` (Vite dev server, which **403-blocks the production host** `midas.booute.duckdns.org`). The production web is the **nginx** (`target: prod`) build defined in `docker-compose.prod.yml`. Rebuild web with the **prod file only** — do NOT use base-only (dev server) and do NOT merge `-f docker-compose.yml -f docker-compose.prod.yml` for web (the two files' `ports` lists merge to a duplicate `5173` mapping → "port already allocated"):
+>
+> ```bash
+> ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose -f docker-compose.prod.yml up -d --no-deps --build web'"
+> ```
+>
+> After any web rebuild, verify the domain serves nginx (not the Vite block page):
+> `curl -s -o /dev/null -w '%{http_code}\n' https://midas.booute.duckdns.org/`  → expect **200**.
 
 ### Schema changes
 
@@ -157,16 +181,50 @@ pct exec 3120 -- cat /root/midas-credentials.json
 
 See `docs/BACKUP_RESTORE.md` for full details.
 
+**Primary** (CT 3120, `/opt/midas/backups/`, cron `0 2 * * *` → `/opt/midas/scripts/backup-midas.sh`): pg_dump from CT 3220 + uploads tar, 14-day retention.
+**Secondary** (Proxmox host, `/mnt/ssd2/midas-backups/`, cron `15 2 * * *` → `/root/scripts/midas-backup-secondary.sh`): `pct pull` copy of all primary backups to ssd2. **No retention/deletion** on the secondary (copy-only).
+**Offsite**: not yet configured — primary + secondary are both on the same physical host, so this is **not** true offsite/DR yet.
+
+> **2026-06-25 fix.** The secondary job had silently no-op'd since ~2026-05-15 ("0 file(s) synced" logged as success). Root cause: cron's default `PATH` (`/usr/bin:/bin`) excludes `/usr/sbin` where `pct` lives, so the source listing came back empty. Fixed by setting `PATH` in both the script and `/etc/cron.d/midas-backup-secondary`, and by making the script **exit nonzero** when 0 files sync (no more phantom success). Verified: 33 files synced, newest secondary copy matches primary.
+
 ```bash
-# Manual backup run
+# Manual primary backup run
 pct exec 3120 -- bash /opt/midas/scripts/backup-midas.sh
 
-# List backups
-pct exec 3120 -- ls -lh /opt/midas/backups/
+# Manual secondary copy to ssd2 (run from Proxmox host, after primary)
+bash /root/scripts/midas-backup-secondary.sh        # exits nonzero if 0 files synced
 
-# View backup log
-pct exec 3120 -- tail -50 /opt/midas/backups/backup.log
+# List primary backups / secondary copies
+pct exec 3120 -- ls -lh /opt/midas/backups/
+ls -lh /mnt/ssd2/midas-backups/                     # newest db_*/uploads_* should match primary
+
+# Validate latest DB backup (integrity)
+pct exec 3120 -- bash -c 'LATEST=$(ls -t /opt/midas/backups/db_*.sql.gz | head -1) && gzip -t "$LATEST" && echo "PASS: $LATEST"'
 ```
+
+### Restore validation drill (safe — temp DB, never touches production)
+
+`/root/scripts/midas-validate-restore.sh` (runs on the **Proxmox host**) pulls the latest primary DB
+dump, restores it into a **temporary** database on CT 3220 as the local `postgres` superuser (peer
+auth — no password, no pg_hba change), runs sanity queries, then drops the temp DB. It also
+test-extracts the latest uploads archive into a throwaway dir.
+
+```bash
+# Run the restore drill (drops temp DB when done; use --keep to inspect)
+bash /root/scripts/midas-validate-restore.sh
+```
+
+**Good output** ends with:
+```
+Sanity: public tables=10, users=30, expenses=55
+Uploads archive OK (N files): uploads_YYYYMMDD_HHMMSS.tar.gz
+PASS: restore validation succeeded against db_YYYYMMDD_HHMMSS.sql.gz
+Dropped temp DB midas_restore_verify_...
+```
+
+> ⚠️ **Never restore over the production `midas` database.** This drill only ever creates/drops a
+> `midas_restore_verify_*` temp DB. A remote restore from CT 3120 is intentionally NOT used because
+> pg_hba on CT 3220 only authorizes the `midas` role to connect to the `midas` database.
 
 ---
 
@@ -190,6 +248,66 @@ pct exec 3220 -- psql -U midas midas -c "SELECT pg_size_pretty(pg_database_size(
 
 ---
 
+## OCR mode
+
+Current mode: **`mock`** (safe pilot default — no calls to CT 9500, no cost).  
+Stage 3 completed 2026-05-14: one real call verified (`job_id=208b79a4`, $0.1015), reverted to mock immediately.  
+OCR ledger admin API mismatch (seen during Stage 3) resolved in OCR service v0.11.0 — job lookup by `external_reference_id` now works correctly.
+
+Check active mode:
+```bash
+ssh root@192.168.1.190 "pct exec 3120 -- docker logs --tail 5 midas-api-1 | grep 'OCR mode'"
+# Expected: OCR mode: mock | Zoho mode: mock | Storage: local
+```
+
+**Do not switch to `OCR_MODE=service` without explicit operator approval.** Any receipt uploaded while in service mode triggers a real paid OCR call (~$0.10/receipt via document_ai). See `docs/ocr-integration.md` for the exact switching procedure and cost data from Stage 3.
+
+Verify a specific Midas OCR job via OCR admin API (v0.11.0+):
+```bash
+# Look up Stage 3 job by external_reference_id (secrets redacted)
+curl -s -H "X-Admin-Token: <OCR_ADMIN_TOKEN>" \
+  "http://192.168.1.195:8000/admin/ledger/job-lookup?external_reference_id=receipt:8ef0e789"
+# Or list all Midas jobs:
+curl -s -H "X-Admin-Token: <OCR_ADMIN_TOKEN>" \
+  "http://192.168.1.195:8000/admin/ledger/jobs?client_app=midas"
+```
+
+---
+
+## Zoho Integration
+
+Current mode: **`mock` + `ZOHO_DRY_RUN=true`** (safe default — no calls to CT 9503 or Zoho).
+
+Midas is registered on the Zoho Integration Service (CT 9503) as app `midas` (app_id=2). The Midas credential (60-char token, prefix `e4dce464`) is stored in `/opt/midas/.env` as `ZOHO_SERVICE_TOKEN`. It is not printed in these docs.
+
+Check active Zoho mode:
+```bash
+ssh root@192.168.1.190 "pct exec 3120 -- docker logs --tail 5 midas-api-1 | grep 'Zoho mode'"
+# Expected: OCR mode: mock | Zoho mode: mock | Storage: local
+```
+
+Verify Zoho service reachability and Midas token from CT 3120 (safe read-only call):
+```bash
+ssh root@192.168.1.190 "pct exec 3120 -- python3 -c \"
+import urllib.request, json
+with open('/opt/midas/.env') as f:
+    for l in f:
+        if l.startswith('ZOHO_SERVICE_TOKEN='):
+            token = l.strip().split('=',1)[1]; break
+req = urllib.request.Request('http://192.168.1.205:8000/zoho/organizations/list',
+    headers={'Authorization': 'Bearer '+token, 'X-Brand': 'haute_brands'})
+with urllib.request.urlopen(req) as r:
+    data = json.loads(r.read())
+    orgs = data['data']['organizations']
+    print('org:', orgs[0]['name'] if orgs else 'none')
+\""
+# Expected: org: Haute Brands
+```
+
+**Do not switch to `ZOHO_MODE=service` or `ZOHO_DRY_RUN=false`** without explicit accounting sign-off on the Zoho Books field mapping. See `docs/ZOHO_INTEGRATION.md` for activation steps.
+
+---
+
 ## Unit tests (local dev only — no DB required)
 
 ```bash
@@ -203,15 +321,38 @@ npm run test:watch --workspace=apps/api
 Tests live in `apps/api/src/__tests__/`. Currently covers:
 - `flags.test.ts` — 37 tests for `computeFlags()` (queue flag derivation)
 - `reviewSchema.test.ts` — 13 tests for review action parsing/validation
+- `oidcAuth.test.ts` — SSO auto-provisioning, resolveDisplayName, SSO-only login guard
+- `ocr.test.ts` — OCR mock/service mode tests
+- `zohoReadiness.test.ts` — 18 tests for readiness model, payload mapping, version string
 
 ---
 
 ## Workflow verification
 
-Covers request-info, resolve-request bugfix, payment methods, queue flags, Zoho readiness:
+Covers request-info, resolve-request bugfix, payment methods, queue flags, Zoho readiness.
+
+**Credentials are required via env vars — never hardcoded.** On CT 3120, a gitignored
+`scripts/.env.test` file holds the real values. To run:
 
 ```bash
-pct exec 3120 -- bash /opt/midas/scripts/verify-workflows.sh
+# From Proxmox host — credentials sourced from .env.test inside CT
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c '
+  set -a && source /opt/midas/scripts/.env.test && set +a
+  bash /opt/midas/scripts/verify-workflows.sh
+'"
+
+# Or pass credentials inline (no file on disk):
+ssh root@192.168.1.190 "pct exec 3120 -- env \
+  MIDAS_TEST_ADMIN_PASSWORD=<admin_pass> \
+  MIDAS_TEST_USER_PASSWORD=<user_pass> \
+  MIDAS_TEST_ACCOUNTANT_PASSWORD=<acct_pass> \
+  bash /opt/midas/scripts/verify-workflows.sh"
+```
+
+To set up the credentials file on a new CT:
+```bash
+cp /opt/midas/scripts/.env.test.example /opt/midas/scripts/.env.test
+# Edit .env.test to fill in real password values
 ```
 
 Expected output: all checks green. Runs in ~5 seconds. Cleans up after itself.
@@ -222,21 +363,26 @@ Expected output: all checks green. Runs in ~5 seconds. Cleans up after itself.
 
 Run from inside CT 3120 (uses localhost, avoids Docker container IP instability):
 ```bash
-# From Proxmox host — replace <admin_password> with the actual value from /opt/midas/.env
+# From Proxmox host — credentials sourced from .env.test inside CT
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c '
+  set -a && source /opt/midas/scripts/.env.test && set +a
+  API_URL=http://localhost:4000 WEB_URL=http://localhost:5173 \
+    bash /opt/midas/scripts/smoke-test.sh
+'"
+
+# Or pass inline:
 ssh root@192.168.1.190 "pct exec 3120 -- bash -c '
   API_URL=http://localhost:4000 WEB_URL=http://localhost:5173 \
-    ADMIN_EMAIL=admin@midas.local ADMIN_PASS=<admin_password> \
+    MIDAS_TEST_ADMIN_PASSWORD=<admin_password> \
     bash /opt/midas/scripts/smoke-test.sh
 '"
 ```
 
-Or from a dev machine with the password available:
+Or from a dev machine:
 ```bash
-API_URL=http://192.168.1.210:4000 \
-WEB_URL=http://192.168.1.210:5173 \
-ADMIN_EMAIL=admin@midas.local \
-ADMIN_PASS=<password> \
-bash scripts/smoke-test.sh
+source scripts/.env.test
+API_URL=http://192.168.1.210:4000 WEB_URL=http://192.168.1.210:5173 \
+  bash scripts/smoke-test.sh
 ```
 
 > Note: Do NOT use Docker-internal container IPs (172.18.x.x) for smoke tests — these change after each container recreation.
@@ -253,13 +399,60 @@ pct exec 3120 -- bash -c '
 
 ---
 
+## Authentik OIDC
+
+Current mode: **`AUTH_MODE=authentik`** with `ALLOW_LOCAL_BREAK_GLASS=true` and `AUTHENTIK_AUTO_CREATE_USERS=true`.
+
+Midas is SSO-first. Users in approved Authentik groups (`midas-admins`, `midas-accountants`, `midas-users`) are auto-provisioned on first sign-in. No-group Authentik users are denied. Local login is break-glass only.
+
+See `docs/AUTHENTIK_SETUP.md` for full setup instructions.
+
+```bash
+# Check current auth mode
+curl -s http://192.168.1.210:4000/api/v1/auth/config
+# {"authMode":"authentik","showLocalLogin":true}
+
+# Revert to local auth (break-glass)
+ssh root@192.168.1.190 "pct exec 3120 -- sed -i 's/^AUTH_MODE=.*/AUTH_MODE=local/' /opt/midas/.env"
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d api'"
+
+# Re-enable Authentik SSO
+ssh root@192.168.1.190 "pct exec 3120 -- sed -i 's/^AUTH_MODE=.*/AUTH_MODE=authentik/' /opt/midas/.env"
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d api'"
+```
+
+### SSO login audit events
+
+| Event | Meaning |
+|---|---|
+| `sso.login_success` | Successful SSO login (logged every time) |
+| `sso.user_auto_created` | New Midas user created on first SSO login |
+| `sso.user_linked_by_email` | Existing Midas user linked to Authentik subject by email match |
+| `sso.login_denied_no_group` | Authentik user has no approved Midas group |
+| `sso.login_denied_inactive_user` | Linked Midas user is deactivated |
+
+### SSO-only users
+
+Auto-provisioned users have `passwordHash=null` — they cannot use local login. To give an SSO user a local fallback password: Admin → Users → Reset Password. This sets a local password alongside their SSO link.
+
+---
+
 ## Environment file
 
 Location: `/opt/midas/.env` on CT 3120.
 
-After editing `.env`, restart the API:
+**Important:** `docker compose restart` does NOT reload the `env_file`. After editing `.env` you must recreate the container:
 ```bash
-pct exec 3120 -- docker compose -f /opt/midas/docker-compose.yml restart api
+# Correct — recreates the container and re-reads .env
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d api'"
+
+# Wrong — does NOT reload env changes (only restarts the process inside the same container)
+# pct exec 3120 -- docker compose restart api
+```
+
+Verify the new env took effect by checking the startup log:
+```bash
+ssh root@192.168.1.190 "pct exec 3120 -- docker logs --tail 5 midas-api-1"
 ```
 
 ---

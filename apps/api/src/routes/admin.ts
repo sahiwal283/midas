@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
-import { users, expenseCategories, appConnections } from '../db/schema';
+import { users, expenseCategories, appConnections, ssoLinks } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
@@ -19,7 +19,19 @@ router.get('/users', asyncHandler(async (_req, res) => {
     columns: { passwordHash: false },
     orderBy: (u, { asc }) => [asc(u.name)],
   });
-  res.json({ users: rows });
+  // Derive a SAFE auth-source signal (booleans only) so the UI can show an
+  // "SSO-only / Local / SSO + Local" badge. The password hash itself and the SSO
+  // subject IDs are never returned.
+  const pwRows = await db.select({ id: users.id }).from(users).where(isNotNull(users.passwordHash));
+  const ssoRows = await db.selectDistinct({ userId: ssoLinks.userId }).from(ssoLinks);
+  const hasPwSet = new Set(pwRows.map((r) => r.id));
+  const hasSsoSet = new Set(ssoRows.map((r) => r.userId));
+  const out = rows.map((u) => ({
+    ...u,
+    hasPassword: hasPwSet.has(u.id),
+    hasSso: hasSsoSet.has(u.id),
+  }));
+  res.json({ users: out });
 }));
 
 const createUserSchema = z.object({
@@ -200,11 +212,26 @@ router.post('/connections', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/connections/:id', asyncHandler(async (req, res) => {
-  const body = z.object({ isActive: z.boolean() }).parse(req.body);
+  const body = z.object({
+    isActive: z.boolean().optional(),
+    permissions: z.array(z.string()).optional(),
+  }).parse(req.body);
+  if (body.isActive === undefined && body.permissions === undefined) {
+    throw createError('Provide isActive and/or permissions', 400, 'VALIDATION_ERROR');
+  }
   const [updated] = await db.update(appConnections)
-    .set(body)
+    .set({
+      ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+      ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
+    })
     .where(eq(appConnections.id, req.params.id))
-    .returning({ id: appConnections.id, appName: appConnections.appName, isActive: appConnections.isActive });
+    .returning({
+      id: appConnections.id,
+      appName: appConnections.appName,
+      isActive: appConnections.isActive,
+      permissions: appConnections.permissions,
+    });
+  if (!updated) throw notFound('Connection not found');
   res.json({ connection: updated });
 }));
 

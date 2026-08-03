@@ -360,6 +360,14 @@ export function ExpenseDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['expense', id] }),
   });
 
+  const reimbursementMutation = useMutation({
+    mutationFn: (status: string) => accountantApi.updateReimbursement(id!, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expense', id] });
+      qc.invalidateQueries({ queryKey: ['expense-audit', id] });
+    },
+  });
+
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) uploadMutation.mutate(file);
@@ -621,6 +629,25 @@ export function ExpenseDetail() {
             </div>
           )}
 
+          {/* Reimbursement — accountant/admin only */}
+          {isPrivileged && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h2 className="mb-2 text-sm font-semibold text-gray-700">Reimbursement</h2>
+              <select
+                value={expense.reimbursementStatus}
+                disabled={reimbursementMutation.isPending}
+                onChange={(e) => reimbursementMutation.mutate(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none disabled:opacity-60"
+              >
+                <option value="not_requested">Not requested</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="paid">Paid</option>
+              </select>
+            </div>
+          )}
+
           {/* Zoho readiness — accountant/admin only */}
           {isPrivileged && (
             <ZohoReadinessPanel expenseId={expense.id} />
@@ -651,6 +678,9 @@ export function ExpenseDetail() {
               )}
               {isPrivileged && expense.zohoEntity && <Row label="Zoho entity" value={expense.zohoEntity} />}
               {isPrivileged && expense.zohoExpenseId && <Row label="Zoho ID" value={expense.zohoExpenseId} />}
+              {expense.sourceApp && <Row label="Source app" value={expense.sourceApp} />}
+              {expense.sourceRefId && <Row label="Source ref" value={expense.sourceRefId} />}
+              {expense.sourceLabel && <Row label="Source label" value={expense.sourceLabel} />}
               {expense.sourceType && <Row label="Source type" value={expense.sourceType} />}
             </dl>
           </div>
