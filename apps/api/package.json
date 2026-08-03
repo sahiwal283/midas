@@ -21,7 +21,6 @@
     "ext:smoke": "tsx --env-file=../../.env src/scripts/ext-smoke.ts"
   },
   "dependencies": {
-    "@esbuild/darwin-arm64": "^0.19.12",
     "@midas/import": "*",
     "@midas/ocr-client": "*",
     "bcryptjs": "^2.4.3",

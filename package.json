@@ -14,7 +14,6 @@
     "db:studio": "npm run db:studio -w apps/api"
   },
   "devDependencies": {
-    "@esbuild/darwin-arm64": "^0.27.7",
     "concurrently": "^9.1.0"
   }
 }
