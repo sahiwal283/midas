@@ -1,13 +1,60 @@
 import { db } from './index';
-import { users, expenseCategories } from './schema';
+import { users, expenseCategories, categoryMappings } from './schema';
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+
+/** Categories used by Trade Show production + OCR suggestions (exact names). */
+const TRADE_SHOW_CATEGORIES = [
+  { name: 'Booth / Marketing / Tools', description: 'Booth materials, marketing, tools' },
+  { name: 'Travel - Flight', description: 'Airfare' },
+  { name: 'Accommodation - Hotel', description: 'Hotels and lodging' },
+  { name: 'Transportation - Uber / Lyft / Others', description: 'Rideshare and local transport' },
+  { name: 'Parking Fees', description: 'Parking' },
+  { name: 'Rental - Car / U-haul', description: 'Vehicle rental' },
+  { name: 'Meal and Entertainment', description: 'Meals and entertainment' },
+  { name: 'Gas / Fuel', description: 'Fuel' },
+  { name: 'Shipping Charges', description: 'Shipping and freight' },
+  { name: 'Show Allowances - Per Diem', description: 'Per diem allowances' },
+  { name: 'Travel Expenses', description: 'General travel expenses' },
+  { name: 'Model', description: 'Model fees' },
+  { name: 'Other', description: 'Uncategorized expenses' },
+];
+
+/** OCR / legacy suggestion → category name (sourceApp=trade_show). */
+const TRADE_SHOW_OCR_MAPPINGS: Array<{ suggestion: string; categoryName: string }> = [
+  { suggestion: 'Meal and Entertainment', categoryName: 'Meal and Entertainment' },
+  { suggestion: 'Meals', categoryName: 'Meal and Entertainment' },
+  { suggestion: 'Restaurant', categoryName: 'Meal and Entertainment' },
+  { suggestion: 'Travel - Flight', categoryName: 'Travel - Flight' },
+  { suggestion: 'Airfare', categoryName: 'Travel - Flight' },
+  { suggestion: 'Flight', categoryName: 'Travel - Flight' },
+  { suggestion: 'Accommodation - Hotel', categoryName: 'Accommodation - Hotel' },
+  { suggestion: 'Hotel', categoryName: 'Accommodation - Hotel' },
+  { suggestion: 'Transportation - Uber / Lyft / Others', categoryName: 'Transportation - Uber / Lyft / Others' },
+  { suggestion: 'Uber', categoryName: 'Transportation - Uber / Lyft / Others' },
+  { suggestion: 'Lyft', categoryName: 'Transportation - Uber / Lyft / Others' },
+  { suggestion: 'Taxi', categoryName: 'Transportation - Uber / Lyft / Others' },
+  { suggestion: 'Parking Fees', categoryName: 'Parking Fees' },
+  { suggestion: 'Parking', categoryName: 'Parking Fees' },
+  { suggestion: 'Rental - Car / U-haul', categoryName: 'Rental - Car / U-haul' },
+  { suggestion: 'Car Rental', categoryName: 'Rental - Car / U-haul' },
+  { suggestion: 'Gas / Fuel', categoryName: 'Gas / Fuel' },
+  { suggestion: 'Fuel', categoryName: 'Gas / Fuel' },
+  { suggestion: 'Booth / Marketing / Tools', categoryName: 'Booth / Marketing / Tools' },
+  { suggestion: 'Shipping Charges', categoryName: 'Shipping Charges' },
+  { suggestion: 'Shipping', categoryName: 'Shipping Charges' },
+  { suggestion: 'Show Allowances - Per Diem', categoryName: 'Show Allowances - Per Diem' },
+  { suggestion: 'Per Diem', categoryName: 'Show Allowances - Per Diem' },
+  { suggestion: 'Travel Expenses', categoryName: 'Travel Expenses' },
+  { suggestion: 'Model', categoryName: 'Model' },
+  { suggestion: 'Other', categoryName: 'Other' },
+];
 
 async function seed() {
   console.log('Seeding database...');
 
-  // Default categories
-  const categories = [
+  // Legacy Midas standalone categories (keep for native UI)
+  const legacyCategories = [
     { name: 'Meals & Entertainment', description: 'Business meals, team lunches, client dinners' },
     { name: 'Travel', description: 'Flights, trains, long-distance transportation' },
     { name: 'Accommodation', description: 'Hotels, short-term lodging' },
@@ -17,10 +64,9 @@ async function seed() {
     { name: 'Marketing & Advertising', description: 'Trade show materials, ads, promotional items' },
     { name: 'Professional Services', description: 'Consultants, legal, accounting' },
     { name: 'Equipment', description: 'Hardware, tools, non-consumable purchases' },
-    { name: 'Other', description: 'Uncategorized expenses' },
   ];
 
-  for (const cat of categories) {
+  for (const cat of [...legacyCategories, ...TRADE_SHOW_CATEGORIES]) {
     const existing = await db.query.expenseCategories.findFirst({
       where: eq(expenseCategories.name, cat.name),
     });
@@ -30,7 +76,28 @@ async function seed() {
     }
   }
 
-  // Default users — passwords MUST be changed in production
+  for (const mapping of TRADE_SHOW_OCR_MAPPINGS) {
+    const category = await db.query.expenseCategories.findFirst({
+      where: eq(expenseCategories.name, mapping.categoryName),
+    });
+    if (!category) continue;
+
+    const existing = await db.query.categoryMappings.findFirst({
+      where: and(
+        eq(categoryMappings.sourceApp, 'trade_show'),
+        eq(categoryMappings.suggestion, mapping.suggestion),
+      ),
+    });
+    if (!existing) {
+      await db.insert(categoryMappings).values({
+        sourceApp: 'trade_show',
+        suggestion: mapping.suggestion,
+        categoryId: category.id,
+      });
+      console.log(`  + category_mapping: trade_show / ${mapping.suggestion}`);
+    }
+  }
+
   const defaultUsers = [
     { email: 'admin@midas.local', name: 'Admin User', role: 'admin' as const, password: 'admin123' },
     { email: 'accountant@midas.local', name: 'Accountant User', role: 'accountant' as const, password: 'accountant123' },
@@ -47,6 +114,10 @@ async function seed() {
   }
 
   console.log('Seeding complete.');
+  console.log('');
+  console.log('Phase 0: create sandbox app connection via Admin → Connections with scopes:');
+  console.log('  expenses:create, expenses:read, expenses:update, expenses:delete,');
+  console.log('  receipts:create, expenses:import, ocr:process');
   process.exit(0);
 }
 

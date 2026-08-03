@@ -5,7 +5,7 @@
 The version string lives in one place:
 
 ```
-packages/shared/src/version.ts → MIDAS_VERSION = '0.1.0-alpha'
+packages/shared/src/version.ts → MIDAS_VERSION = '0.1.1-alpha'
 ```
 
 The API exposes it at `GET /api/v1/meta` (no auth required). The web sidebar fetches from there at runtime, falling back to the same constant bundled at build time.

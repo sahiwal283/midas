@@ -2,7 +2,9 @@
 
 FROM node:20-alpine AS base
 WORKDIR /app
-RUN apk add --no-cache python3 make g++
+# imagemagick powers receipt preprocessing (HEIC conversion, auto-orient, resize)
+# in @midas/ocr-client — see packages/ocr-client/src/preprocessing.ts.
+RUN apk add --no-cache python3 make g++ imagemagick
 
 # ── dev stage ──────────────────────────────────────────────────────────────────
 FROM base AS dev
@@ -29,6 +31,7 @@ RUN npm run build
 # ── production stage ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS prod
 WORKDIR /app
+RUN apk add --no-cache imagemagick
 # Copy pre-installed node_modules from build stage (avoids npm install + registry access)
 # packages/ must be present so the @midas/shared symlink in node_modules resolves
 COPY --from=build /app/packages ./packages

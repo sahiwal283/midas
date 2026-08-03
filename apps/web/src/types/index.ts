@@ -6,5 +6,6 @@ export type {
   Receipt, OcrStatus,
   ExpenseMessage, MessageRequestType,
   Capture, CaptureSource, CaptureStatus,
+  ZohoReadinessResult, ZohoReadinessCheck, ZohoMappedPayload,
   AuditLogEntry,
 } from '@midas/shared';

@@ -3,6 +3,9 @@ dist/
 .env
 .env.local
 *.log
+
+# Local test credentials (never commit real passwords)
+scripts/.env.test
 *.tgz
 
 # Uploads (local dev only — use volume in Docker)
@@ -24,3 +27,4 @@ Thumbs.db
 
 # Claude Code session data
 .claude/
+.ext-sandbox.key

@@ -33,7 +33,7 @@ const reviewSchema = z.discriminatedUnion('action', [
 ]);
 
 const reimbursementSchema = z.object({
-  status: z.enum(['not_requested', 'pending', 'approved', 'paid']),
+  status: z.enum(['not_requested', 'pending', 'approved', 'rejected', 'paid']),
   note: z.string().optional(),
 });
 
@@ -54,7 +54,7 @@ router.get('/queue', asyncHandler(async (req, res) => {
       reviewedBy: { columns: { id: true, name: true, email: true } },
       category: { columns: { id: true, name: true } },
       paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
-      receipts: { columns: { id: true, ocrStatus: true } },
+      receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
     },
     orderBy: [desc(expenses.createdAt)],
   });
@@ -115,7 +115,7 @@ router.get('/expenses', asyncHandler(async (_req, res) => {
       reviewedBy: { columns: { id: true, name: true, email: true } },
       category: { columns: { id: true, name: true } },
       paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
-      receipts: { columns: { id: true, ocrStatus: true } },
+      receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
     },
     orderBy: [desc(expenses.createdAt)],
   });
@@ -165,7 +165,7 @@ router.post('/expenses/:id/claim', asyncHandler(async (req, res) => {
       reviewedBy: { columns: { id: true, name: true, email: true } },
       category: { columns: { id: true, name: true } },
       paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
-      receipts: { columns: { id: true, ocrStatus: true } },
+      receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
     },
   });
 

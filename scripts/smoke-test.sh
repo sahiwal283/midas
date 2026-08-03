@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Midas smoke test — run after any deployment to verify core flows.
 # Usage:
-#   ./scripts/smoke-test.sh                         # default: localhost
+#   source scripts/.env.test && bash scripts/smoke-test.sh   # preferred
 #   API_URL=http://192.168.1.210:4000 WEB_URL=http://192.168.1.210:5173 \
-#     ADMIN_EMAIL=admin@midas.local ADMIN_PASS=<pass> ./scripts/smoke-test.sh
+#     MIDAS_TEST_ADMIN_PASSWORD=<pass> bash scripts/smoke-test.sh
+#
+# Credential env vars (MIDAS_TEST_* preferred; ADMIN_PASS/ADMIN_EMAIL accepted for compat):
+#   MIDAS_TEST_ADMIN_EMAIL     (default: admin@midas.local)
+#   MIDAS_TEST_ADMIN_PASSWORD  (required for auth-dependent checks)
 #
 # Exit code 0 = all checks passed. Non-zero = at least one check failed.
 
@@ -11,8 +15,8 @@ set -euo pipefail
 
 API_URL="${API_URL:-http://localhost:4000}"
 WEB_URL="${WEB_URL:-http://localhost:5173}"
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@midas.local}"
-ADMIN_PASS="${ADMIN_PASS:-}"
+ADMIN_EMAIL="${MIDAS_TEST_ADMIN_EMAIL:-${ADMIN_EMAIL:-admin@midas.local}}"
+ADMIN_PASS="${MIDAS_TEST_ADMIN_PASSWORD:-${ADMIN_PASS:-}}"
 
 PASS=0
 FAIL=0
@@ -80,11 +84,11 @@ http_check "Frontend returns HTML" "200" "$WEB_URL/"
 # ── 3. Login ──────────────────────────────────────────────────────────────────
 
 if [ -z "$ADMIN_PASS" ]; then
-  red "Login skipped — ADMIN_PASS not set"
+  red "Login skipped — MIDAS_TEST_ADMIN_PASSWORD not set"
   (( FAIL++ )) || true
   echo ""
   echo "Results: $PASS passed, $FAIL failed"
-  echo "Set ADMIN_PASS=<password> to run auth-dependent checks."
+  echo "Set MIDAS_TEST_ADMIN_PASSWORD=<password> (or source scripts/.env.test) to run auth-dependent checks."
   exit $FAIL
 fi
 

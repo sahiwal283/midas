@@ -1,0 +1,129 @@
+{
+  "_description": "Sample responses from GET /api/v1/expenses/:id/zoho-readiness. Uses fake data only — no real employees, amounts, or company secrets.",
+
+  "example_not_ready": {
+    "_note": "Expense is pending review, missing category, payment method, receipt, and zohoEntity",
+    "readiness": {
+      "ready": false,
+      "missing": [
+        "expense must be approved",
+        "category",
+        "payment method",
+        "accounting entity (zohoEntity)",
+        "receipt attachment"
+      ],
+      "warnings": [
+        "Zoho is in mock mode — no live writes will occur"
+      ],
+      "zohoMode": "mock",
+      "mappedPayload": null,
+      "checks": [
+        { "label": "Approved",                        "pass": false },
+        { "label": "Not already synced",              "pass": true  },
+        { "label": "Merchant name",                   "pass": true  },
+        { "label": "Amount > 0",                      "pass": true  },
+        { "label": "Expense date",                    "pass": true  },
+        { "label": "Submitter (user)",                "pass": true  },
+        { "label": "Category set",                    "pass": false },
+        { "label": "Payment method set",              "pass": false },
+        { "label": "Accounting entity (Zoho brand)",  "pass": false },
+        { "label": "Receipt attached",                "pass": false },
+        { "label": "No open accountant requests",     "pass": true  }
+      ]
+    }
+  },
+
+  "example_approved_but_incomplete": {
+    "_note": "Expense is approved but accountant has not yet set zohoEntity",
+    "readiness": {
+      "ready": false,
+      "missing": [
+        "accounting entity (zohoEntity)"
+      ],
+      "warnings": [
+        "Zoho is in mock mode — no live writes will occur",
+        "reimbursement is pending — coordinate with payroll"
+      ],
+      "zohoMode": "mock",
+      "mappedPayload": null,
+      "checks": [
+        { "label": "Approved",                        "pass": true  },
+        { "label": "Not already synced",              "pass": true  },
+        { "label": "Merchant name",                   "pass": true  },
+        { "label": "Amount > 0",                      "pass": true  },
+        { "label": "Expense date",                    "pass": true  },
+        { "label": "Submitter (user)",                "pass": true  },
+        { "label": "Category set",                    "pass": true  },
+        { "label": "Payment method set",              "pass": true  },
+        { "label": "Accounting entity (Zoho brand)",  "pass": false },
+        { "label": "Receipt attached",                "pass": true  },
+        { "label": "No open accountant requests",     "pass": true  }
+      ]
+    }
+  },
+
+  "example_ready": {
+    "_note": "Fully approved expense with all required fields — would be eligible for Zoho push once live writes are enabled",
+    "readiness": {
+      "ready": true,
+      "missing": [],
+      "warnings": [
+        "Zoho is in mock mode — no live writes will occur"
+      ],
+      "zohoMode": "mock",
+      "mappedPayload": {
+        "expenseId": "exp-sample-001",
+        "merchant": "Sample Vendor LLC",
+        "amount": "248.50",
+        "currency": "USD",
+        "date": "2026-05-15",
+        "description": "Team lunch — product review meeting",
+        "zohoEntity": "haute_brands",
+        "categoryName": "Meals & Entertainment",
+        "paymentMethodLabel": "Corporate AMEX",
+        "brand": "haute_brands"
+      },
+      "checks": [
+        { "label": "Approved",                        "pass": true  },
+        { "label": "Not already synced",              "pass": true  },
+        { "label": "Merchant name",                   "pass": true  },
+        { "label": "Amount > 0",                      "pass": true  },
+        { "label": "Expense date",                    "pass": true  },
+        { "label": "Submitter (user)",                "pass": true  },
+        { "label": "Category set",                    "pass": true  },
+        { "label": "Payment method set",              "pass": true  },
+        { "label": "Accounting entity (Zoho brand)",  "pass": true  },
+        { "label": "Receipt attached",                "pass": true  },
+        { "label": "No open accountant requests",     "pass": true  }
+      ]
+    }
+  },
+
+  "example_already_synced": {
+    "_note": "Expense was previously synced — not eligible for re-push",
+    "readiness": {
+      "ready": false,
+      "missing": [
+        "already synced to Zoho"
+      ],
+      "warnings": [
+        "Zoho is in mock mode — no live writes will occur"
+      ],
+      "zohoMode": "mock",
+      "mappedPayload": null,
+      "checks": [
+        { "label": "Approved",                        "pass": true  },
+        { "label": "Not already synced",              "pass": false },
+        { "label": "Merchant name",                   "pass": true  },
+        { "label": "Amount > 0",                      "pass": true  },
+        { "label": "Expense date",                    "pass": true  },
+        { "label": "Submitter (user)",                "pass": true  },
+        { "label": "Category set",                    "pass": true  },
+        { "label": "Payment method set",              "pass": true  },
+        { "label": "Accounting entity (Zoho brand)",  "pass": true  },
+        { "label": "Receipt attached",                "pass": true  },
+        { "label": "No open accountant requests",     "pass": true  }
+      ]
+    }
+  }
+}

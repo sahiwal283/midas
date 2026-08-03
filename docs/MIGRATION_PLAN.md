@@ -6,6 +6,17 @@ and separation of trade-show/event logistics data into Argo.
 **Status:** Planning — no migration has been executed. Midas has no production data yet.  
 **Target:** Midas becomes the expense system of record. Argo owns all trade-show/event context.
 
+Midas now has a generic, reusable import pipeline (`@midas/import`) that can
+execute the field mapping below — see `docs/IMPORT_FRAMEWORK.md` for how to
+write an `ImportSource` for the trade-show app's data and run it via
+`npm run import:run --workspace=@midas/api`. This document defines *what*
+maps to *what*; that document defines *how* to run the import.
+
+**Bilateral cutover contract:**  
+`docs/CONTRACT_ALIGNMENT.md` — COMPLETE (Midas); coding after TS status mirror.  
+`docs/EXT_API_MERGE_LOCK.md` — locked Ext API for implementation.  
+`docs/TRADE_SHOW_MIGRATION_CONTRACT.md` — Midas cutover offer.
+
 ---
 
 ## Architectural Split
@@ -119,14 +130,20 @@ migration event per expense is sufficient.
 
 ### App Connection (Argo)
 
-Register Argo as an app connection in Midas:
+Register Argo as an app connection in Midas by calling the admin API as an
+authenticated admin user (there is no CLI wrapper for this today):
 
 ```bash
-# From inside CT 3120 after Argo is running
-docker compose exec api npx tsx src/scripts/create-app-connection.ts --app argo --permissions "expenses:read,expenses:create"
+curl -X POST https://<midas-host>/api/v1/admin/connections \
+  -H "Content-Type: application/json" \
+  --cookie "token=<admin session cookie>" \
+  -d '{"appName": "argo", "permissions": ["expenses:read", "expenses:create"]}'
 ```
 
-This generates an API key that Argo uses to post expenses via `/api/v1/ext/`.
+The response includes the plaintext API key exactly once — store it securely
+in Argo's own config. Argo then uses it (`Authorization: Bearer <key>`) to
+post expenses via `/api/v1/ext/`. See `docs/EMBEDDING.md` for the full
+app-to-app embedding contract.
 
 ---
 

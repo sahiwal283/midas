@@ -17,10 +17,15 @@ const loginSchema = z.object({
 });
 
 router.post('/login', asyncHandler(async (req, res) => {
+  if (env.AUTH_MODE === 'authentik' && !env.ALLOW_LOCAL_BREAK_GLASS) {
+    res.status(403).json({ error: { code: 'LOCAL_AUTH_DISABLED', message: 'Local login is disabled. Use SSO to sign in.' } });
+    return;
+  }
+
   const { email, password } = loginSchema.parse(req.body);
 
   const user = await db.query.users.findFirst({ where: eq(users.email, email) });
-  if (!user || !user.isActive) {
+  if (!user || !user.isActive || !user.passwordHash) {
     res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
     return;
   }

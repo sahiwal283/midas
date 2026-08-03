@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
+import { UploadQueueProvider } from './components/UploadQueueProvider';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { ExpenseList } from './pages/ExpenseList';
@@ -10,6 +11,7 @@ import { ExpenseNew } from './pages/ExpenseNew';
 import { ExpenseDetail } from './pages/ExpenseDetail';
 import { AccountantQueue } from './pages/AccountantQueue';
 import { Captures } from './pages/Captures';
+import { ToUpload } from './pages/ToUpload';
 import { Admin } from './pages/Admin';
 import { PaymentMethods } from './pages/PaymentMethods';
 
@@ -21,6 +23,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <UploadQueueProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -38,6 +41,7 @@ export default function App() {
               <Route path="/expenses/new" element={<ExpenseNew />} />
               <Route path="/expenses/:id" element={<ExpenseDetail />} />
               <Route path="/captures" element={<Captures />} />
+              <Route path="/to-upload" element={<ToUpload />} />
 
               <Route
                 path="/accountant"
@@ -69,6 +73,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
+        </UploadQueueProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

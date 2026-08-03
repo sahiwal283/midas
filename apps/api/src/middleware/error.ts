@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import multer from 'multer';
 import { logger } from '../lib/logger';
+import { mapOcrError } from '../lib/mapOcrError';
 
 export interface AppError extends Error {
   statusCode?: number;
@@ -31,15 +32,31 @@ export function errorHandler(err: AppError, req: Request, res: Response, _next: 
     return;
   }
 
-  const status = err.statusCode ?? 500;
-  const code = err.code ?? 'INTERNAL_ERROR';
-  const message = status < 500 ? err.message : 'Internal server error';
+  // OCR client errors (invalid file → 400; upstream → 502/503/504 — never bare INTERNAL_ERROR)
+  const ocrMapped = mapOcrError(err);
+  const status = ocrMapped?.statusCode ?? err.statusCode ?? 500;
+  const code = ocrMapped?.code ?? err.code ?? 'INTERNAL_ERROR';
+  const message = ocrMapped?.message
+    ?? (status < 500 ? err.message : 'Internal server error');
 
   if (status >= 500) {
     logger.error({ err, url: req.url, method: req.method }, 'Unhandled error');
   }
 
-  res.status(status).json({ error: { code, message } });
+  const existingResId = res.getHeader('X-Request-Id');
+  const requestId = (typeof existingResId === 'string' && existingResId)
+    || req.header('x-request-id')
+    || req.header('x-correlation-id')
+    || undefined;
+  if (requestId) res.setHeader('X-Request-Id', requestId);
+
+  res.status(status).json({
+    error: {
+      code,
+      message,
+      ...(requestId ? { requestId } : {}),
+    },
+  });
 }
 
 export function createError(message: string, statusCode: number, code: string): AppError {

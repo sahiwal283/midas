@@ -2,7 +2,11 @@
 
 ## Overview
 
-Midas is a standalone internal expense platform. Other internal apps (Argo, Milo, etc.) delegate their expense logic to Midas via an app-to-app API rather than each implementing their own expense tracking.
+Midas is the canonical Expense Engine: a standalone internal expense platform that other internal apps (Argo, Milo, Trade Show App, etc.) embed rather than each implementing their own expense tracking, OCR, or reimbursement workflow. See `docs/EMBEDDING.md` for the two supported embedding strategies (service delegation over the app-to-app API, or direct use of Midas's npm packages).
+
+Midas owns the **complete** expense system end to end, including OCR — there is exactly one OCR implementation (`services/ocr-engine` + `@midas/ocr-client`), used identically whether Midas is standalone or embedded. See `docs/OCR_ENGINE.md`.
+
+No embedder-specific logic (e.g. anything trade-show-specific) lives in Midas. Every expense can be linked to an arbitrary external owning entity via the polymorphic `ownerType`/`ownerId` pair (`sourceApp`/`sourceRefId` columns) — see "Extensibility: polymorphic ownership" below.
 
 ---
 
@@ -14,8 +18,15 @@ midas/
 │   ├── api/             Express + TypeScript + Drizzle ORM backend
 │   └── web/             React + Vite + Tailwind frontend
 ├── extension/           Manifest V3 browser extension
+├── services/
+│   └── ocr-engine/      Python FastAPI OCR engine (preprocessing, multi-provider
+│                         extraction, field parsing, confidence scoring) — see
+│                         docs/OCR_ENGINE.md
 ├── packages/
-│   └── shared/          Shared TypeScript types (used by api + web)
+│   ├── shared/          Shared TypeScript types incl. OwnerRef (used by api + web)
+│   ├── ocr-client/      Node OCR client: preprocessing + HTTP adapter + rule-based
+│   │                     inference fallback (used by apps/api, embeddable directly)
+│   └── import/          Generic import pipeline framework (see docs/IMPORT_FRAMEWORK.md)
 ├── docs/
 ├── docker-compose.yml
 ├── .env.example
@@ -43,12 +54,16 @@ All external integrations are behind interfaces with a `mock` and `service` impl
 
 | Service | Env var | Default |
 |---------|---------|---------|
-| OCR | `OCR_MODE=mock\|service` | `mock` |
+| OCR | `OCR_MODE=mock\|service` | `service` (live; mock only for offline tests) |
 | Zoho | `ZOHO_MODE=mock\|service` | `mock` |
 | Storage | `STORAGE_MODE=local\|s3` | `local` |
 | Telegram | `TELEGRAM_BOT_TOKEN` | disabled if unset |
 
-**Midas does NOT implement Zoho OAuth or OCR directly.** Those belong in separate microservices.
+**Midas does NOT implement Zoho OAuth directly** (belongs in a separate service). **Midas DOES own OCR** — `services/ocr-engine` (Python) is Midas's own in-repo OCR engine, called through `@midas/ocr-client` (`OCR_MODE=mock|service`). See `docs/OCR_ENGINE.md` for the full subsystem writeup; the `mock`/`service` toggle here is about whether the real engine is called, not about whether Midas "owns" OCR — it always does.
+
+**Sync model:** Midas is **sync-primary** for expense/receipt/OCR APIs (response includes completed OCR). Offline / flaky-network clients use a client-side **To upload** queue as a safety net — see `docs/SYNC_AND_OFFLINE.md`. Do not treat Midas as async-only.
+
+**Trade Show cutover:** Full bilateral contract in `docs/TRADE_SHOW_MIGRATION_CONTRACT.md`. No merge of expense paths until Midas and Trade Show contracts are aligned.
 
 ### App-to-App API
 
@@ -176,9 +191,39 @@ GET    /api/v1/ext/expenses/:id                   (app-to-app)
 | `event_id` required on all expenses | No event coupling; `source_app` + `source_ref_id` are nullable |
 | JWT in localStorage | httpOnly cookie only |
 | Hardcoded Zoho service IP | `ZOHO_SERVICE_URL` in env |
-| OCR embedded directly | External adapter, `OCR_MODE=mock` default |
+| OCR embedded directly | Shared live engine + `@midas/ocr-client` pipeline (prep + inference) |
 | Per-route `new PrismaClient()` | Singleton Drizzle/pg pool |
 | String CHECK enums | PostgreSQL pgEnum |
 | No transaction on file upload | Storage save + DB insert in a single flow with cleanup on failure |
 | Accountant workflow as one giant filtered table | Dedicated queue view separate from all-expenses view |
 | Telegram owns conversation | `expense_messages` owns it; Telegram is notify-only |
+
+---
+
+## Extensibility: polymorphic ownership
+
+Every expense can optionally belong to an entity owned by another application
+(a trade show booth, a payroll run, a project, ...) via `sourceApp` +
+`sourceRefId` on the `expenses` table — Midas's `OwnerRef` concept
+(`packages/shared/src/types/index.ts`):
+
+```ts
+interface OwnerRef {
+  ownerType: string; // opaque, e.g. 'trade_show', 'argo', 'milo' — chosen by the caller
+  ownerId: string;   // opaque identifier for the specific owning record
+}
+```
+
+- `ownerType`/`ownerId` are opaque strings — Midas never special-cases a
+  value or hardcodes an embedder's name anywhere in its source.
+- `null`/`null` means the expense was entered directly in Midas, with no
+  owning application.
+- `expenses_source_unique_idx` (unique index on `(sourceApp, sourceRefId)`)
+  both prevents duplicate expenses per owning record and is what the import
+  framework (`@midas/import`) uses for idempotent re-runs.
+- `toOwnerRef`/`fromOwnerRef` in `@midas/shared` convert between the
+  `OwnerRef` shape and the `sourceApp`/`sourceRefId` column pair.
+
+See `docs/EMBEDDING.md` for how an embedding application uses this in
+practice, and `docs/IMPORT_FRAMEWORK.md` for bulk-importing pre-existing data
+against a given `ownerType`.

@@ -1,9 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, CloudUpload } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
 import { MIDAS_VERSION } from '@midas/shared';
+import { MidasLogo } from './MidasLogo';
+import { getUploadQueueCount } from '../lib/uploadQueue';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -23,12 +25,19 @@ export function Sidebar() {
     staleTime: Infinity,
   });
 
+  const { data: pendingUploads = 0 } = useQuery({
+    queryKey: ['upload-queue-count'],
+    queryFn: () => getUploadQueueCount(),
+    refetchInterval: 10_000,
+  });
+
   const version = `v${meta?.version ?? MIDAS_VERSION}`;
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r border-gray-200 bg-white">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-5">
+      <div className="flex h-16 items-center gap-2.5 border-b border-gray-200 px-4">
+        <MidasLogo size={28} />
         <span className="text-xl font-bold text-brand-700">Midas</span>
         <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs text-brand-600">Beta</span>
       </div>
@@ -46,6 +55,15 @@ export function Sidebar() {
         <NavLink to="/captures" className={linkClass}>
           <Camera className="h-4 w-4" />
           Captures
+        </NavLink>
+        <NavLink to="/to-upload" className={linkClass}>
+          <CloudUpload className="h-4 w-4" />
+          To upload
+          {pendingUploads > 0 && (
+            <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+              {pendingUploads}
+            </span>
+          )}
         </NavLink>
 
         {isPrivileged && (
