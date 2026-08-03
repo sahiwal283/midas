@@ -1,10 +1,24 @@
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, AlertCircle } from 'lucide-react';
+import { Plus, AlertCircle, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
 import { StatusBadge } from '../components/StatusBadge';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import type { Expense } from '../types';
+
+const PAGE_SIZE = 10;
+
+type StatusTab = 'all' | 'needs_reply' | 'under_review' | 'approved' | 'rejected' | 'draft';
+
+const STATUS_TABS: Array<{ id: StatusTab; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'needs_reply', label: 'Needs reply' },
+  { id: 'under_review', label: 'Under review' },
+  { id: 'approved', label: 'Approved' },
+  { id: 'rejected', label: 'Rejected' },
+  { id: 'draft', label: 'Drafts' },
+];
 
 const NEXT_ACTION: Record<string, { text: string; urgent: boolean }> = {
   draft: { text: 'Submit for review', urgent: false },
@@ -15,6 +29,38 @@ const NEXT_ACTION: Record<string, { text: string; urgent: boolean }> = {
   zoho_sync_failed: { text: 'Processing', urgent: false },
   rejected: { text: 'Rejected — see messages', urgent: false },
 };
+
+function matchesStatusTab(expense: Expense, tab: StatusTab): boolean {
+  switch (tab) {
+    case 'all':
+      return true;
+    case 'needs_reply':
+      return expense.status === 'awaiting_info';
+    case 'under_review':
+      return expense.status === 'pending' || expense.status === 'in_review';
+    case 'approved':
+      return expense.status === 'approved' || expense.status === 'zoho_sync_failed';
+    case 'rejected':
+      return expense.status === 'rejected';
+    case 'draft':
+      return expense.status === 'draft';
+    default: {
+      const _exhaustive: never = tab;
+      return _exhaustive;
+    }
+  }
+}
+
+function monthKey(date: string): string {
+  // expense.date is YYYY-MM-DD
+  return date.slice(0, 7);
+}
+
+function formatMonthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  if (!y || !m) return ym;
+  return new Date(y, m - 1, 1).toLocaleString(undefined, { month: 'short', year: 'numeric' });
+}
 
 function NextActionCell({ expense }: { expense: Expense }) {
   const action = NEXT_ACTION[expense.status];
@@ -37,11 +83,83 @@ export function ExpenseList() {
     queryFn: () => expenseApi.list(),
   });
 
-  const actionNeeded = expenses.filter((e) => e.status === 'awaiting_info').length;
+  const [tab, setTab] = useState<StatusTab>('all');
+  const [query, setQuery] = useState('');
+  const [month, setMonth] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [page, setPage] = useState(1);
+
+  const monthOptions = useMemo(() => {
+    const keys = new Set<string>();
+    for (const e of expenses) {
+      if (e.date) keys.add(monthKey(e.date));
+    }
+    return [...keys].sort((a, b) => b.localeCompare(a));
+  }, [expenses]);
+
+  const categoryOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of expenses) {
+      if (e.category?.id) map.set(e.category.id, e.category.name);
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [expenses]);
+
+  const tabCounts = useMemo(() => {
+    const counts: Record<StatusTab, number> = {
+      all: expenses.length,
+      needs_reply: 0,
+      under_review: 0,
+      approved: 0,
+      rejected: 0,
+      draft: 0,
+    };
+    for (const e of expenses) {
+      for (const t of STATUS_TABS) {
+        if (t.id !== 'all' && matchesStatusTab(e, t.id)) counts[t.id] += 1;
+      }
+    }
+    return counts;
+  }, [expenses]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return expenses.filter((e) => {
+      if (!matchesStatusTab(e, tab)) return false;
+      if (month && monthKey(e.date) !== month) return false;
+      if (categoryId && e.categoryId !== categoryId) return false;
+      if (q) {
+        const hay = `${e.merchant} ${e.description ?? ''} ${e.category?.name ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [expenses, tab, month, categoryId, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [tab, month, categoryId, query]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const actionNeeded = tabCounts.needs_reply;
+  const totalSpent = useMemo(
+    () => filtered.reduce((sum, e) => sum + Number(e.amount || 0), 0),
+    [filtered],
+  );
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Expenses</h1>
           {actionNeeded > 0 && (
@@ -53,11 +171,108 @@ export function ExpenseList() {
         </div>
         <Link
           to="/expenses/new"
-          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+          className="flex shrink-0 items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
         >
           <Plus className="h-4 w-4" />
           New Expense
         </Link>
+      </div>
+
+      {/* Summary strip */}
+      {!isLoading && expenses.length > 0 && (
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs font-medium text-gray-500">Showing total</p>
+            <p className="mt-0.5 text-xl font-bold text-gray-900">
+              ${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-xs font-medium text-gray-500">Matching</p>
+            <p className="mt-0.5 text-xl font-bold text-gray-900">{filtered.length}</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 col-span-2 sm:col-span-1">
+            <p className="text-xs font-medium text-amber-800">Needs reply</p>
+            <p className="mt-0.5 text-xl font-bold text-amber-900">{actionNeeded}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Status tabs */}
+      <div className="mb-3 flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1">
+        {STATUS_TABS.map((t) => {
+          const count = tabCounts[t.id];
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                active
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              {t.label}
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-xs ${
+                  active ? 'bg-brand-50 text-brand-700' : 'bg-gray-200/80 text-gray-500'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Filters */}
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search merchant, category, notes…"
+            className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          />
+        </div>
+        <select
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        >
+          <option value="">All months</option>
+          {monthOptions.map((ym) => (
+            <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
+          ))}
+        </select>
+        <select
+          value={categoryId}
+          onChange={(e) => setCategoryId(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        >
+          <option value="">All categories</option>
+          {categoryOptions.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        {(query || month || categoryId || tab !== 'all') && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('');
+              setMonth('');
+              setCategoryId('');
+              setTab('all');
+            }}
+            className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white">
@@ -70,51 +285,89 @@ export function ExpenseList() {
               Create your first expense
             </Link>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-gray-500">
+            No expenses match these filters.
+          </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                <th className="px-6 py-3">Merchant</th>
-                <th className="px-6 py-3">Date</th>
-                <th className="px-6 py-3">Category</th>
-                <th className="px-6 py-3 text-right">Amount</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3">Receipt</th>
-                <th className="px-6 py-3">Next action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {expenses.map((expense) => (
-                <tr key={expense.id} className={`hover:bg-gray-50 ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}>
-                  <td className="px-6 py-4">
-                    <Link to={`/expenses/${expense.id}`} className="font-medium text-gray-900 hover:text-brand-700">
-                      {expense.merchant}
-                    </Link>
-                    {expense.description && (
-                      <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{expense.description}</p>
-                    )}
-                    {expense.sourceApp === 'browser_extension' && (
-                      <span className="mt-0.5 inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">Extension</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-gray-600">{expense.date}</td>
-                  <td className="px-6 py-4 text-gray-600">{expense.category?.name ?? '—'}</td>
-                  <td className="px-6 py-4 text-right font-medium text-gray-900">
-                    {expense.currency} {Number(expense.amount).toFixed(2)}
-                  </td>
-                  <td className="px-6 py-4">
-                    <StatusBadge status={expense.status} variant="user" />
-                  </td>
-                  <td className="px-6 py-4">
-                    <ReceiptDetailsButton expenseId={expense.id} receipts={expense.receipts} />
-                  </td>
-                  <td className="px-6 py-4 text-sm">
-                    <NextActionCell expense={expense} />
-                  </td>
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  <th className="px-6 py-3">Merchant</th>
+                  <th className="px-6 py-3">Date</th>
+                  <th className="px-6 py-3">Category</th>
+                  <th className="px-6 py-3 text-right">Amount</th>
+                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">Receipt</th>
+                  <th className="px-6 py-3">Next action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {pageRows.map((expense) => (
+                  <tr key={expense.id} className={`hover:bg-gray-50 ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}>
+                    <td className="px-6 py-4">
+                      <Link to={`/expenses/${expense.id}`} className="font-medium text-gray-900 hover:text-brand-700">
+                        {expense.merchant}
+                      </Link>
+                      {expense.description && (
+                        <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{expense.description}</p>
+                      )}
+                      {expense.sourceApp === 'browser_extension' && (
+                        <span className="mt-0.5 inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">Extension</span>
+                      )}
+                      {expense.sourceLabel && expense.sourceApp && expense.sourceApp !== 'browser_extension' && (
+                        <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{expense.sourceLabel}</p>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-gray-600">{expense.date}</td>
+                    <td className="px-6 py-4 text-gray-600">{expense.category?.name ?? '—'}</td>
+                    <td className="px-6 py-4 text-right font-medium text-gray-900">
+                      {expense.currency} {Number(expense.amount).toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <StatusBadge status={expense.status} variant="user" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <ReceiptDetailsButton expenseId={expense.id} receipts={expense.receipts} />
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <NextActionCell expense={expense} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="flex flex-col gap-2 border-t border-gray-100 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-gray-500">
+                Showing {pageStart + 1} to {Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length} expenses
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Prev
+                </button>
+                <span className="px-2 text-xs text-gray-500">
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

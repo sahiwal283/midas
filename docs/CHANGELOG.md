@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2-alpha (2026-08-03)
+
+### UI
+- **My Expenses**: status tabs (All / Needs reply / Under review / Approved / Rejected / Drafts), search, month + category filters, and 10-per-page pagination (Trade Show–style).
+
 ## 0.3.1-alpha (2026-08-03)
 
 ### UI
