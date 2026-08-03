@@ -25,42 +25,39 @@ Prod remains frozen until Phase 4/5. Sandbox first.
 
 ## G1 — Network Ext for CT 2600
 
-### Current sandbox (operator laptop)
+### Primary LAN Ext (CT 3120 — preferred for CT 2600)
 
 | Item | Value |
 |---|---|
-| API (LAN) | `http://192.168.8.102:4000/api/v1` |
-| Health | `http://192.168.8.102:4000/api/v1/health` → 200 |
-| Bind | `HOST=0.0.0.0` `PORT=4000` |
-| Web (`midasUrl` base) | `http://192.168.8.102:5173` |
-| Auto-provision | `EXT_AUTO_PROVISION_USERS=true` |
-| App key | Same `trade_show` sandbox key already used for local Ext smoke (Midas `.ext-sandbox.key`). **Re-issue on request** via `npm run ext:create-connection --workspace=@midas/api -- trade_show`. |
+| API (LAN) | `http://192.168.1.210:4000/api/v1` |
+| Health | `http://192.168.1.210:4000/api/v1/health` → 200 |
+| Web (`midasUrl` base) | `https://midas.booute.duckdns.org` |
+| Auto-provision | `EXT_AUTO_PROVISION_USERS=false` on CT 3120 (prod posture) — use dry-run `USER_NOT_FOUND` results for preflight, or ask Midas ops to temporarily enable for sandbox migration |
+| App key | Rotated on CT 3120 deploy (2026-08-03). Stored on CT at `/root/midas-trade-show-ext.key`. Ask Midas ops for the value for `MIDAS_API_KEY`. |
 | Scopes | `expenses:create`, `expenses:read`, `expenses:update`, `expenses:delete`, `receipts:create`, `expenses:import`, `ocr:process` |
 
 **CT 2600 env (proposed):**
 
 ```bash
 MIDAS_MODE=live
-MIDAS_BASE_URL=http://192.168.8.102:4000/api/v1
-MIDAS_API_KEY=<same sandbox key as local live Ext>
-MIDAS_WEB_BASE_URL=http://192.168.8.102:5173
+MIDAS_BASE_URL=http://192.168.1.210:4000/api/v1
+MIDAS_API_KEY=<from CT 3120 /root/midas-trade-show-ext.key>
+MIDAS_WEB_BASE_URL=https://midas.booute.duckdns.org
 EXPENSE_BACKEND=midas
 MIDAS_TIMEOUT_MS=120000
 ```
 
-**Reachability notes**
-
-- Laptop → CT 2600 (`192.168.1.144`) ICMP works.
-- API listens on all interfaces; macOS Application Firewall is off on this host.
-- Midas could not SSH into CT 2600 to curl back — **please verify from CT 2600**:
+**Reachability check from CT 2600:**
 
 ```bash
 curl -sS -o /dev/null -w "%{http_code}\n" --connect-timeout 5 \
-  http://192.168.8.102:4000/api/v1/health
+  http://192.168.1.210:4000/api/v1/health
 # expect 200
 ```
 
-If that fails (routing/VLAN/firewall), next step is a durable Midas sandbox on the `192.168.1.x` LAN (e.g. CT near OCR/DB) — not a contract change. Laptop Ext is fine for dry-run once HTTP works.
+### Operator laptop (secondary)
+
+Still available at `http://192.168.8.102:4000/api/v1` with the local `.ext-sandbox.key` for laptop-only smoke. Prefer CT 3120 for CT 2600 UAT.
 
 ---
 
