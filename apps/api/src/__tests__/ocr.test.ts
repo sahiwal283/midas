@@ -13,7 +13,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Mock fs/promises so the adapter never reads from disk ─────────────────────
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn().mockResolvedValue(Buffer.from('fake-image-bytes')),
+  // ≥64 bytes so ServiceOcrAdapter preflight accepts the fixture
+  readFile: vi.fn().mockResolvedValue(Buffer.alloc(128, 0x41)),
   mkdir: vi.fn().mockResolvedValue(undefined),
   writeFile: vi.fn().mockResolvedValue(undefined),
   unlink: vi.fn().mockResolvedValue(undefined),
@@ -293,13 +294,34 @@ describe('ServiceOcrAdapter — error handling', () => {
     await expect(adapter.process(RECEIPT_PATH, RECEIPT_ID)).rejects.toThrow(OcrInvalidFileError);
   });
 
+  it('throws OcrInvalidFileError on 400', async () => {
+    mockFetchStatus(400, 'bad request');
+    await expect(adapter.process(RECEIPT_PATH, RECEIPT_ID)).rejects.toThrow(OcrInvalidFileError);
+  });
+
+  it('throws OcrInvalidFileError before calling upstream when file is tiny', async () => {
+    const { readFile } = await import('fs/promises');
+    vi.mocked(readFile).mockResolvedValueOnce(Buffer.from('%PDF-1.4 uat')); // 12 bytes
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(adapter.process('/uploads/uat-tiny.pdf', RECEIPT_ID)).rejects.toThrow(OcrInvalidFileError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('throws OcrInvalidFileError when upstream 500 looks like unreadable file', async () => {
+    mockFetchStatus(500, 'PDF parse failed: corrupt document');
+    await expect(adapter.process('/uploads/broken.pdf', RECEIPT_ID)).rejects.toThrow(OcrInvalidFileError);
+  });
+
   it('throws OcrServiceUnavailableError on 503', async () => {
     mockFetchStatus(503);
     await expect(adapter.process(RECEIPT_PATH, RECEIPT_ID)).rejects.toThrow(OcrServiceUnavailableError);
   });
 
-  it('throws OcrPipelineError on 500', async () => {
-    mockFetchStatus(500);
+  it('throws OcrPipelineError on opaque upstream 500 for large files', async () => {
+    const { readFile } = await import('fs/promises');
+    vi.mocked(readFile).mockResolvedValue(Buffer.alloc(2048, 0x41));
+    mockFetchStatus(500, 'Internal server error');
     await expect(adapter.process(RECEIPT_PATH, RECEIPT_ID)).rejects.toThrow(OcrPipelineError);
   });
 

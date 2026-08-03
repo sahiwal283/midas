@@ -42,6 +42,39 @@ function inferMimeType(filePath: string): string {
   return map[ext] ?? 'application/octet-stream';
 }
 
+/** Minimum size for a plausible receipt image/PDF (UAT tiny fixtures are ~12 bytes). */
+const MIN_RECEIPT_BYTES = 64;
+
+async function assertReadableReceiptFile(filePath: string): Promise<void> {
+  const fileBuffer = await readFile(filePath);
+  if (fileBuffer.length < MIN_RECEIPT_BYTES) {
+    throw new OcrInvalidFileError(
+      `File too small to be a valid receipt (${fileBuffer.length} bytes; minimum ${MIN_RECEIPT_BYTES})`,
+    );
+  }
+
+  const ext = extname(filePath).toLowerCase();
+  const head = fileBuffer.subarray(0, 8).toString('latin1');
+  const looksPdf = ext === '.pdf' || head.startsWith('%PDF');
+  if (looksPdf && !head.startsWith('%PDF')) {
+    throw new OcrInvalidFileError('Invalid PDF: missing %PDF header');
+  }
+}
+
+function looksLikeInvalidFileFailure(detail: string, byteLength: number): boolean {
+  if (byteLength < 1024) return true;
+  const d = detail.toLowerCase();
+  return (
+    d.includes('pdf')
+    || d.includes('corrupt')
+    || d.includes('invalid')
+    || d.includes('cannot identify')
+    || d.includes('no images')
+    || d.includes('empty file')
+    || d.includes('unsupported')
+  );
+}
+
 function nullField(source: OcrField['source'] = 'llm'): OcrField {
   return { value: null, confidence: 0, source };
 }
@@ -64,6 +97,10 @@ export class ServiceOcrAdapter implements OcrAdapter {
   }
 
   async process(filePath: string, receiptId: string): Promise<OcrResult> {
+    // Reject clearly invalid inputs before paying for / hitting upstream OCR.
+    // Upstream currently returns 500 for corrupt/minimal PDFs; map those here as 4xx-class errors.
+    await assertReadableReceiptFile(filePath);
+
     const { pathForRequest, cleanup } = await prepareReceiptImageForOcr(filePath);
     try {
       const raw = await this.postFile(pathForRequest, receiptId);
@@ -111,15 +148,26 @@ export class ServiceOcrAdapter implements OcrAdapter {
     if (res.status === 401 || res.status === 403) {
       throw new OcrAuthError(`OCR service returned ${res.status} — check the internal token`);
     }
-    if (res.status === 422) {
+    if (res.status === 400 || res.status === 413 || res.status === 415 || res.status === 422) {
       const detail = await res.text().catch(() => '');
-      throw new OcrInvalidFileError(`OCR service rejected the file (422)${detail ? `: ${detail.slice(0, 200)}` : ''}`);
+      throw new OcrInvalidFileError(
+        `OCR service rejected the file (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ''}`,
+      );
     }
     if (res.status === 503) {
       throw new OcrServiceUnavailableError('OCR service unavailable (503)');
     }
     if (!res.ok) {
-      throw new OcrPipelineError(`OCR pipeline error (${res.status})`);
+      const detail = await res.text().catch(() => '');
+      // Upstream OCR engine often returns 500 for corrupt/unreadable PDFs instead of 4xx.
+      if (res.status >= 500 && looksLikeInvalidFileFailure(detail, fileBuffer.length)) {
+        throw new OcrInvalidFileError(
+          `OCR service could not read the file (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ''}`,
+        );
+      }
+      throw new OcrPipelineError(
+        `OCR pipeline error (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ''}`,
+      );
     }
 
     try {

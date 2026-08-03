@@ -23,7 +23,7 @@ async function convertHEICToJPEG(filePath: string): Promise<string> {
   }
   const jpegPath = filePath.replace(/\.(heic|heif)$/i, '.jpg');
   try {
-    await execAsync(`convert "${filePath}" -resize 2000x2000\\> -quality 85 "${jpegPath}"`);
+    await execAsync(imagemagickCmd(`"${filePath}" -resize 2000x2000\\> -quality 85 "${jpegPath}"`));
     unlinkSync(filePath);
     return jpegPath;
   } catch (error: unknown) {
@@ -31,6 +31,11 @@ async function convertHEICToJPEG(filePath: string): Promise<string> {
     console.error('[ocr-client] HEIC conversion failed:', message);
     throw new Error('Failed to process HEIC file. Please convert to JPEG and try again.');
   }
+}
+
+/** Prefer ImageMagick v7 `magick`; fall back to legacy `convert`. */
+function imagemagickCmd(args: string): string {
+  return `sh -c 'if command -v magick >/dev/null 2>&1; then magick ${args}; else convert ${args}; fi'`;
 }
 
 /**
@@ -45,7 +50,7 @@ async function normalizeRasterForOcr(filePath: string): Promise<string> {
   const outExt = ext === '.png' ? '.png' : '.jpg';
   const outPath = `${base}-ocrprep${outExt}`;
   try {
-    await execAsync(`convert "${filePath}" -auto-orient -resize 2000x2000\\> -strip "${outPath}"`);
+    await execAsync(imagemagickCmd(`"${filePath}" -auto-orient -resize 2000x2000\\> -strip "${outPath}"`));
     return outPath;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

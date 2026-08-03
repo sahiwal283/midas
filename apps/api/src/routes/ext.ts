@@ -2,7 +2,7 @@
  * External app-to-app API (`/api/v1/ext/*`).
  * Spec: docs/EXT_API_MERGE_LOCK.md
  */
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -110,6 +110,11 @@ router.get('/categories', requireScope('expenses:read'), asyncHandler(async (_re
 router.post('/ocr/process', requireScope('ocr:process'), upload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) throw createError('No file uploaded', 400, 'NO_FILE');
 
+  const requestId = (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'])
+    || (typeof req.headers['x-correlation-id'] === 'string' && req.headers['x-correlation-id'])
+    || randomUUID();
+  res.setHeader('X-Request-Id', requestId);
+
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'midas-ext-ocr-'));
   const tmpPath = path.join(tmpDir, req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_'));
   try {
@@ -120,6 +125,7 @@ router.post('/ocr/process', requireScope('ocr:process'), upload.single('file'), 
 
     res.json({
       ocrMode: 'sync',
+      requestId: result.requestId || requestId,
       fields: {
         merchant: { value: result.fields.merchant?.value ?? null, confidence: result.fields.merchant?.confidence ?? 0 },
         amount: {
