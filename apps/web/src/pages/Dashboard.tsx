@@ -3,17 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, ReceiptText, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { expenseApi } from '../api/expenses';
-import { StatusBadge } from '../components/StatusBadge';
-
-const USER_STATUS_LABEL: Record<string, string> = {
-  draft: 'Draft',
-  pending: 'Submitted — waiting for review',
-  in_review: 'In review',
-  awaiting_info: 'Action needed',
-  approved: 'Approved',
-  zoho_sync_failed: 'Sent to accounting',
-  rejected: 'Rejected',
-};
+import { USER_LABELS } from '../components/StatusBadge';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -118,7 +108,7 @@ export function Dashboard() {
                         Action needed
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-500">{USER_STATUS_LABEL[expense.status] ?? expense.status}</span>
+                      <span className="text-xs text-gray-500">{USER_LABELS[expense.status] ?? expense.status}</span>
                     )}
                   </div>
                 </div>

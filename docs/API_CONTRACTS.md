@@ -212,15 +212,29 @@ All fields from POST are optional. Same response shape.
 
 ### POST /api/v1/expenses/:expenseId/receipts
 
-**Auth:** Owner or accountant/admin  
+**Auth:** Owner  
 **Content-Type:** `multipart/form-data`  
-**Field name:** `receipt`  
-**Limits:** 10 MB max; allowed types: `image/jpeg`, `image/png`, `image/webp`, `application/pdf`
+**Field name:** `file`  
+**Limits:** 10 MB max; allowed types: `image/jpeg`, `image/png`, `image/webp`, `application/pdf`  
+**Sync-primary:** Waits for OCR before responding (see `docs/SYNC_AND_OFFLINE.md`).  
+**Query:** `async=1` — optional escape hatch; returns immediately with `ocrStatus: pending`.
 
 ```json
-// Response 201
-{ "receipt": { "id": "uuid", "filename": "string", "mimeType": "string", "sizeBytes": 0, "ocrStatus": "pending", "uploadedAt": "ISO8601" } }
-// OCR processing begins asynchronously after upload
+// Response 201 (default sync path)
+{
+  "ocrMode": "sync",
+  "receipt": {
+    "id": "uuid",
+    "filename": "string",
+    "mimeType": "string",
+    "sizeBytes": 0,
+    "ocrStatus": "done|failed",
+    "ocrText": "string | null",
+    "ocrData": { "...OCR result..." },
+    "ocrProvider": "string | null",
+    "uploadedAt": "ISO8601"
+  }
+}
 ```
 
 **Errors:** `413 FILE_TOO_LARGE`, `415 UNSUPPORTED_MIME`, `403 FORBIDDEN`
@@ -475,6 +489,35 @@ Pushes an expense to Zoho. Expense must be `approved` or `zoho_sync_failed`.
 
 ---
 
+### GET /api/v1/expenses/:id/zoho-readiness
+
+**Auth:** Accountant/Admin
+
+Read-only server-side evaluation of whether an expense meets all Zoho push requirements. No Zoho write occurs.
+
+```json
+// Response 200
+{
+  "readiness": {
+    "ready": false,
+    "missing": ["receipt attachment", "accounting entity (zohoEntity)"],
+    "warnings": ["Zoho is in mock mode — no live writes will occur"],
+    "zohoMode": "mock",
+    "checks": [
+      { "label": "Approved", "pass": true },
+      { "label": "Category set", "pass": true }
+    ],
+    "mappedPayload": null
+  }
+}
+
+// When ready=true, mappedPayload contains the preview of what would be sent to Zoho
+```
+
+**Evaluated fields (11 total):** approved status, not already synced, merchant, amount > 0, date, submitter, category, payment method, zohoEntity, receipt attached, no unresolved requests.
+
+---
+
 ## Payment Methods
 
 ### GET /api/v1/payment-methods
@@ -592,12 +635,38 @@ Atomically creates an expense + receipt + capture. Expense enters `pending` stat
 
 ## App-to-App API (`/api/v1/ext/`)
 
-**Auth:** Bearer API key in `Authorization: Bearer <key>` header (not session cookie)  
-Keys are SHA-256 hashed in the `app_connections` table and issued by admin.
+**Auth:** Bearer API key in `Authorization: Bearer <key>` header (not session cookie).  
+Keys are SHA-256 hashed in `app_connections` and issued by admin (`POST /api/v1/admin/connections`).
 
-_(Endpoint contracts for Argo, Milo, etc. not yet finalized — placeholder for future integration.)_
+**Scopes** (required on the connection; missing → `403 MISSING_SCOPE`):  
+`ocr:process`, `expenses:create`, `expenses:read`, `expenses:update`, `expenses:delete`, `receipts:create`, `expenses:import`
+
+**Normative lock for Trade Show:** `docs/EXT_API_MERGE_LOCK.md`  
+**Local sandbox handoff:** `docs/EXT_SANDBOX_HANDOFF.md`
+
+Actor headers on mutating calls: `X-Actor-Email` / body `submitterEmail`, `X-Actor-External-User-Id`, optional `X-Actor-Name`.
+
+| Method | Path | Scope | Notes |
+|---|---|---|---|
+| `POST` | `/ocr/process` | `ocr:process` | Sync OCR, no expense persist |
+| `GET` | `/categories` | `expenses:read` | Active categories |
+| `POST` | `/expenses` | `expenses:create` | Idempotent `(sourceApp,sourceRefId)`; default status `pending` |
+| `GET` | `/expenses` | `expenses:read` | Filters: `sourceApp`, `eventId`, `externalUserId`, `q`, dates, cursor |
+| `GET` | `/expenses/by-ref` | `expenses:read` | `?sourceApp=&sourceRefId=` |
+| `GET` | `/expenses/:id` | `expenses:read` | Full DTO + `midasUrl` |
+| `PATCH` | `/expenses/:id` | `expenses:update` | Only `draft\|pending\|awaiting_info` |
+| `DELETE` | `/expenses/:id` | `expenses:delete` | `draft` or unreviewed `pending` without Zoho id |
+| `POST` | `/expenses/:id/receipts` | `receipts:create` | Sync OCR; `?async=1` |
+| `PUT` | `/expenses/:id/receipts/primary` | `expenses:update` | Replace primary receipt |
+| `GET` | `/expenses/:id/receipts/:receiptId/content` | `expenses:read` | Byte stream |
+| `POST` | `/expenses/import` | `expenses:import` | Bulk; `dryRun`; `skipOcr` on receipts |
+
+Env: `EXT_AUTO_PROVISION_USERS` (default `false`) auto-creates Midas users by email on Ext mutate.
+
+Smoke: `MIDAS_API_KEY=… npm run ext:smoke --workspace=@midas/api`
 
 ---
+
 
 ## Admin
 
@@ -679,3 +748,37 @@ Generates a secure temporary password, hashes it, and returns the plaintext **on
 | `UNSUPPORTED_MIME` | 415 | File type not allowed |
 | `ZOHO_SYNC_FAILED` | 502 | Zoho push failed (expense marked for retry) |
 | `BAD_REQUEST` | 400 | Validation error — see message for details |
+
+---
+
+## Zoho integration-service endpoints (v0.1.4-alpha)
+
+### GET `/api/v1/zoho/service-health`
+Accountant/admin only. Read-only connectivity probe to the Zoho Integration Service. Never touches Zoho, never creates a record, never returns the app token.
+
+```json
+{
+  "service": { "reachable": true, "ok": true, "baseUrl": "http://192.168.1.205:8000",
+               "status": 200, "serviceVersion": "1.28.0", "detail": "ok" },
+  "zohoMode": "mock", "dryRun": true, "liveWritesEnabled": false
+}
+```
+
+### GET `/api/v1/expenses/:id/zoho-readiness` — added `servicePayload`
+The readiness response now also includes `servicePayload`: the generic, event-agnostic payload Midas would propose to the integration service (preview only — no network call):
+
+```json
+{
+  "idempotencyKey": "midas-expense-<id>",
+  "expenseId": "...", "merchant": "...", "amount": "...", "currency": "USD", "date": "YYYY-MM-DD",
+  "description": "...",
+  "category": { "id": "...", "name": "...", "proposedZohoAccount": null },
+  "paymentMethod": { "id": "...", "label": "...", "proposedPaidThroughAccount": "..." },
+  "reimbursable": false,
+  "submitter": { "userId": "..." },
+  "brand": "haute_brands", "zohoEntity": "...|null",
+  "receipt": { "count": 1 },
+  "source": { "app": "midas", "type": null, "id": null, "url": null, "label": null }
+}
+```
+`proposedZohoAccount` / `proposedPaidThroughAccount` are placeholders pending accounting's Chart-of-Accounts and paid-through mappings.

@@ -1,10 +1,11 @@
+import { createHash } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { env } from '../config/env';
-import { db } from '../db/index';
-import { users } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import type { UserRole } from '@midas/shared';
+import { env } from '../config/env';
+import { db } from '../db/index';
+import { appConnections, users } from '../db/schema';
 
 export interface AuthenticatedUser {
   id: string;
@@ -13,10 +14,13 @@ export interface AuthenticatedUser {
   role: UserRole;
 }
 
+export type AppConnection = typeof appConnections.$inferSelect;
+
 declare global {
   namespace Express {
     interface Request {
       user?: AuthenticatedUser;
+      appConnection?: AppConnection;
     }
   }
 }
@@ -64,7 +68,9 @@ export function requireRole(...roles: UserRole[]) {
   };
 }
 
-// App-to-app API key auth (for external app integrations)
+export type { ExtScope } from './requireScope';
+export { requireScope } from './requireScope';
+
 export async function authenticateApiKey(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -72,15 +78,10 @@ export async function authenticateApiKey(req: Request, res: Response, next: Next
     return;
   }
   const apiKey = authHeader.slice(7);
-
-  // We store the hash; compare by hashing the incoming key
-  // For now, simple lookup — production should use crypto.timingSafeEqual
-  const { createHash } = await import('crypto');
   const keyHash = createHash('sha256').update(apiKey).digest('hex');
 
-  const { appConnections } = await import('../db/schema');
   const conn = await db.query.appConnections.findFirst({
-    where: (t, { eq, and }) => and(eq(t.apiKeyHash, keyHash), eq(t.isActive, true)),
+    where: (t, { eq: eqOp, and }) => and(eqOp(t.apiKeyHash, keyHash), eqOp(t.isActive, true)),
   });
 
   if (!conn) {
@@ -88,11 +89,10 @@ export async function authenticateApiKey(req: Request, res: Response, next: Next
     return;
   }
 
-  // Update last used
   await db.update(appConnections)
     .set({ lastUsedAt: new Date() })
     .where(eq(appConnections.id, conn.id));
 
-  (req as Request & { appConnection: typeof conn }).appConnection = conn;
+  req.appConnection = conn;
   next();
 }

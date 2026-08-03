@@ -2,7 +2,17 @@ import {
   pgTable, pgEnum, uuid, text, timestamp, boolean,
   numeric, date, jsonb, integer, char, index, uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
+
+/** Opaque embedder context (e.g. eventId, location, cardUsed). App-agnostic. */
+export type ExpenseSourceContext = {
+  eventId?: string;
+  eventName?: string;
+  location?: string | null;
+  cardUsed?: string | null;
+  externalUserId?: string;
+  [key: string]: unknown;
+};
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -10,7 +20,9 @@ export const userRoleEnum = pgEnum('user_role', ['user', 'accountant', 'admin'])
 export const expenseStatusEnum = pgEnum('expense_status', [
   'draft', 'pending', 'in_review', 'awaiting_info', 'approved', 'zoho_sync_failed', 'rejected',
 ]);
-export const reimbursementStatusEnum = pgEnum('reimbursement_status', ['not_requested', 'pending', 'approved', 'paid']);
+export const reimbursementStatusEnum = pgEnum('reimbursement_status', [
+  'not_requested', 'pending', 'approved', 'rejected', 'paid',
+]);
 export const ocrStatusEnum = pgEnum('ocr_status', ['pending', 'processing', 'done', 'failed']);
 export const captureSourceEnum = pgEnum('capture_source', ['extension', 'manual']);
 export const captureStatusEnum = pgEnum('capture_status', ['draft', 'linked', 'discarded']);
@@ -22,7 +34,7 @@ export const users = pgTable('users', {
   email: text('email').unique().notNull(),
   name: text('name').notNull(),
   role: userRoleEnum('role').default('user').notNull(),
-  passwordHash: text('password_hash').notNull(),
+  passwordHash: text('password_hash'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -67,8 +79,12 @@ export const expenses = pgTable('expenses', {
   sourceLabel: text('source_label'),
   // Deep-link URL back to the source record in the originating app
   sourceUrl: text('source_url'),
-  // Classifies the submission context: 'online_receipt' | 'manual' | null
+  // Open vocabulary: 'online_receipt' | 'manual' | 'trade_show_event' | …
   sourceType: text('source_type'),
+  // Opaque embedder context — eventId, location, cardUsed, etc. (no app-specific columns)
+  sourceContext: jsonb('source_context').$type<ExpenseSourceContext>().default({}).notNull(),
+  // Embedder's user id (e.g. Trade Show users.id) — filterable independently of Midas userId
+  externalUserId: text('external_user_id'),
   merchant: text('merchant').notNull(),
   amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
   currency: char('currency', { length: 3 }).default('USD').notNull(),
@@ -90,6 +106,12 @@ export const expenses = pgTable('expenses', {
   index('expenses_status_idx').on(t.status),
   index('expenses_reviewed_by_idx').on(t.reviewedById),
   index('expenses_created_at_idx').on(t.createdAt),
+  index('expenses_source_app_idx').on(t.sourceApp),
+  index('expenses_external_user_id_idx').on(t.externalUserId),
+  index('expenses_source_context_event_id_idx').using(
+    'btree',
+    sql`(${t.sourceContext}->>'eventId')`,
+  ),
   // Prevents duplicate imports from external apps. Postgres treats (NULL,NULL) as non-equal,
   // so multiple manually-submitted expenses (both cols null) are always allowed.
   uniqueIndex('expenses_source_unique_idx').on(t.sourceApp, t.sourceRefId),
@@ -104,6 +126,7 @@ export const receipts = pgTable('receipts', {
   mimeType: text('mime_type').notNull(),
   sizeBytes: integer('size_bytes').notNull(),
   storagePath: text('storage_path').notNull(),
+  sha256: text('sha256'),
   // ── OCR state (original) ─────────────────────────────────────────────────
   ocrStatus: ocrStatusEnum('ocr_status').default('pending').notNull(),
   ocrText: text('ocr_text'),
@@ -178,6 +201,21 @@ export const auditLogs = pgTable('audit_logs', {
   index('audit_logs_created_at_idx').on(t.createdAt),
 ]);
 
+// ── SSO Identity Links ────────────────────────────────────────────────────────
+
+export const ssoLinks = pgTable('sso_links', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  provider: text('provider').notNull(),      // 'authentik'
+  subject: text('subject').notNull(),        // OIDC sub claim
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  linkedAt: timestamp('linked_at').defaultNow().notNull(),
+  lastSeenAt: timestamp('last_seen_at'),
+  metadata: jsonb('metadata'),
+}, (t) => [
+  uniqueIndex('sso_links_provider_subject_idx').on(t.provider, t.subject),
+  index('sso_links_user_id_idx').on(t.userId),
+]);
+
 // ── App-to-App Connections ────────────────────────────────────────────────────
 
 export const appConnections = pgTable('app_connections', {
@@ -190,6 +228,19 @@ export const appConnections = pgTable('app_connections', {
   lastUsedAt: timestamp('last_used_at'),
 });
 
+// ── Category mappings (OCR / legacy suggestion → categoryId per sourceApp) ────
+
+export const categoryMappings = pgTable('category_mappings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sourceApp: text('source_app').notNull(),
+  suggestion: text('suggestion').notNull(),
+  categoryId: uuid('category_id').references(() => expenseCategories.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('category_mappings_source_suggestion_idx').on(t.sourceApp, t.suggestion),
+  index('category_mappings_category_id_idx').on(t.categoryId),
+]);
+
 // ── Relations ─────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -197,6 +248,11 @@ export const usersRelations = relations(users, ({ many }) => ({
   messages: many(expenseMessages),
   captures: many(captures),
   paymentMethods: many(paymentMethods),
+  ssoLinks: many(ssoLinks),
+}));
+
+export const ssoLinksRelations = relations(ssoLinks, ({ one }) => ({
+  user: one(users, { fields: [ssoLinks.userId], references: [users.id] }),
 }));
 
 export const paymentMethodsRelations = relations(paymentMethods, ({ one }) => ({

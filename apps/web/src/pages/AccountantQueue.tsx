@@ -395,6 +395,29 @@ function FlagBadge({ flag }: { flag: string }) {
   );
 }
 
+// ── OCR badge (accountant-only; shown in flags column alongside expense flags) ─
+
+function OcrQueueBadge({ receipts }: { receipts: Array<{ ocrStatus: string; ocrNeedsReview?: boolean | null }> }) {
+  if (!receipts.length) return null;
+  const hasFailed = receipts.some((r) => r.ocrStatus === 'failed');
+  const needsReview = receipts.some((r) => r.ocrNeedsReview === true);
+  if (hasFailed) {
+    return (
+      <span className="inline-flex rounded px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-700">
+        OCR failed
+      </span>
+    );
+  }
+  if (needsReview) {
+    return (
+      <span className="inline-flex rounded px-1.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700">
+        OCR: needs review
+      </span>
+    );
+  }
+  return null;
+}
+
 // ── Expense row ───────────────────────────────────────────────────────────────
 
 const REQUEST_TYPE_OPTIONS = [
@@ -493,6 +516,7 @@ function ExpenseRow({
         <td className="px-5 py-3">
           <div className="flex flex-wrap items-center gap-1">
             {flags.map((f) => <FlagBadge key={f} flag={f} />)}
+            <OcrQueueBadge receipts={expense.receipts ?? []} />
           </div>
         </td>
         <td className="px-5 py-3">

@@ -1,0 +1,17 @@
+{
+  "name": "@midas/import",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generic, embedder-agnostic import pipeline for bringing expense data from external systems into Midas while preserving IDs, timestamps, OCR metadata, attachments, categories, notes, and audit history.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.5"
+  }
+}

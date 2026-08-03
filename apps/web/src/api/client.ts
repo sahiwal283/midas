@@ -6,6 +6,8 @@ const client = axios.create({
   baseURL: '/api/v1',
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
+  // Receipt upload awaits live OCR (up to OCR_TIMEOUT_MS, default 120s).
+  timeout: 130_000,
 });
 
 client.interceptors.response.use(

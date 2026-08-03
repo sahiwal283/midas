@@ -11,8 +11,9 @@ const ACCOUNTANT_LABELS: Record<ExpenseStatus, string> = {
   rejected: 'Rejected',
 };
 
-// User-facing labels (plain language, no jargon)
-const USER_LABELS: Record<ExpenseStatus, string> = {
+// User-facing labels (plain language, no jargon).
+// Exported as the single source of truth for employee-facing status text (see Dashboard).
+export const USER_LABELS: Record<ExpenseStatus, string> = {
   draft: 'Draft',
   pending: 'Submitted — waiting for review',
   in_review: 'Under review',
@@ -36,6 +37,7 @@ const REIMB_STYLES: Record<ReimbursementStatus, string> = {
   not_requested: 'bg-gray-100 text-gray-500',
   pending: 'bg-orange-100 text-orange-700',
   approved: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700',
   paid: 'bg-emerald-100 text-emerald-700',
 };
 
@@ -43,6 +45,7 @@ const REIMB_LABELS: Record<ReimbursementStatus, string> = {
   not_requested: 'No Reimbursement',
   pending: 'Reimbursement Pending',
   approved: 'Reimbursement Approved',
+  rejected: 'Reimbursement Rejected',
   paid: 'Reimbursed',
 };
 
