@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0-alpha (2026-08-03)
+
+### Ext API — Trade Show Expense Engine
+- Full `/api/v1/ext/*` surface: OCR process, expenses CRUD/list/by-ref, receipts (+ content), categories, bulk import with `skipOcr` / Zoho ids / timestamps / idempotent re-import.
+- Scope enforcement (`requireScope` → `MISSING_SCOPE`), `source_context` / `externalUserId`, reimbursement `rejected`, Trade Show category seed + mappings.
+- Packages: `@midas/ocr-client`, `@midas/import`; migration SQL `0002_ext_trade_show_merge.sql`.
+- Sandbox: CT 3120 Ext live; Trade Show CT 2600 migrated **375** expenses zero-loss (M3/M8 closed).
+
+### OCR
+- Invalid/tiny PDFs return **`400 OCR_INVALID_FILE`** (not `500 INTERNAL_ERROR`); upstream OCR failures map to `OCR_*` 502/503/504.
+- Ext OCR echoes `X-Request-Id` / `requestId` for BFF correlation.
+- ImageMagick prep prefers `magick` over legacy `convert`.
+
+### Zoho / expenses UX
+- Accountant **Zoho readiness** panel (read-only evaluation; no live Zoho write).
+- New expense flow requires receipt capture (stacked from 0.2 line).
+
+### Docs / ops
+- Dual-app contract lock, migration reply/apply-go, OCR invalid-fix handoff, Authentik/Zoho/import docs.
+
+## 0.2.0-alpha (2026-06-30)
+
+### Intermediate line (pre-Ext merge)
+- Version string advanced for Zoho readiness / receipt-required work; package.json versions were partially updated to `0.2.0` without a full changelog. Superseded by **0.3.0-alpha**, which is the first consistent cut including Ext + migration.
+
 ## 0.1.5-alpha (2026-06-25)
 
 ### UX clarity (copy/badges only — no behavior change)

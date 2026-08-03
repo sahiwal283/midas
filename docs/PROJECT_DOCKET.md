@@ -1,6 +1,6 @@
 # Midas — Project Docket
 
-_Last updated: 2026-06-25 • Version: **0.1.5-alpha**_
+_Last updated: 2026-08-03 • Version: **0.3.0-alpha**_
 
 ## ✅ Closeout — ready for tiny internal pilot (2026-06-25)
 
@@ -31,7 +31,7 @@ _Last updated: 2026-06-25 • Version: **0.1.5-alpha**_
 |------|--------|
 | URL | https://midas.booute.duckdns.org (HTTPS via NPM; not the LAN IP) |
 | Runtime | CT 3120 @ 192.168.1.210 • DB CT 3220 @ 192.168.1.211 |
-| Version | 0.1.5-alpha (`/api/v1/meta`) |
+| Version | 0.3.0-alpha (`/api/v1/meta`) |
 | Auth | `AUTH_MODE=authentik` — SSO **works**; local break-glass **works** |
 | Pilot accounts | `pilot.accountant@midas.local` (accountant), `pilot.employee1@midas.local` (user) — active |
 | Payment method | "Corporate Amex" active (company-wide) |
