@@ -469,7 +469,7 @@ export function ExpenseDetail() {
           )}
 
           {/* Receipts */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div id="receipts" className="scroll-mt-6 rounded-xl border border-gray-200 bg-white p-5">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-700">Receipts</h2>
               {(isOwner || isPrivileged) && (

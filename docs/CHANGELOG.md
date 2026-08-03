@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1-alpha (2026-08-03)
+
+### UI
+- Expense tables (**My Expenses**, **Accountant Queue**): Trade Show–style paperclip **Receipt** pill (`N receipt` / `No receipt`) linking to expense detail `#receipts`.
+
 ## 0.3.0-alpha (2026-08-03)
 
 ### Ext API — Trade Show Expense Engine

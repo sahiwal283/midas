@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, Clock, RefreshCw, XCircle, Send, FileX, Tag, CreditCard, Building2, Banknote, Eye } from 'lucide-react';
 import { accountantApi } from '../api/expenses';
 import { StatusBadge } from '../components/StatusBadge';
+import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 
@@ -271,6 +272,7 @@ export function AccountantQueue() {
                 <th className="px-5 py-3">Date</th>
                 <th className="px-5 py-3 text-right">Amount</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Receipt</th>
                 <th className="px-5 py-3">Flags</th>
                 <th className="px-5 py-3">Quick Actions</th>
               </tr>
@@ -512,6 +514,9 @@ function ExpenseRow({
         </td>
         <td className="px-5 py-3">
           <StatusBadge status={expense.status} variant="accountant" />
+        </td>
+        <td className="px-5 py-3">
+          <ReceiptDetailsButton expenseId={expense.id} receipts={expense.receipts} />
         </td>
         <td className="px-5 py-3">
           <div className="flex flex-wrap items-center gap-1">

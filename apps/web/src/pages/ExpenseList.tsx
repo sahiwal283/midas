@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, AlertCircle } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
 import { StatusBadge } from '../components/StatusBadge';
+import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import type { Expense } from '../types';
 
 const NEXT_ACTION: Record<string, { text: string; urgent: boolean }> = {
@@ -78,6 +79,7 @@ export function ExpenseList() {
                 <th className="px-6 py-3">Category</th>
                 <th className="px-6 py-3 text-right">Amount</th>
                 <th className="px-6 py-3">Status</th>
+                <th className="px-6 py-3">Receipt</th>
                 <th className="px-6 py-3">Next action</th>
               </tr>
             </thead>
@@ -102,6 +104,9 @@ export function ExpenseList() {
                   </td>
                   <td className="px-6 py-4">
                     <StatusBadge status={expense.status} variant="user" />
+                  </td>
+                  <td className="px-6 py-4">
+                    <ReceiptDetailsButton expenseId={expense.id} receipts={expense.receipts} />
                   </td>
                   <td className="px-6 py-4 text-sm">
                     <NextActionCell expense={expense} />
