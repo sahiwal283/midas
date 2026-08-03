@@ -1,6 +1,7 @@
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Camera, Upload, X, FileText, AlertCircle } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
 
 export function ExpenseNew() {
@@ -15,7 +16,15 @@ export function ExpenseNew() {
     paymentMethodId: '',
     description: '',
   });
+  const [receipt, setReceipt] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  // Once the draft is created we keep its id so a failed receipt upload can be
+  // retried without creating a duplicate (orphan) draft.
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
@@ -27,32 +36,91 @@ export function ExpenseNew() {
     queryFn: () => expenseApi.paymentMethods(),
   });
 
-  const mutation = useMutation({
-    mutationFn: () => expenseApi.create({
-      merchant: form.merchant,
-      amount: Number(form.amount),
-      date: form.date,
-      currency: form.currency,
-      categoryId: form.categoryId || undefined,
-      paymentMethodId: form.paymentMethodId || undefined,
-      description: form.description || undefined,
-    }),
-    onSuccess: (expense) => {
-      qc.invalidateQueries({ queryKey: ['expenses'] });
-      navigate(`/expenses/${expense.id}`);
-    },
-    onError: () => setError('Failed to create expense. Please try again.'),
-  });
+  // Build/cleanup an object URL for the image preview.
+  useEffect(() => {
+    if (receipt && receipt.type.startsWith('image/')) {
+      const url = URL.createObjectURL(receipt);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    setPreviewUrl(null);
+  }, [receipt]);
 
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function handleSubmit(e: FormEvent) {
+  function handleReceiptChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setReceipt(file);
+      setError('');
+    }
+    // Reset so re-selecting the same file still fires onChange.
+    e.target.value = '';
+  }
+
+  function removeReceipt() {
+    setReceipt(null);
+    setError('');
+  }
+
+  const hasRequiredFields = !!(form.merchant && form.amount && form.date && receipt);
+  const canSave = hasRequiredFields && !saving;
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
-    if (!form.merchant || !form.amount || !form.date) return;
-    mutation.mutate();
+    if (!form.merchant || !form.amount || !form.date) {
+      setError('Merchant, amount, and date are required.');
+      return;
+    }
+    if (!receipt) {
+      setError('A receipt image is required before saving.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Step 1 — create the draft (skip if we already created it on a prior
+      // attempt and only the receipt upload failed).
+      let expenseId = createdId;
+      if (!expenseId) {
+        const expense = await expenseApi.create({
+          merchant: form.merchant,
+          amount: Number(form.amount),
+          date: form.date,
+          currency: form.currency,
+          categoryId: form.categoryId || undefined,
+          paymentMethodId: form.paymentMethodId || undefined,
+          description: form.description || undefined,
+        });
+        expenseId = expense.id;
+        setCreatedId(expense.id);
+        qc.invalidateQueries({ queryKey: ['expenses'] });
+      }
+
+      // Step 2 — upload the receipt to the new draft.
+      try {
+        await expenseApi.uploadReceipt(expenseId, receipt);
+      } catch {
+        // The draft exists but has no receipt. Don't pretend it's complete —
+        // send the user to the detail page, where they can retry the upload,
+        // with a visible warning passed via router state.
+        qc.invalidateQueries({ queryKey: ['expense', expenseId] });
+        navigate(`/expenses/${expenseId}`, { state: { receiptUploadFailed: true } });
+        return;
+      }
+
+      // Both steps succeeded — refresh caches and open the new expense.
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['expense', expenseId] });
+      navigate(`/expenses/${expenseId}`);
+    } catch {
+      setError('Failed to create expense. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -63,7 +131,95 @@ export function ExpenseNew() {
       </div>
 
       <div className="max-w-xl rounded-xl border border-gray-200 bg-white p-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* ── Receipt — the primary, first section ─────────────────────── */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Receipt *</label>
+            <p className="mb-2 text-xs text-gray-500">
+              Attach or photograph the receipt. An image is required before saving.
+            </p>
+
+            {!receipt ? (
+              <div className="flex flex-col gap-3 rounded-lg border-2 border-dashed border-gray-300 p-6 text-center">
+                <p className="text-sm text-gray-500">Upload a receipt image or PDF — or snap a photo.</p>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <Upload className="h-4 w-4" />
+                    Choose file
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Take photo
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex items-start gap-3">
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="Receipt preview"
+                      className="h-20 w-20 shrink-0 rounded-md border border-gray-200 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white">
+                      <FileText className="h-8 w-8 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-800">{receipt.name}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{(receipt.size / 1024).toFixed(0)} KB</p>
+                    <div className="mt-2 flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                      >
+                        Change
+                      </button>
+                      <button
+                        type="button"
+                        onClick={removeReceipt}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-600"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Hidden inputs — file picker (incl. PDF) and rear-camera capture */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={handleReceiptChange}
+            />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleReceiptChange}
+            />
+          </div>
+
+          <hr className="border-gray-100" />
+
           <Field label="Merchant *">
             <input
               required
@@ -140,15 +296,35 @@ export function ExpenseNew() {
             />
           </Field>
 
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && (
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                {error}
+                {createdId && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/expenses/${createdId}`)}
+                      className="font-semibold underline hover:text-red-800"
+                    >
+                      Open the draft to add the receipt
+                    </button>
+                    .
+                  </>
+                )}
+              </span>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-2">
             <button
               type="submit"
-              disabled={mutation.isPending}
-              className="rounded-lg bg-brand-600 px-5 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+              disabled={!canSave}
+              className="rounded-lg bg-brand-600 px-5 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {mutation.isPending ? 'Saving…' : 'Save Draft'}
+              {saving ? 'Saving…' : createdId ? 'Retry receipt upload' : 'Save Draft'}
             </button>
             <button
               type="button"
