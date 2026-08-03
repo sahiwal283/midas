@@ -31,6 +31,8 @@ This document is everything Trade Show needs to implement `MidasClient` / `Midas
 
 **Deferred (not required for Trade Show v1):** Ext `review` / `reimbursement` / `zoho-push` routes — accountants use Midas UI via `midasUrl`.
 
+**OCR invalid-input (2026-08-03):** Tiny/corrupt PDFs return `400 OCR_INVALID_FILE` (not 500). See [`TRADE_SHOW_OCR_INVALID_FIX.md`](./TRADE_SHOW_OCR_INVALID_FIX.md). Real JPEG/PDF OCR remains sync via `OCR_MODE=service`.
+
 ---
 
 ## 2. Connect now (local Midas sandbox)

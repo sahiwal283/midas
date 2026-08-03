@@ -66,6 +66,7 @@ Actor headers on mutating calls:
 ```json
 {
   "ocrMode": "sync",
+  "requestId": "string",
   "fields": {
     "merchant": { "value": "string|null", "confidence": 0.0 },
     "amount": { "value": "number|null", "confidence": 0.0 },
@@ -79,6 +80,18 @@ Actor headers on mutating calls:
   "warnings": []
 }
 ```
+
+**Errors (do not collapse invalid input to 500 `INTERNAL_ERROR`):**
+
+| HTTP | `error.code` | When |
+|---|---|---|
+| 400 | `NO_FILE` | Missing multipart `file` |
+| 400 | `OCR_INVALID_FILE` | Tiny/corrupt/unreadable file (incl. minimal PDF fixtures); upstream 400/413/415/422 |
+| 502 | `OCR_AUTH_ERROR` / `OCR_PIPELINE_ERROR` / `OCR_BAD_RESPONSE` | Upstream OCR auth or pipeline failure |
+| 503 | `OCR_UNAVAILABLE` | Upstream unreachable / 503 |
+| 504 | `OCR_TIMEOUT` | Upstream timed out |
+
+**Correlation:** Ext sets response header `X-Request-Id` (uses inbound `X-Request-Id` or `X-Correlation-Id` when provided). Error JSON may include `requestId`.
 
 ### 2. `POST /expenses` — scope `expenses:create`
 
@@ -330,6 +343,7 @@ curl -sS -X POST "$MIDAS/api/v1/ext/expenses/import" \
 - [x] `GET /expenses/by-ref`
 - [x] User auto-provision when `EXT_AUTO_PROVISION_USERS=true`
 - [x] Sync OCR standalone (no expense persist)
+- [x] OCR invalid input → `400 OCR_INVALID_FILE` (+ `X-Request-Id`); not `500 INTERNAL_ERROR`
 - [x] Sync receipt upload; `async=1` optional
 - [x] Full GET + list DTOs + `midasUrl`
 - [x] PATCH / DELETE rules (incl. no Zoho-linked delete)
