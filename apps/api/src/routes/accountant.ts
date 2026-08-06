@@ -6,8 +6,7 @@ import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users } from '
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
-import { zoho, ZohoServiceError } from '../lib/zoho';
-import { buildZohoServicePayload } from '../lib/zohoPayload';
+import { pushExpenseToZoho } from '../lib/zohoPush';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 
@@ -301,86 +300,19 @@ router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
   if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') {
     throw createError('Only approved or sync-failed expenses can be pushed to Zoho', 409, 'CONFLICT');
   }
-  if (!expense.zohoEntity) {
-    throw createError('zohoEntity must be set before pushing to Zoho', 409, 'MISSING_ZOHO_ENTITY');
+  const outcome = await pushExpenseToZoho(expense, req.user!.id);
+  if (outcome.ok) {
+    res.json({ expense: outcome.expense, zoho: outcome.zoho });
+    return;
   }
-  if (!expense.categoryId) {
-    throw createError('Category must be set before pushing to Zoho', 409, 'MISSING_CATEGORY');
-  }
-  if (!expense.paymentMethodId) {
-    throw createError('Payment method must be set before pushing to Zoho', 409, 'MISSING_PAYMENT_METHOD');
-  }
-
-  const payload = buildZohoServicePayload(expense);
-  if (!payload.account_id) {
-    throw createError(
-      'No Zoho expense account on this expense — select one from the Zoho COA (or map a Trade Show category)',
-      409,
-      'MISSING_ZOHO_EXPENSE_ACCOUNT',
-    );
-  }
-  if (!payload.paid_through_account_id) {
-    throw createError(
-      'Payment method has no Zoho paid-through account id (Admin → Payment Methods → Zoho Account)',
-      409,
-      'MISSING_ZOHO_PAID_THROUGH',
-    );
-  }
-
-  try {
-    const result = await zoho.pushExpense(payload);
-
-    const [updated] = await db.update(expenses)
-      .set({
-        status: 'approved',
-        zohoExpenseId: result.zohoExpenseId,
-        zohoSyncedAt: result.syncedAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(expenses.id, expense.id))
-      .returning();
-
-    await auditLog({
-      entityType: 'expense',
-      entityId: expense.id,
-      userId: req.user!.id,
-      action: 'zoho.pushed',
-      after: result,
-      metadata: { idempotencyKey: payload.idempotencyKey, dryRun: result.dryRun ?? false },
-    });
-    res.json({ expense: updated, zoho: result });
-  } catch (err) {
-    await db.update(expenses)
-      .set({ status: 'zoho_sync_failed', updatedAt: new Date() })
-      .where(eq(expenses.id, expense.id));
-
-    const zohoErr = err instanceof ZohoServiceError ? err : null;
-    await auditLog({
-      entityType: 'expense',
-      entityId: expense.id,
-      userId: req.user!.id,
-      action: 'zoho.failed',
-      metadata: {
-        error: zohoErr?.message ?? String(err),
-        code: zohoErr?.code ?? 'ZOHO_SYNC_FAILED',
-        requestId: zohoErr?.requestId ?? null,
-      },
-    });
-
-    const message = zohoErr?.code === 'ZOHO_AUTH_INVALID'
-      ? 'Zoho Integration Service rejected Midas credentials (inbound auth). Check Authorization: Bearer token. Expense marked for retry.'
-      : zohoErr?.code === 'ZOHO_AUTH_FORBIDDEN'
-        ? 'Midas is not granted this Zoho brand/capability. Contact the Zoho Integration Service team. Expense marked for retry.'
-        : 'Zoho push failed — expense marked for retry.';
-
-    res.status(502).json({
-      error: {
-        code: zohoErr?.code ?? 'ZOHO_SYNC_FAILED',
-        message,
-        requestId: zohoErr?.requestId ?? undefined,
-      },
-    });
-  }
+  if (outcome.status === 409) throw createError(outcome.message, 409, outcome.code);
+  res.status(502).json({
+    error: {
+      code: outcome.code,
+      message: outcome.message,
+      requestId: outcome.requestId,
+    },
+  });
 }));
 
 // ── Audit trail for an expense ────────────────────────────────────────────────
