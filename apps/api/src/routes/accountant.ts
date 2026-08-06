@@ -6,8 +6,10 @@ import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users } from '
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
-import { zoho } from '../lib/zoho';
+import { zoho, ZohoServiceError } from '../lib/zoho';
+import { buildZohoServicePayload } from '../lib/zohoPayload';
 import { computeFlags } from '../lib/flags';
+import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -53,7 +55,7 @@ router.get('/queue', asyncHandler(async (req, res) => {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
       category: { columns: { id: true, name: true } },
-      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
+      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true, requiresReimbursement: true } },
       receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
     },
     orderBy: [desc(expenses.createdAt)],
@@ -114,7 +116,7 @@ router.get('/expenses', asyncHandler(async (_req, res) => {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
       category: { columns: { id: true, name: true } },
-      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
+      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true, requiresReimbursement: true } },
       receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
     },
     orderBy: [desc(expenses.createdAt)],
@@ -126,109 +128,47 @@ router.get('/expenses', asyncHandler(async (_req, res) => {
   res.json({ expenses: expensesWithFlags });
 }));
 
-// ── Claim ─────────────────────────────────────────────────────────────────────
-// Atomically transitions pending → in_review and records who claimed it.
-// Uses conditional WHERE status = 'pending' to prevent double-claim.
-
-router.post('/expenses/:id/claim', asyncHandler(async (req, res) => {
-  const now = new Date();
-  const updated = await db.update(expenses)
-    .set({ status: 'in_review', reviewedById: req.user!.id, reviewedAt: now, updatedAt: now })
-    .where(and(eq(expenses.id, req.params.id), eq(expenses.status, 'pending')))
-    .returning();
-
-  if (updated.length === 0) {
-    // Either not found or already claimed — distinguish for caller
-    const existing = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
-    if (!existing) throw notFound('Expense not found');
-    throw createError(
-      `Expense cannot be claimed — current status is '${existing.status}'`,
-      409,
-      'CONFLICT',
-    );
-  }
-
-  await auditLog({
-    entityType: 'expense',
-    entityId: req.params.id,
-    userId: req.user!.id,
-    action: 'review.claimed',
-    before: { status: 'pending' },
-    after: { status: 'in_review', reviewedById: req.user!.id },
-  });
-
-  // Re-fetch with reviewer relation for response
-  const full = await db.query.expenses.findFirst({
-    where: eq(expenses.id, req.params.id),
-    with: {
-      user: { columns: { id: true, name: true, email: true } },
-      reviewedBy: { columns: { id: true, name: true, email: true } },
-      category: { columns: { id: true, name: true } },
-      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
-      receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
-    },
-  });
-
-  res.json({ expense: full });
-}));
-
-// ── Release Claim ─────────────────────────────────────────────────────────────
-// Atomically transitions in_review → pending and clears reviewer fields.
-// Only the claiming accountant or an admin can release. Other accountants → 403.
-
-router.post('/expenses/:id/release-claim', asyncHandler(async (req, res) => {
-  // Read first for auth check and audit before-state
-  const existing = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
-  if (!existing) throw notFound('Expense not found');
-
-  if (existing.reviewedById && existing.reviewedById !== req.user!.id && req.user!.role !== 'admin') {
-    throw createError('Only the accountant who claimed this expense or an admin can release it', 403, 'FORBIDDEN');
-  }
-
-  const now = new Date();
-  const updated = await db.update(expenses)
-    .set({ status: 'pending', reviewedById: null, reviewedAt: null, updatedAt: now })
-    .where(and(eq(expenses.id, req.params.id), eq(expenses.status, 'in_review')))
-    .returning();
-
-  if (updated.length === 0) {
-    throw createError(
-      `Expense cannot be released — current status is '${existing.status}'`,
-      409,
-      'CONFLICT',
-    );
-  }
-
-  await auditLog({
-    entityType: 'expense',
-    entityId: req.params.id,
-    userId: req.user!.id,
-    action: 'review.released',
-    before: { status: 'in_review', reviewedById: existing.reviewedById, reviewedAt: existing.reviewedAt },
-    after: { status: 'pending', reviewedById: null, reviewedAt: null },
-  });
-
-  res.json({ expense: updated[0] });
-}));
-
 // ── Review ────────────────────────────────────────────────────────────────────
 
 router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
-  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
+  const expense = await db.query.expenses.findFirst({
+    where: eq(expenses.id, req.params.id),
+    with: { paymentMethod: true },
+  });
   if (!expense) throw notFound('Expense not found');
 
   const parsed = reviewSchema.parse(req.body);
   const { action } = parsed;
-  const before = { status: expense.status };
+  const before = { status: expense.status, reimbursementStatus: expense.reimbursementStatus };
+
+  const reviewable: StatusValue[] = ['pending', 'in_review', 'awaiting_info'];
+  if (!reviewable.includes(expense.status as StatusValue)) {
+    throw createError(
+      `Expense cannot be reviewed from status '${expense.status}'`,
+      409,
+      'CONFLICT',
+    );
+  }
 
   const newStatus: StatusValue = action === 'approve' ? 'approved'
     : action === 'reject' ? 'rejected'
     : 'awaiting_info';
 
+  // Personal cards: ensure reimbursement workflow is started on approve
+  let reimbursementStatus = expense.reimbursementStatus;
+  if (action === 'approve') {
+    const next = nextReimbursementOnCardLink(expense.reimbursementStatus, expense.paymentMethod);
+    if (next) reimbursementStatus = next as typeof expense.reimbursementStatus;
+  }
+
+  const now = new Date();
   const [updated] = await db.update(expenses)
     .set({
       status: newStatus,
-      updatedAt: new Date(),
+      reviewedById: req.user!.id,
+      reviewedAt: now,
+      reimbursementStatus,
+      updatedAt: now,
       ...(action === 'approve' && 'zohoEntity' in parsed && parsed.zohoEntity
         ? { zohoEntity: parsed.zohoEntity } : {}),
     })
@@ -294,7 +234,7 @@ router.post('/expenses/:id/resolve-request', asyncHandler(async (req, res) => {
 
   if (expense.status === 'awaiting_info') {
     await db.update(expenses)
-      .set({ status: 'in_review', updatedAt: new Date() })
+      .set({ status: 'pending', updatedAt: new Date() })
       .where(eq(expenses.id, req.params.id));
 
     await auditLog({
@@ -303,7 +243,7 @@ router.post('/expenses/:id/resolve-request', asyncHandler(async (req, res) => {
       userId: req.user!.id,
       action: 'info_request_resolved',
       before: { status: 'awaiting_info' },
-      after: { status: 'in_review' },
+      after: { status: 'pending' },
     });
   }
 
@@ -350,7 +290,11 @@ router.patch('/expenses/:id/reimbursement', asyncHandler(async (req, res) => {
 router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, req.params.id),
-    with: { receipts: true },
+    with: {
+      receipts: { columns: { id: true } },
+      category: { columns: { id: true, name: true, zohoAccountId: true } },
+      paymentMethod: { columns: { id: true, label: true, zohoAccountName: true } },
+    },
   });
   if (!expense) throw notFound('Expense not found');
 
@@ -367,16 +311,24 @@ router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
     throw createError('Payment method must be set before pushing to Zoho', 409, 'MISSING_PAYMENT_METHOD');
   }
 
+  const payload = buildZohoServicePayload(expense);
+  if (!payload.account_id) {
+    throw createError(
+      'No Zoho expense account on this expense — select one from the Zoho COA (or map a Trade Show category)',
+      409,
+      'MISSING_ZOHO_EXPENSE_ACCOUNT',
+    );
+  }
+  if (!payload.paid_through_account_id) {
+    throw createError(
+      'Payment method has no Zoho paid-through account id (Admin → Payment Methods → Zoho Account)',
+      409,
+      'MISSING_ZOHO_PAID_THROUGH',
+    );
+  }
+
   try {
-    const result = await zoho.pushExpense({
-      expenseId: expense.id,
-      zohoEntity: expense.zohoEntity,
-      merchant: expense.merchant,
-      amount: expense.amount,
-      currency: expense.currency,
-      date: expense.date,
-      description: expense.description,
-    });
+    const result = await zoho.pushExpense(payload);
 
     const [updated] = await db.update(expenses)
       .set({
@@ -388,22 +340,46 @@ router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
       .where(eq(expenses.id, expense.id))
       .returning();
 
-    await auditLog({ entityType: 'expense', entityId: expense.id, userId: req.user!.id, action: 'zoho.pushed', after: result });
+    await auditLog({
+      entityType: 'expense',
+      entityId: expense.id,
+      userId: req.user!.id,
+      action: 'zoho.pushed',
+      after: result,
+      metadata: { idempotencyKey: payload.idempotencyKey, dryRun: result.dryRun ?? false },
+    });
     res.json({ expense: updated, zoho: result });
   } catch (err) {
     await db.update(expenses)
       .set({ status: 'zoho_sync_failed', updatedAt: new Date() })
       .where(eq(expenses.id, expense.id));
 
+    const zohoErr = err instanceof ZohoServiceError ? err : null;
     await auditLog({
       entityType: 'expense',
       entityId: expense.id,
       userId: req.user!.id,
       action: 'zoho.failed',
-      metadata: { error: String(err) },
+      metadata: {
+        error: zohoErr?.message ?? String(err),
+        code: zohoErr?.code ?? 'ZOHO_SYNC_FAILED',
+        requestId: zohoErr?.requestId ?? null,
+      },
     });
 
-    res.status(502).json({ error: { code: 'ZOHO_SYNC_FAILED', message: 'Zoho push failed — expense marked for retry.' } });
+    const message = zohoErr?.code === 'ZOHO_AUTH_INVALID'
+      ? 'Zoho Integration Service rejected Midas credentials (inbound auth). Check Authorization: Bearer token. Expense marked for retry.'
+      : zohoErr?.code === 'ZOHO_AUTH_FORBIDDEN'
+        ? 'Midas is not granted this Zoho brand/capability. Contact the Zoho Integration Service team. Expense marked for retry.'
+        : 'Zoho push failed — expense marked for retry.';
+
+    res.status(502).json({
+      error: {
+        code: zohoErr?.code ?? 'ZOHO_SYNC_FAILED',
+        message,
+        requestId: zohoErr?.requestId ?? undefined,
+      },
+    });
   }
 }));
 

@@ -53,7 +53,7 @@ router.post('/', asyncHandler(async (req, res) => {
     isSystem: false,
   }).returning();
 
-  // Auto-transition: expense owner replying on an awaiting_info expense → back to in_review.
+  // Auto-transition: expense owner replying on an awaiting_info expense → back to pending approval.
   // Resolves all open request messages (regardless of request type).
   if (expense.status === 'awaiting_info' && isOwner) {
     const openRequests = await db.query.expenseMessages.findMany({
@@ -72,7 +72,7 @@ router.post('/', asyncHandler(async (req, res) => {
     }
 
     await db.update(expenses)
-      .set({ status: 'in_review', updatedAt: new Date() })
+      .set({ status: 'pending', updatedAt: new Date() })
       .where(eq(expenses.id, req.params.expenseId));
 
     await auditLog({
@@ -81,7 +81,7 @@ router.post('/', asyncHandler(async (req, res) => {
       userId: req.user!.id,
       action: 'user_responded',
       before: { status: 'awaiting_info' },
-      after: { status: 'in_review' },
+      after: { status: 'pending' },
     });
   }
 

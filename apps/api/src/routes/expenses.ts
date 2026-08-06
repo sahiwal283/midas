@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, and, desc, or } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseCategories } from '../db/schema';
-import { authenticate, requireRole } from '../middleware/auth';
-import { asyncHandler, notFound, forbidden } from '../middleware/error';
+import { expenses, expenseCategories, paymentMethods } from '../db/schema';
+import { authenticate } from '../middleware/auth';
+import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { storage } from '../lib/storage';
+import { canSessionDeleteExpense } from '../lib/expenseDelete';
+import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 
 const router = Router();
 
@@ -19,6 +22,11 @@ const createExpenseSchema = z.object({
   categoryId: z.string().uuid().optional(),
   paymentMethodId: z.string().uuid().optional(),
   description: z.string().optional(),
+  /** Accounting entity / Zoho Books org label (e.g. "Haute Brands"). */
+  zohoEntity: z.string().min(1).optional(),
+  /** Live Zoho expense COA account_id for this entity. */
+  zohoExpenseAccountId: z.string().min(1).optional(),
+  zohoExpenseAccountName: z.string().min(1).optional(),
 });
 
 const updateExpenseSchema = createExpenseSchema.partial();
@@ -86,6 +94,21 @@ router.get('/:id', asyncHandler(async (req, res) => {
 router.post('/', asyncHandler(async (req, res) => {
   const body = createExpenseSchema.parse(req.body);
 
+  let reimbursementStatus: 'not_requested' | 'pending' = 'not_requested';
+  let zohoEntity = body.zohoEntity ?? null;
+  if (body.paymentMethodId) {
+    const pm = await db.query.paymentMethods.findFirst({
+      where: eq(paymentMethods.id, body.paymentMethodId),
+    });
+    const next = nextReimbursementOnCardLink('not_requested', pm);
+    if (next === 'pending') reimbursementStatus = 'pending';
+    if (!zohoEntity && pm?.defaultZohoEntity) zohoEntity = pm.defaultZohoEntity;
+  }
+
+  if (body.zohoExpenseAccountId && !zohoEntity) {
+    throw createError('zohoEntity is required when selecting a Zoho expense account', 400, 'MISSING_ZOHO_ENTITY');
+  }
+
   const [expense] = await db.insert(expenses).values({
     userId: req.user!.id,
     merchant: body.merchant,
@@ -95,7 +118,11 @@ router.post('/', asyncHandler(async (req, res) => {
     categoryId: body.categoryId ?? null,
     paymentMethodId: body.paymentMethodId ?? null,
     description: body.description,
+    zohoEntity,
+    zohoExpenseAccountId: body.zohoExpenseAccountId ?? null,
+    zohoExpenseAccountName: body.zohoExpenseAccountName ?? null,
     status: 'draft',
+    reimbursementStatus,
   }).returning();
 
   await auditLog({ entityType: 'expense', entityId: expense.id, userId: req.user!.id, action: 'created', after: expense });
@@ -116,8 +143,22 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   const body = updateExpenseSchema.parse(req.body);
   const before = { ...expense };
 
+  let reimbursementPatch: { reimbursementStatus?: 'pending' } = {};
+  if (body.paymentMethodId) {
+    const pm = await db.query.paymentMethods.findFirst({
+      where: eq(paymentMethods.id, body.paymentMethodId),
+    });
+    const next = nextReimbursementOnCardLink(expense.reimbursementStatus, pm);
+    if (next === 'pending') reimbursementPatch = { reimbursementStatus: 'pending' };
+  }
+
   const [updated] = await db.update(expenses)
-    .set({ ...body, amount: body.amount !== undefined ? String(body.amount) : undefined, updatedAt: new Date() })
+    .set({
+      ...body,
+      ...reimbursementPatch,
+      amount: body.amount !== undefined ? String(body.amount) : undefined,
+      updatedAt: new Date(),
+    })
     .where(eq(expenses.id, req.params.id))
     .returning();
 
@@ -146,19 +187,80 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
   res.json({ expense: updated });
 }));
 
-// Delete own draft expense
-router.delete('/:id', asyncHandler(async (req, res) => {
-  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
-  if (!expense) throw notFound('Expense not found');
-  if (expense.userId !== req.user!.id) throw forbidden();
-  if (expense.status !== 'draft') {
-    res.status(409).json({ error: { code: 'CONFLICT', message: 'Only draft expenses can be deleted' } });
-    return;
+const bulkDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500),
+  force: z.boolean().optional(),
+});
+
+async function deleteExpenseRecord(
+  expenseId: string,
+  actor: { id: string; role: string },
+  force: boolean,
+): Promise<{ ok: true } | { ok: false; status: 403 | 404 | 409; code: string; message: string }> {
+  const expense = await db.query.expenses.findFirst({
+    where: eq(expenses.id, expenseId),
+    with: { receipts: true },
+  });
+  if (!expense) {
+    return { ok: false, status: 404, code: 'NOT_FOUND', message: 'Expense not found' };
   }
 
-  await db.delete(expenses).where(eq(expenses.id, req.params.id));
-  await auditLog({ entityType: 'expense', entityId: expense.id, userId: req.user!.id, action: 'deleted' });
+  const decision = canSessionDeleteExpense({
+    role: actor.role,
+    actorUserId: actor.id,
+    expense,
+    force,
+  });
+  if (!decision.ok) {
+    return { ok: false, status: decision.status, code: decision.code, message: decision.message };
+  }
 
+  for (const r of expense.receipts) {
+    await storage.delete(r.storagePath);
+  }
+  await db.delete(expenses).where(eq(expenses.id, expense.id));
+  await auditLog({
+    entityType: 'expense',
+    entityId: expense.id,
+    userId: actor.id,
+    action: 'deleted',
+    before: {
+      status: expense.status,
+      zohoExpenseId: expense.zohoExpenseId,
+      sourceApp: expense.sourceApp,
+      force: force || undefined,
+    },
+  });
+  return { ok: true };
+}
+
+// Bulk delete (accountant/admin cleanup + owner drafts)
+router.post('/bulk-delete', asyncHandler(async (req, res) => {
+  const body = bulkDeleteSchema.parse(req.body);
+  const force = body.force === true;
+  const actor = { id: req.user!.id, role: req.user!.role };
+
+  const deleted: string[] = [];
+  const failed: Array<{ id: string; code: string; message: string }> = [];
+
+  for (const id of body.ids) {
+    const result = await deleteExpenseRecord(id, actor, force);
+    if (result.ok) deleted.push(id);
+    else failed.push({ id, code: result.code, message: result.message });
+  }
+
+  res.json({ deleted, failed });
+}));
+
+// Delete expense (owner draft/pending; accountant/admin any without Zoho; admin+force with Zoho)
+router.delete('/:id', asyncHandler(async (req, res) => {
+  const force = req.query.force === '1' || req.query.force === 'true';
+  const result = await deleteExpenseRecord(req.params.id, { id: req.user!.id, role: req.user!.role }, force);
+  if (!result.ok) {
+    if (result.status === 404) throw notFound(result.message);
+    if (result.status === 403) throw forbidden();
+    throw createError(result.message, result.status, result.code);
+  }
   res.json({ ok: true });
 }));
 

@@ -16,6 +16,9 @@ export const expenseApi = {
     categoryId?: string;
     paymentMethodId?: string;
     description?: string;
+    zohoEntity?: string;
+    zohoExpenseAccountId?: string;
+    zohoExpenseAccountName?: string;
   }) =>
     client.post<{ expense: Expense }>('/expenses', data).then((r) => r.data.expense),
 
@@ -26,14 +29,48 @@ export const expenseApi = {
     categoryId: string;
     paymentMethodId: string;
     description: string;
+    zohoEntity: string;
+    zohoExpenseAccountId: string;
+    zohoExpenseAccountName: string;
   }>) =>
     client.patch<{ expense: Expense }>(`/expenses/${id}`, data).then((r) => r.data.expense),
+
+  zohoEntities: () =>
+    client.get<{ entities: Array<{ entity: string; brand: string }> }>('/zoho/entities')
+      .then((r) => r.data.entities),
+
+  zohoExpenseAccounts: (zohoEntity: string) =>
+    client.get<{
+      brand: string;
+      accounts: Array<{
+        accountId: string;
+        accountName: string;
+        accountCode: string | null;
+        accountType: string;
+      }>;
+    }>('/zoho/expense-accounts', { params: { zohoEntity } }).then((r) => r.data),
 
   submit: (id: string) =>
     client.post<{ expense: Expense }>(`/expenses/${id}/submit`).then((r) => r.data.expense),
 
-  delete: (id: string) =>
-    client.delete(`/expenses/${id}`).then((r) => r.data),
+  delete: (id: string, force = false) =>
+    client.delete(`/expenses/${id}`, { params: force ? { force: 'true' } : undefined }).then((r) => r.data),
+
+  bulkDelete: async (ids: string[], force = false) => {
+    const chunkSize = 200;
+    const deleted: string[] = [];
+    const failed: Array<{ id: string; code: string; message: string }> = [];
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const result = await client.post<{
+        deleted: string[];
+        failed: Array<{ id: string; code: string; message: string }>;
+      }>('/expenses/bulk-delete', { ids: chunk, force }).then((r) => r.data);
+      deleted.push(...result.deleted);
+      failed.push(...result.failed);
+    }
+    return { deleted, failed };
+  },
 
   categories: () =>
     client.get<{ categories: ExpenseCategory[] }>('/expenses/categories/list').then((r) => r.data.categories),
@@ -92,17 +129,22 @@ export const accountantApi = {
   resolveRequest: (id: string) =>
     client.post(`/accountant/expenses/${id}/resolve-request`).then((r) => r.data),
 
-  claim: (id: string) =>
-    client.post<{ expense: Expense }>(`/accountant/expenses/${id}/claim`).then((r) => r.data.expense),
-
-  releaseClaim: (id: string) =>
-    client.post<{ expense: Expense }>(`/accountant/expenses/${id}/release-claim`).then((r) => r.data.expense),
-
   queueSummary: () =>
     client.get<{ counts: Record<string, number> }>('/accountant/queue/summary').then((r) => r.data.counts),
 
   getAuditTrail: (id: string) =>
     client.get<{ entries: AuditLogEntry[] }>(`/accountant/expenses/${id}/audit`).then((r) => r.data.entries),
+
+  zohoServiceHealth: () =>
+    client.get<{
+      zohoMode: 'mock' | 'service';
+      dryRun: boolean;
+      liveWritesEnabled: boolean;
+      readyForLivePush: boolean;
+      brand: string;
+      service: { reachable: boolean; ok: boolean; serviceVersion?: string | null; detail?: string | null };
+      zohoAuth: { ok: boolean; code?: string | null; message?: string | null; requestId?: string | null };
+    }>('/zoho/service-health').then((r) => r.data),
 };
 
 export const paymentMethodsApi = {
@@ -114,6 +156,8 @@ export const paymentMethodsApi = {
     lastFour?: string;
     brand?: string;
     zohoAccountName?: string;
+    defaultZohoEntity?: string;
+    requiresReimbursement?: boolean;
     isCompanyWide?: boolean;
     assignedUserId?: string;
   }) =>
@@ -124,6 +168,8 @@ export const paymentMethodsApi = {
     lastFour?: string;
     brand?: string;
     zohoAccountName?: string;
+    defaultZohoEntity?: string | null;
+    requiresReimbursement?: boolean;
     isCompanyWide?: boolean;
     isActive?: boolean;
   }) =>

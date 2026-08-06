@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, AlertCircle, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Plus, AlertCircle, ChevronLeft, ChevronRight, Search, Trash2 } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
 import { StatusBadge } from '../components/StatusBadge';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
+import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
+import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 
 const PAGE_SIZE = 10;
@@ -21,12 +23,12 @@ const STATUS_TABS: Array<{ id: StatusTab; label: string }> = [
 ];
 
 const NEXT_ACTION: Record<string, { text: string; urgent: boolean }> = {
-  draft: { text: 'Submit for review', urgent: false },
-  pending: { text: 'Waiting for accountant', urgent: false },
-  in_review: { text: 'Being reviewed', urgent: false },
-  awaiting_info: { text: 'Reply to accountant', urgent: true },
+  draft: { text: 'Submit for approval', urgent: false },
+  pending: { text: 'Pending approval', urgent: false },
+  in_review: { text: 'Pending approval', urgent: false },
+  awaiting_info: { text: 'Needs further review — reply', urgent: true },
   approved: { text: 'Approved', urgent: false },
-  zoho_sync_failed: { text: 'Processing', urgent: false },
+  zoho_sync_failed: { text: 'Approved', urgent: false },
   rejected: { text: 'Rejected — see messages', urgent: false },
 };
 
@@ -78,6 +80,8 @@ function NextActionCell({ expense }: { expense: Expense }) {
 }
 
 export function ExpenseList() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
   const { data: expenses = [], isLoading } = useQuery({
     queryKey: ['expenses'],
     queryFn: () => expenseApi.list(),
@@ -87,7 +91,13 @@ export function ExpenseList() {
   const [query, setQuery] = useState('');
   const [month, setMonth] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [sourceApp, setSourceApp] = useState('');
   const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [quickViewId, setQuickViewId] = useState<string | null>(null);
+  const [forceZoho, setForceZoho] = useState(false);
+  const isAdmin = user?.role === 'admin';
+  const canBulkDelete = user?.role === 'admin' || user?.role === 'accountant' || user?.role === 'user';
 
   const monthOptions = useMemo(() => {
     const keys = new Set<string>();
@@ -124,38 +134,95 @@ export function ExpenseList() {
     return counts;
   }, [expenses]);
 
+  const sourceOptions = useMemo(() => {
+    const keys = new Set<string>();
+    for (const e of expenses) {
+      if (e.sourceApp) keys.add(e.sourceApp);
+    }
+    return [...keys].sort();
+  }, [expenses]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return expenses.filter((e) => {
       if (!matchesStatusTab(e, tab)) return false;
       if (month && monthKey(e.date) !== month) return false;
       if (categoryId && e.categoryId !== categoryId) return false;
+      if (sourceApp && e.sourceApp !== sourceApp) return false;
       if (q) {
-        const hay = `${e.merchant} ${e.description ?? ''} ${e.category?.name ?? ''}`.toLowerCase();
+        const hay = `${e.merchant} ${e.description ?? ''} ${e.category?.name ?? ''} ${e.sourceLabel ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [expenses, tab, month, categoryId, query]);
+  }, [expenses, tab, month, categoryId, sourceApp, query]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageIds = pageRows.map((e) => e.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const selectedHasZoho = [...selected].some((id) => expenses.find((e) => e.id === id)?.zohoExpenseId);
 
   useEffect(() => {
     setPage(1);
-  }, [tab, month, categoryId, query]);
+  }, [tab, month, categoryId, sourceApp, query]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
+
+  useEffect(() => {
+    setSelected(new Set());
+  }, [tab, month, categoryId, sourceApp, query]);
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => expenseApi.bulkDelete([...selected], forceZoho && isAdmin),
+    onSuccess: (result) => {
+      setSelected(new Set());
+      void qc.invalidateQueries({ queryKey: ['expenses'] });
+      if (result.failed.length > 0) {
+        alert(
+          `Deleted ${result.deleted.length}. Failed ${result.failed.length}`
+          + (result.failed.some((f) => f.message.includes('Zoho'))
+            ? ' — enable “Force Zoho-linked” (admin) for Zoho-synced rows.'
+            : '.'),
+        );
+      }
+    },
+  });
 
   const actionNeeded = tabCounts.needs_reply;
   const totalSpent = useMemo(
     () => filtered.reduce((sum, e) => sum + Number(e.amount || 0), 0),
     [filtered],
   );
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function selectAllFiltered() {
+    setSelected(new Set(filtered.map((e) => e.id)));
+  }
 
   return (
     <div className="p-8">
@@ -259,13 +326,26 @@ export function ExpenseList() {
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
-        {(query || month || categoryId || tab !== 'all') && (
+        {sourceOptions.length > 0 && (
+          <select
+            value={sourceApp}
+            onChange={(e) => setSourceApp(e.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          >
+            <option value="">All sources</option>
+            {sourceOptions.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        )}
+        {(query || month || categoryId || sourceApp || tab !== 'all') && (
           <button
             type="button"
             onClick={() => {
               setQuery('');
               setMonth('');
               setCategoryId('');
+              setSourceApp('');
               setTab('all');
             }}
             className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
@@ -274,6 +354,47 @@ export function ExpenseList() {
           </button>
         )}
       </div>
+
+      {canBulkDelete && selected.size > 0 && (
+        <div className="mb-3 flex flex-col gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-red-900">
+            <span className="font-semibold">{selected.size}</span> selected
+            {filtered.length > selected.size && (
+              <button
+                type="button"
+                onClick={selectAllFiltered}
+                className="ml-2 font-medium text-red-700 underline hover:text-red-900"
+              >
+                Select all {filtered.length} matching
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {isAdmin && selectedHasZoho && (
+              <label className="inline-flex items-center gap-1.5 text-xs text-red-800">
+                <input
+                  type="checkbox"
+                  checked={forceZoho}
+                  onChange={(e) => setForceZoho(e.target.checked)}
+                />
+                Force Zoho-linked
+              </label>
+            )}
+            <button
+              type="button"
+              disabled={bulkDeleteMutation.isPending || (selectedHasZoho && !(isAdmin && forceZoho))}
+              onClick={() => {
+                if (!window.confirm(`Delete ${selected.size} expense(s)? This cannot be undone.`)) return;
+                bulkDeleteMutation.mutate();
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              {bulkDeleteMutation.isPending ? 'Deleting…' : 'Delete selected'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-white">
         {isLoading ? (
@@ -294,6 +415,16 @@ export function ExpenseList() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  {canBulkDelete && (
+                    <th className="w-10 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={allPageSelected}
+                        onChange={togglePage}
+                        aria-label="Select all on page"
+                      />
+                    </th>
+                  )}
                   <th className="px-6 py-3">Merchant</th>
                   <th className="px-6 py-3">Date</th>
                   <th className="px-6 py-3">Category</th>
@@ -306,6 +437,16 @@ export function ExpenseList() {
               <tbody className="divide-y divide-gray-100">
                 {pageRows.map((expense) => (
                   <tr key={expense.id} className={`hover:bg-gray-50 ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}>
+                    {canBulkDelete && (
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(expense.id)}
+                          onChange={() => toggleOne(expense.id)}
+                          aria-label={`Select ${expense.merchant}`}
+                        />
+                      </td>
+                    )}
                     <td className="px-6 py-4">
                       <Link to={`/expenses/${expense.id}`} className="font-medium text-gray-900 hover:text-brand-700">
                         {expense.merchant}
@@ -329,7 +470,11 @@ export function ExpenseList() {
                       <StatusBadge status={expense.status} variant="user" />
                     </td>
                     <td className="px-6 py-4">
-                      <ReceiptDetailsButton expenseId={expense.id} receipts={expense.receipts} />
+                      <ReceiptDetailsButton
+                        expenseId={expense.id}
+                        receipts={expense.receipts}
+                        onOpen={setQuickViewId}
+                      />
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <NextActionCell expense={expense} />
@@ -370,6 +515,14 @@ export function ExpenseList() {
           </>
         )}
       </div>
+
+      {quickViewId && (
+        <ExpenseQuickViewModal
+          expenseId={quickViewId}
+          onClose={() => setQuickViewId(null)}
+          onDeleted={() => void qc.invalidateQueries({ queryKey: ['expenses'] })}
+        />
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { db } from '../db/index';
 import {
   expenseCategories,
   expenses,
+  paymentMethods,
   receipts,
   users,
   type ExpenseSourceContext,
@@ -29,6 +30,7 @@ import { resolveCategoryId, resolveCategoryIdOrOther } from '../lib/ext/categori
 import { EXT_EXPENSE_WITH, toExtExpenseDto } from '../lib/ext/dto';
 import { ExtImportTargetPort } from '../lib/ext/importTarget';
 import { mapImportExpenseStatus, mapImportReimbursementStatus } from '../lib/ext/maps';
+import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { resolveExtUser } from '../lib/ext/users';
 import { ocr } from '../lib/ocr';
 import { runReceiptOcr } from '../lib/runReceiptOcr';
@@ -101,6 +103,27 @@ router.get('/categories', requireScope('expenses:read'), asyncHandler(async (_re
       name: c.name,
       description: c.description,
       isActive: c.isActive,
+    })),
+  });
+}));
+
+// Payment methods catalog (Trade Show cardOptions → Midas SoR)
+router.get('/payment-methods', requireScope('expenses:read'), asyncHandler(async (_req, res) => {
+  const rows = await db.query.paymentMethods.findMany({
+    where: and(eq(paymentMethods.isActive, true), eq(paymentMethods.isCompanyWide, true)),
+    orderBy: [asc(paymentMethods.label), asc(paymentMethods.lastFour)],
+  });
+  res.json({
+    paymentMethods: rows.map((pm) => ({
+      id: pm.id,
+      label: pm.label,
+      lastFour: pm.lastFour,
+      brand: pm.brand,
+      defaultZohoEntity: pm.defaultZohoEntity,
+      requiresReimbursement: pm.requiresReimbursement,
+      /** Alias for Trade Show `zohoPaymentAccountId` — Zoho Books paid-through account id/name. */
+      zohoPaymentAccountId: pm.zohoAccountName,
+      zohoAccountName: pm.zohoAccountName,
     })),
   });
 }));
@@ -323,7 +346,14 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
     ...(externalUserId ? { externalUserId } : {}),
   };
 
-  const reimbursementStatus = mapImportReimbursementStatus(undefined, body.reimbursementRequired);
+  let reimbursementStatus = mapImportReimbursementStatus(undefined, body.reimbursementRequired);
+  if (body.paymentMethodId && body.reimbursementRequired === undefined) {
+    const pm = await db.query.paymentMethods.findFirst({
+      where: eq(paymentMethods.id, body.paymentMethodId),
+    });
+    const next = nextReimbursementOnCardLink(reimbursementStatus, pm);
+    if (next) reimbursementStatus = next as typeof reimbursementStatus;
+  }
 
   const [inserted] = await db.insert(expenses).values({
     userId: user.id,

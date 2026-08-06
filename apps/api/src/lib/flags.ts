@@ -1,6 +1,8 @@
 export interface FlagsInput {
   sourceApp: string | null;
   categoryId: string | null;
+  /** Live Zoho expense COA account_id (general/daily expenses). */
+  zohoExpenseAccountId?: string | null;
   paymentMethodId: string | null;
   receipts?: { id: string }[];
   zohoEntity: string | null;
@@ -27,7 +29,9 @@ export function computeFlags(row: FlagsInput): Flag[] {
   const flags: Flag[] = [];
 
   if (row.sourceApp === 'browser_extension') flags.push('from_extension');
-  if (!row.categoryId) flags.push('needs_category');
+  // Expense account = Midas category (Trade Show) OR live Zoho COA pick (daily).
+  const hasExpenseAccount = !!(row.categoryId || row.zohoExpenseAccountId);
+  if (!hasExpenseAccount) flags.push('needs_category');
   if ((row.receipts?.length ?? 0) === 0) flags.push('missing_receipt');
   if (!row.paymentMethodId) flags.push('needs_payment_method');
   if (row.status === 'approved' && !row.zohoEntity) flags.push('needs_entity');
@@ -38,7 +42,7 @@ export function computeFlags(row: FlagsInput): Flag[] {
     row.status === 'approved' &&
     !!row.zohoEntity &&
     !row.zohoExpenseId &&
-    !!row.categoryId &&
+    hasExpenseAccount &&
     !!row.paymentMethodId &&
     (row.receipts?.length ?? 0) > 0;
   if (zohoReady) flags.push('ready_for_zoho');

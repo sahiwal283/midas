@@ -15,7 +15,7 @@ Do not change paths or required fields without updating `CONTRACT_ALIGNMENT.md` 
 |---|---|
 | `ocr:process` | `POST /ocr/process` |
 | `expenses:create` | `POST /expenses` |
-| `expenses:read` | `GET /expenses`, `GET /expenses/:id`, `GET /expenses/by-ref`, `GET …/content`, `GET /categories` |
+| `expenses:read` | `GET /expenses`, `GET /expenses/:id`, `GET /expenses/by-ref`, `GET …/content`, `GET /categories`, `GET /payment-methods` |
 | `expenses:update` | `PATCH /expenses/:id`, `PUT …/receipts/primary` |
 | `expenses:delete` | `DELETE /expenses/:id` |
 | `receipts:create` | `POST /expenses/:id/receipts` |
@@ -195,6 +195,26 @@ Rules: upsert `(sourceApp, sourceRefId)`; preserve timestamps; map status (`need
 ### 11. `GET /categories` — scope `expenses:read`
 
 `{ "categories": [{ "id", "name", "description", "isActive" }] }`
+
+### 11b. `GET /payment-methods` — scope `expenses:read`
+
+Company-wide active cards (Trade Show `cardOptions` SoR in Midas):
+
+```json
+{
+  "paymentMethods": [{
+    "id": "uuid",
+    "label": "string",
+    "lastFour": "string|null",
+    "brand": "string|null",
+    "defaultZohoEntity": "string|null",
+    "zohoPaymentAccountId": "string|null",
+    "zohoAccountName": "string|null"
+  }]
+}
+```
+
+See `docs/TRADE_SHOW_PAYMENT_METHODS.md`.
 
 ---
 

@@ -9,29 +9,29 @@ Midas API  →  Zoho Integration Service  →  Zoho Books
                (CT 9503, :8000)              (cloud)
 ```
 
-Midas authenticates to the service with a per-app credential (`ZOHO_SERVICE_TOKEN`) sent in the **`X-Internal-Token`** header, and scopes the Zoho org with the **`X-Brand`** header. The service enforces brand-scoped permissions. Midas stores **no** Zoho OAuth secrets — the service owns Zoho OAuth, org selection, and rate-limit behavior.
+Midas authenticates to the service with a per-app credential (`ZOHO_SERVICE_TOKEN`) sent as **`Authorization: Bearer <token>`**, and scopes the Zoho org with the **`X-Brand`** header. Do **not** put the app token in `X-Internal-Token` — that header is the service’s shared `INTERNAL_API_TOKEN` only; misuse yields `401 ZOHO_AUTH_INVALID` before Zoho OAuth runs. Midas stores **no** Zoho OAuth secrets — the service owns Zoho OAuth, org selection, and rate-limit behavior.
 
-## Current Status (v0.1.4-alpha, 2026-06-24)
+## Current Status (fixed 2026-08-03)
 
 | Setting | Value |
 |---------|-------|
-| `ZOHO_MODE` | `mock` (default — no service calls) |
-| `ZOHO_DRY_RUN` | `true` |
-| Live writes | **Disabled** |
-| Service version | `zoho-integration-service` **1.28.0** (reachable; `/health` ok) |
-| App auth to service | ✅ Midas token accepted (`X-Internal-Token`) |
-| Service ↔ Zoho auth | ❌ **`ZOHO_AUTH_INVALID`** — service is **not currently authorized against Zoho** for the `haute_brands` org |
-| Accounting approval | **Not yet obtained** |
+| `ZOHO_MODE` | `service` (after Bearer fix) |
+| `ZOHO_DRY_RUN` | `false` for live create_books |
+| Live writes | Enabled once env flipped + Bearer client deployed |
+| Service version | **1.34.1** (reachable; `/health` ok) |
+| App auth to service | ✅ `Authorization: Bearer` + `X-Brand: haute_brands` |
+| Service ↔ Zoho | ✅ `organizations/list` + `chartofaccounts/list` succeed with Bearer |
+| Accountant push payload | Full `buildZohoServicePayload` (idempotency key, paid-through, source provenance) |
 
-No live Zoho expense will be created until: (1) the integration-service team establishes the Zoho OAuth connection for the brand/org (currently failing), (2) accounting approves the field mapping and open decisions, and (3) the operator sets `ZOHO_MODE=service` and `ZOHO_DRY_RUN=false`.
+**Note:** An earlier Midas diagnosis treated `ZOHO_AUTH_INVALID` as Zoho OAuth failure. That was wrong — it was the inbound header bug (`X-Internal-Token` with the app secret). See [`docs/ZOHO_AUTH_BLOCKER.md`](./ZOHO_AUTH_BLOCKER.md) (corrected).
 
-### Discovered service contract (2026-06-24)
+### Service contract
 
-- **Auth:** `X-Internal-Token: <app token>` (NOT `Authorization: Bearer`). Missing → `MISSING_TOKEN`; present-but-unauthorized-against-Zoho → `ZOHO_AUTH_INVALID`.
+- **Auth:** `Authorization: Bearer <ZOHO_SERVICE_TOKEN>` (app credential). `X-Internal-Token` is **not** for Midas’s app token.
 - **Brand scope:** `X-Brand: haute_brands`.
-- **Endpoints observed:** `GET /health` (public), `POST /zoho/expenses/create_books`, `POST /zoho/expenses/attach_receipt`, `/zoho/expenses/list_books`, `/zoho/organizations/list`, `/zoho/chartofaccounts/list`, and a `/zoho/expenses/validate` path (exists but contract not exposed to the Midas app; `/openapi.json` is `403` for our app scope).
-- **Error shape:** `{ "detail": { "error": { "source", "code", "internal_code", "message", "request_id" } } }` — `request_id` is returned and should be captured for support.
-- **Dry-run validation:** a `validate` endpoint appears to exist, but its request/response contract is not visible to Midas and the service is not Zoho-authorized, so **no dry-run validation is wired in Midas**. Midas stays in local readiness-only mode. To enable it we need, from the service team: the documented `validate` contract (method, body, `dryRun` semantics, response incl. `request_id`) **and** a working Zoho OAuth connection for the org.
+- **Endpoints:** `GET /health` (public — does not validate app token), `POST /zoho/expenses/create_books`, `POST /zoho/expenses/attach_receipt`, `/zoho/expenses/list_books`, `/zoho/organizations/list`, `/zoho/chartofaccounts/list`.
+- **Error shape:** `{ "detail": { "error": { "source", "code", "internal_code", "message", "request_id" } } }`.
+- **Codes:** `ZOHO_AUTH_INVALID` = inbound auth failed (wrong/missing token/header). `ZOHO_AUTH_FORBIDDEN` = brand/capability grant issue. Zoho OAuth problems look like `NO_CREDENTIALS`, `TOKEN_EXPIRED`, etc.
 
 ### Midas-side connectivity check
 

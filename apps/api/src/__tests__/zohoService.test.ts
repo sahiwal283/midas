@@ -16,7 +16,7 @@ vi.mock('../config/env', () => ({
   },
 }));
 
-import { ServiceZohoAdapter, checkServiceHealth, zoho } from '../lib/zoho';
+import { ServiceZohoAdapter, checkServiceHealth, checkZohoAuth, ZohoServiceError, zoho } from '../lib/zoho';
 import { buildZohoServicePayload, buildIdempotencyKey, type PayloadExpense } from '../lib/zohoPayload';
 import { env } from '../config/env';
 
@@ -31,11 +31,12 @@ const baseExpense: PayloadExpense = {
   description: 'Team lunch',
   categoryId: 'cat-1',
   paymentMethodId: 'pm-1',
-  zohoEntity: 'haute_brands',
+  zohoEntity: 'Haute Brands',
+  zohoExpenseAccountId: null,
   reimbursementStatus: 'not_requested',
   userId: 'user-1',
-  category: { name: 'Meals & Entertainment' },
-  paymentMethod: { label: 'Corporate Amex', zohoAccountName: 'Amex Payable' },
+  category: { name: 'Meals & Entertainment', zohoAccountId: '5254962000000091710' },
+  paymentMethod: { label: 'Corporate Amex', zohoAccountName: '5254962000002038541' },
   receipts: [{ id: 'r1' }],
 };
 
@@ -52,9 +53,15 @@ describe('buildZohoServicePayload', () => {
     expect(p.idempotencyKey).toBe('midas-expense-exp-123');
     expect(p.expenseId).toBe('exp-123');
     expect(p.amount).toBe('42.00');
-    expect(p.category).toEqual({ id: 'cat-1', name: 'Meals & Entertainment', proposedZohoAccount: null });
-    expect(p.paymentMethod).toEqual({ id: 'pm-1', label: 'Corporate Amex', proposedPaidThroughAccount: 'Amex Payable' });
-    expect(p.brand).toBe(env.ZOHO_DEFAULT_BRAND);
+    expect(p.account_id).toBe('5254962000000091710');
+    expect(p.paid_through_account_id).toBe('5254962000002038541');
+    expect(p.category).toEqual({
+      id: 'cat-1', name: 'Meals & Entertainment', proposedZohoAccount: '5254962000000091710',
+    });
+    expect(p.paymentMethod).toEqual({
+      id: 'pm-1', label: 'Corporate Amex', proposedPaidThroughAccount: '5254962000002038541',
+    });
+    expect(p.brand).toBe('haute_brands'); // from zohoEntity via resolveBrandFromEntity
     expect(p.submitter).toEqual({ userId: 'user-1' });
     expect(p.receipt).toEqual({ count: 1 });
   });
@@ -109,7 +116,7 @@ describe('ServiceZohoAdapter auth + redaction', () => {
     vi.unstubAllGlobals();
   });
 
-  it('authenticates with X-Internal-Token, not Authorization: Bearer', async () => {
+  it('authenticates with Authorization: Bearer, not X-Internal-Token', async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       new Response(JSON.stringify({ zohoExpenseId: 'Z-1' }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -121,9 +128,9 @@ describe('ServiceZohoAdapter auth + redaction', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-    expect(headers['X-Internal-Token']).toBe(TOKEN);
+    expect(headers['Authorization']).toBe(`Bearer ${TOKEN}`);
     expect(headers['X-Brand']).toBe(env.ZOHO_DEFAULT_BRAND);
-    expect(headers).not.toHaveProperty('Authorization');
+    expect(headers).not.toHaveProperty('X-Internal-Token');
   });
 
   it('does not leak the token in error messages on network failure', async () => {
@@ -143,6 +150,80 @@ describe('ServiceZohoAdapter auth + redaction', () => {
     } catch (e) {
       expect(String(e)).not.toContain(TOKEN);
     }
+  });
+
+  it('parses Zoho Books nested expense_id from create_books response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({
+        data: { code: 0, message: 'ok', expense: { expense_id: '5254962000007654001' } },
+      }), { status: 200 })));
+
+    const r = await new ServiceZohoAdapter().pushExpense({
+      expenseId: 'exp-123', zohoEntity: 'haute_brands', merchant: 'Acme',
+      amount: '42.00', currency: 'USD', date: '2026-06-24',
+    });
+    expect(r.zohoExpenseId).toBe('5254962000007654001');
+  });
+
+  it('parses ZOHO_AUTH_INVALID into ZohoServiceError without leaking the token', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({
+        detail: {
+          error: {
+            source: 'internal',
+            code: 'ZOHO_AUTH_INVALID',
+            message: 'Authorization required',
+            request_id: 'req-abc',
+          },
+        },
+      }), { status: 401 })));
+
+    try {
+      await new ServiceZohoAdapter().pushExpense({
+        expenseId: 'exp-123', zohoEntity: 'haute_brands', merchant: 'Acme',
+        amount: '42.00', currency: 'USD', date: '2026-06-24',
+      });
+      expect.fail('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ZohoServiceError);
+      const err = e as ZohoServiceError;
+      expect(err.code).toBe('ZOHO_AUTH_INVALID');
+      expect(err.requestId).toBe('req-abc');
+      expect(String(e)).not.toContain(TOKEN);
+    }
+  });
+});
+
+describe('checkZohoAuth', () => {
+  let savedBase: string | undefined;
+  let savedToken: string | undefined;
+  beforeEach(() => {
+    savedBase = env.ZOHO_SERVICE_BASE_URL;
+    savedToken = env.ZOHO_SERVICE_TOKEN;
+    (env as { ZOHO_SERVICE_BASE_URL?: string }).ZOHO_SERVICE_BASE_URL = 'http://svc.local:8000';
+    (env as { ZOHO_SERVICE_TOKEN?: string }).ZOHO_SERVICE_TOKEN = TOKEN;
+  });
+  afterEach(() => {
+    (env as { ZOHO_SERVICE_BASE_URL?: string }).ZOHO_SERVICE_BASE_URL = savedBase;
+    (env as { ZOHO_SERVICE_TOKEN?: string }).ZOHO_SERVICE_TOKEN = savedToken;
+    vi.unstubAllGlobals();
+  });
+
+  it('reports ok when organizations/list succeeds', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ organizations: [] }), { status: 200 })));
+    const r = await checkZohoAuth();
+    expect(r.ok).toBe(true);
+  });
+
+  it('surfaces ZOHO_AUTH_INVALID without leaking the token', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({
+        detail: { error: { code: 'ZOHO_AUTH_INVALID', message: 'Authorization required', request_id: 'r1' } },
+      }), { status: 401 })));
+    const r = await checkZohoAuth();
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('ZOHO_AUTH_INVALID');
+    expect(JSON.stringify(r)).not.toContain(TOKEN);
   });
 });
 

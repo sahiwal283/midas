@@ -13,7 +13,9 @@ export function ExpenseNew() {
     amount: '',
     date: new Date().toISOString().slice(0, 10),
     currency: 'USD',
-    categoryId: '',
+    zohoEntity: '',
+    zohoExpenseAccountId: '',
+    zohoExpenseAccountName: '',
     paymentMethodId: '',
     description: '',
   });
@@ -27,10 +29,23 @@ export function ExpenseNew() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => expenseApi.categories(),
+  const { data: entities = [] } = useQuery({
+    queryKey: ['zoho-entities'],
+    queryFn: () => expenseApi.zohoEntities(),
   });
+
+  const {
+    data: accountData,
+    isFetching: accountsLoading,
+    error: accountsError,
+  } = useQuery({
+    queryKey: ['zoho-expense-accounts', form.zohoEntity],
+    queryFn: () => expenseApi.zohoExpenseAccounts(form.zohoEntity),
+    enabled: !!form.zohoEntity,
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const expenseAccounts = accountData?.accounts ?? [];
 
   const { data: paymentMethods = [] } = useQuery({
     queryKey: ['payment-methods'],
@@ -49,6 +64,40 @@ export function ExpenseNew() {
 
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function setEntity(entity: string) {
+    setForm((f) => ({
+      ...f,
+      zohoEntity: entity,
+      zohoExpenseAccountId: '',
+      zohoExpenseAccountName: '',
+    }));
+  }
+
+  function setExpenseAccount(accountId: string) {
+    const acct = expenseAccounts.find((a) => a.accountId === accountId);
+    setForm((f) => ({
+      ...f,
+      zohoExpenseAccountId: accountId,
+      zohoExpenseAccountName: acct?.accountName ?? '',
+    }));
+  }
+
+  function setPaymentMethod(pmId: string) {
+    const pm = paymentMethods.find((p) => p.id === pmId);
+    setForm((f) => {
+      const nextEntity = f.zohoEntity || pm?.defaultZohoEntity || '';
+      const entityChanged = nextEntity !== f.zohoEntity;
+      return {
+        ...f,
+        paymentMethodId: pmId,
+        zohoEntity: nextEntity,
+        ...(entityChanged
+          ? { zohoExpenseAccountId: '', zohoExpenseAccountName: '' }
+          : {}),
+      };
+    });
   }
 
   function handleReceiptChange(e: ChangeEvent<HTMLInputElement>) {
@@ -87,7 +136,9 @@ export function ExpenseNew() {
       amount: Number(form.amount),
       date: form.date,
       currency: form.currency,
-      categoryId: form.categoryId || undefined,
+      zohoEntity: form.zohoEntity || undefined,
+      zohoExpenseAccountId: form.zohoExpenseAccountId || undefined,
+      zohoExpenseAccountName: form.zohoExpenseAccountName || undefined,
       paymentMethodId: form.paymentMethodId || undefined,
       description: form.description || undefined,
     };
@@ -283,27 +334,63 @@ export function ExpenseNew() {
             />
           </Field>
 
-          <Field label="Category">
-            <select value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)} className={inputCls}>
-              <option value="">— Select a category —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </Field>
-
           {paymentMethods.length > 0 && (
             <Field label="Payment method">
-              <select value={form.paymentMethodId} onChange={(e) => set('paymentMethodId', e.target.value)} className={inputCls}>
+              <select value={form.paymentMethodId} onChange={(e) => setPaymentMethod(e.target.value)} className={inputCls}>
                 <option value="">— Select a payment method —</option>
                 {paymentMethods.map((pm) => (
                   <option key={pm.id} value={pm.id}>
                     {pm.label}{pm.lastFour ? ` ···${pm.lastFour}` : ''}
+                    {pm.defaultZohoEntity ? ` · ${pm.defaultZohoEntity}` : ''}
                   </option>
                 ))}
               </select>
             </Field>
           )}
+
+          <Field label="Brand / entity *">
+            <select
+              required
+              value={form.zohoEntity}
+              onChange={(e) => setEntity(e.target.value)}
+              className={inputCls}
+            >
+              <option value="">— Select brand (Zoho org) —</option>
+              {entities.map((e) => (
+                <option key={e.brand} value={e.entity}>{e.entity}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              Expense accounts load from that brand&apos;s Zoho Books chart of accounts.
+            </p>
+          </Field>
+
+          <Field label="Expense account">
+            <select
+              value={form.zohoExpenseAccountId}
+              onChange={(e) => setExpenseAccount(e.target.value)}
+              disabled={!form.zohoEntity || accountsLoading}
+              className={inputCls}
+            >
+              <option value="">
+                {!form.zohoEntity
+                  ? '— Select a brand first —'
+                  : accountsLoading
+                    ? 'Loading accounts from Zoho…'
+                    : '— Select expense account —'}
+              </option>
+              {expenseAccounts.map((a) => (
+                <option key={a.accountId} value={a.accountId}>
+                  {a.accountCode ? `[ ${a.accountCode} ] ` : ''}{a.accountName}
+                </option>
+              ))}
+            </select>
+            {accountsError && (
+              <p className="mt-1 text-xs text-red-600">
+                Could not load Zoho accounts for this brand. It may not be granted to Midas yet.
+              </p>
+            )}
+          </Field>
 
           <Field label="Description">
             <textarea

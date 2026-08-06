@@ -3,10 +3,11 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Paperclip, Send, Upload, AlertCircle, CheckCircle2,
-  Clock, XCircle, RefreshCw, CreditCard,
+  Clock, XCircle, RefreshCw, CreditCard, Trash2,
 } from 'lucide-react';
 import { expenseApi, accountantApi } from '../api/expenses';
-import { StatusBadge, ReimbursementBadge } from '../components/StatusBadge';
+import { StatusBadge, ReimbursementBadge, ZohoPushBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
+import { ReceiptPreview } from '../components/ReceiptPreview';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, MessageRequestType, AuditLogEntry } from '../types';
 
@@ -245,8 +246,8 @@ const ACTION_LABELS: Record<string, string> = {
   'review.request_info': 'Info requested',
   'info_request_resolved': 'Requests resolved',
   'reimbursement.updated': 'Reimbursement updated',
-  'zoho.pushed': 'Pushed to Zoho [mock]',
-  'zoho.failed': 'Zoho push failed [mock]',
+  'zoho.pushed': 'Pushed to Zoho',
+  'zoho.failed': 'Zoho push failed',
   'zoho_entity.set': 'Zoho entity set',
   'submitted': 'Submitted for review',
   'created': 'Expense created',
@@ -317,6 +318,7 @@ export function ExpenseDetail() {
   const location = useLocation();
   const qc = useQueryClient();
   const [message, setMessage] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // Set when arriving here from New Expense after the draft was created but the
   // receipt upload failed. Dismissed once a receipt is successfully uploaded.
   const [receiptUploadFailed, setReceiptUploadFailed] = useState(
@@ -355,16 +357,20 @@ export function ExpenseDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['expense', id] }),
   });
 
-  const releaseClaimMutation = useMutation({
-    mutationFn: () => accountantApi.releaseClaim(id!),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['expense', id] }),
-  });
-
   const reimbursementMutation = useMutation({
     mutationFn: (status: string) => accountantApi.updateReimbursement(id!, { status }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['expense', id] });
       qc.invalidateQueries({ queryKey: ['expense-audit', id] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => expenseApi.delete(id!, Boolean(expense?.zohoExpenseId)),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['expenses'] });
+      void qc.invalidateQueries({ queryKey: ['accountant-queue'] });
+      navigate('/expenses');
     },
   });
 
@@ -390,6 +396,12 @@ export function ExpenseDetail() {
   const hasOpenRequest = expense.messages?.some(
     (m) => m.requestType && !m.isResolved,
   ) ?? false;
+  const canDelete = (() => {
+    if (expense.zohoExpenseId) return user?.role === 'admin';
+    if (isPrivileged) return true;
+    if (!isOwner) return false;
+    return expense.status === 'draft' || (expense.status === 'pending' && !expense.reviewedAt);
+  })();
 
   return (
     <div className="p-8">
@@ -404,6 +416,12 @@ export function ExpenseDetail() {
             <StatusBadge status={expense.status} variant={isPrivileged ? 'accountant' : 'user'} />
             {expense.reimbursementStatus !== 'not_requested' && (
               <ReimbursementBadge status={expense.reimbursementStatus} />
+            )}
+            {isPrivileged && (
+              <ZohoPushBadge
+                zohoExpenseId={expense.zohoExpenseId}
+                syncFailed={expense.status === 'zoho_sync_failed'}
+              />
             )}
             {expense.sourceApp === 'browser_extension' && (
               <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
@@ -429,9 +447,40 @@ export function ExpenseDetail() {
             )}
           </p>
         </div>
-        <p className="text-2xl font-bold text-gray-900">
-          {expense.currency} {Number(expense.amount).toFixed(2)}
-        </p>
+        <div className="flex flex-col items-end gap-2">
+          <p className="text-2xl font-bold text-gray-900">
+            {expense.currency} {Number(expense.amount).toFixed(2)}
+          </p>
+          {canDelete && !confirmDelete && (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
+          )}
+          {canDelete && confirmDelete && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate()}
+                className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Confirm delete'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="rounded-lg px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Receipt upload failed during creation — prompt a retry */}
@@ -483,7 +532,7 @@ export function ExpenseDetail() {
             {expense.receipts && expense.receipts.length > 0 ? (
               <div className="space-y-2">
                 {expense.receipts.map((r) => (
-                  <div key={r.id} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 space-y-1.5">
+                  <div key={r.id} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 space-y-2">
                     <div className="flex items-center gap-2">
                       <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
                       <span className="flex-1 truncate text-sm text-gray-700">{r.filename}</span>
@@ -519,6 +568,7 @@ export function ExpenseDetail() {
                         )}
                       </div>
                     )}
+                    <ReceiptPreview expenseId={expense.id} receipt={r} />
                   </div>
                 ))}
               </div>
@@ -604,47 +654,28 @@ export function ExpenseDetail() {
             </div>
           )}
 
-          {/* Release claim — accountant only, in_review only */}
-          {isPrivileged && expense.status === 'in_review' && (
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h2 className="mb-1 text-sm font-semibold text-gray-700">Claim</h2>
-              {expense.reviewedBy && (
-                <p className="mb-3 text-xs text-gray-500">
-                  Reviewing: <span className="font-medium text-gray-700">{expense.reviewedBy.name}</span>
-                  {expense.reviewedAt && (
-                    <span className="ml-1 text-gray-400">
-                      · {new Date(expense.reviewedAt).toLocaleString()}
-                    </span>
-                  )}
-                </p>
-              )}
-              <button
-                onClick={() => releaseClaimMutation.mutate()}
-                disabled={releaseClaimMutation.isPending}
-                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-60"
-              >
-                {releaseClaimMutation.isPending ? 'Releasing…' : 'Release Claim'}
-              </button>
-              <p className="mt-2 text-xs text-gray-400">Returns the expense to the Needs Review queue.</p>
-            </div>
-          )}
-
           {/* Reimbursement — accountant/admin only */}
           {isPrivileged && (
             <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h2 className="mb-2 text-sm font-semibold text-gray-700">Reimbursement</h2>
+              <h2 className="mb-2 text-sm font-semibold text-gray-700">
+                Reimbursement
+                {expense.paymentMethod?.requiresReimbursement || /personal/i.test(expense.paymentMethod?.label ?? '')
+                  ? ' — personal card'
+                  : ''}
+              </h2>
               <select
                 value={expense.reimbursementStatus}
                 disabled={reimbursementMutation.isPending}
                 onChange={(e) => reimbursementMutation.mutate(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none disabled:opacity-60"
               >
-                <option value="not_requested">Not requested</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="paid">Paid</option>
+                {REIMBURSEMENT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </select>
+              <p className="mt-2 text-xs text-gray-400">
+                Personal-card expenses should move through Needs reimbursement → Approved (pending payment) → Paid.
+              </p>
             </div>
           )}
 
@@ -663,7 +694,13 @@ export function ExpenseDetail() {
               <Row label="Submitted by" value={expense.user?.name ?? '—'} />
               <Row label="Created" value={new Date(expense.createdAt).toLocaleDateString()} />
               <Row label="Last updated" value={new Date(expense.updatedAt).toLocaleDateString()} />
-              {expense.category && <Row label="Category" value={expense.category.name} />}
+              {(expense.zohoExpenseAccountName || expense.category) && (
+                <Row
+                  label="Expense account"
+                  value={expense.zohoExpenseAccountName ?? expense.category?.name ?? '—'}
+                />
+              )}
+              {expense.zohoEntity && <Row label="Brand / entity" value={expense.zohoEntity} />}
               {expense.paymentMethod && (
                 <Row
                   label="Payment method"
@@ -676,7 +713,6 @@ export function ExpenseDetail() {
               {isPrivileged && expense.reviewedAt && (
                 <Row label="Review started" value={new Date(expense.reviewedAt).toLocaleString()} />
               )}
-              {isPrivileged && expense.zohoEntity && <Row label="Zoho entity" value={expense.zohoEntity} />}
               {isPrivileged && expense.zohoExpenseId && <Row label="Zoho ID" value={expense.zohoExpenseId} />}
               {expense.sourceApp && <Row label="Source app" value={expense.sourceApp} />}
               {expense.sourceRefId && <Row label="Source ref" value={expense.sourceRefId} />}

@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { buildZohoServicePayload, type ZohoServicePayload, type PayloadExpense } from './zohoPayload';
+import { resolveBrandFromEntity } from './zohoBrand';
 
 export interface ZohoReadinessCheck {
   label: string;
@@ -50,7 +51,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
 
   const isApproved = expense.status === 'approved' || expense.status === 'zoho_sync_failed';
   const hasReceipt = (expense.receipts?.length ?? 0) > 0;
-  const hasCategory = !!expense.categoryId;
+  const hasExpenseAccount = !!(expense.categoryId || expense.zohoExpenseAccountId);
   const hasPaymentMethod = !!expense.paymentMethodId;
   const hasZohoEntity = !!expense.zohoEntity;
   const alreadySynced = !!expense.zohoExpenseId;
@@ -69,7 +70,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
     { label: 'Amount > 0', pass: hasAmount },
     { label: 'Expense date', pass: hasDate },
     { label: 'Submitter (user)', pass: hasSubmitter },
-    { label: 'Category set', pass: hasCategory },
+    { label: 'Expense account set', pass: hasExpenseAccount },
     { label: 'Payment method set', pass: hasPaymentMethod },
     { label: 'Accounting entity (Zoho brand)', pass: hasZohoEntity },
     { label: 'Receipt attached', pass: hasReceipt },
@@ -82,7 +83,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   if (!hasAmount) missing.push('valid amount');
   if (!hasDate) missing.push('expense date');
   if (!hasSubmitter) missing.push('submitter (user)');
-  if (!hasCategory) missing.push('category');
+  if (!hasExpenseAccount) missing.push('expense account (Zoho COA or category)');
   if (!hasPaymentMethod) missing.push('payment method');
   if (!hasZohoEntity) missing.push('accounting entity (zohoEntity)');
   if (!hasReceipt) missing.push('receipt attachment');
@@ -99,6 +100,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   }
 
   const ready = missing.length === 0;
+  const brand = resolveBrandFromEntity(expense.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND;
 
   const mappedPayload: ZohoMappedPayload | null = ready ? {
     expenseId: expense.id,
@@ -108,9 +110,9 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
     date: expense.date,
     description: expense.description,
     zohoEntity: expense.zohoEntity!,
-    categoryName: expense.category?.name ?? null,
+    categoryName: expense.zohoExpenseAccountName ?? expense.category?.name ?? null,
     paymentMethodLabel: expense.paymentMethod?.label ?? null,
-    brand: env.ZOHO_DEFAULT_BRAND,
+    brand,
   } : null;
 
   const servicePayload = buildZohoServicePayload(expense);

@@ -1,10 +1,9 @@
 import { env } from '../config/env';
+import { resolveBrandFromEntity } from './zohoBrand';
 
-// Proposed payload that Midas would send to the Zoho Integration Service.
-// This is GENERIC — it is not coupled to trade shows or any single source app, and it
-// never requires an event_id. The integration service owns the actual Zoho mapping;
-// Midas only proposes a normalized shape. This is preview/spec only — building it
-// performs NO network call and creates NO Zoho record.
+// Payload Midas sends to POST /zoho/expenses/create_books on the Zoho Integration Service.
+// Flat account_id / paid_through_account_id match Zoho Books + the integration service contract
+// (Trade Show uses the same field names). Nested category/paymentMethod remain for readiness UI.
 export interface ZohoServicePayload {
   // Stable, deterministic key for duplicate prevention on the service side.
   idempotencyKey: string;
@@ -14,9 +13,10 @@ export interface ZohoServicePayload {
   currency: string;
   date: string;
   description: string | null;
-  // Accounting mappings are still accounting decisions — proposed* fields are placeholders
-  // until the integration service / accounting confirm the Chart-of-Accounts and
-  // paid-through account mappings.
+  /** Zoho Books expense COA account_id (required for live create). */
+  account_id: string | null;
+  /** Zoho Books paid-through account_id (card / reimbursement liability). */
+  paid_through_account_id: string | null;
   category: { id: string | null; name: string | null; proposedZohoAccount: string | null };
   paymentMethod: { id: string | null; label: string | null; proposedPaidThroughAccount: string | null };
   reimbursable: boolean;
@@ -44,6 +44,8 @@ export interface PayloadExpense {
   categoryId: string | null;
   paymentMethodId: string | null;
   zohoEntity: string | null;
+  zohoExpenseAccountId?: string | null;
+  zohoExpenseAccountName?: string | null;
   reimbursementStatus: string;
   userId: string | null;
   sourceApp?: string | null;
@@ -51,7 +53,7 @@ export interface PayloadExpense {
   sourceRefId?: string | null;
   sourceUrl?: string | null;
   sourceLabel?: string | null;
-  category?: { name: string } | null;
+  category?: { name: string; zohoAccountId?: string | null } | null;
   paymentMethod?: { label: string; zohoAccountName: string | null } | null;
   receipts?: { id: string }[];
 }
@@ -62,7 +64,24 @@ export function buildIdempotencyKey(expenseId: string): string {
   return `midas-expense-${expenseId}`;
 }
 
+/** Prefer numeric Zoho account ids stored in zoho_account_name; ignore free-text labels. */
+export function resolvePaidThroughAccountId(zohoAccountName: string | null | undefined): string | null {
+  if (!zohoAccountName) return null;
+  const trimmed = zohoAccountName.trim();
+  // Zoho Books account ids are long numeric strings.
+  if (/^\d{10,}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
 export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePayload {
+  // Prefer live per-expense Zoho COA pick; fall back to static category map (Trade Show).
+  const accountId =
+    expense.zohoExpenseAccountId?.trim()
+    || expense.category?.zohoAccountId?.trim()
+    || null;
+  const paidThrough = resolvePaidThroughAccountId(expense.paymentMethod?.zohoAccountName);
+  const brand = resolveBrandFromEntity(expense.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND;
+
   return {
     idempotencyKey: buildIdempotencyKey(expense.id),
     expenseId: expense.id,
@@ -71,20 +90,22 @@ export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePay
     currency: expense.currency,
     date: expense.date,
     description: expense.description,
+    account_id: accountId,
+    paid_through_account_id: paidThrough,
     category: {
       id: expense.categoryId,
-      name: expense.category?.name ?? null,
-      proposedZohoAccount: null, // accounting decision — see ZOHO_MAPPING_REVIEW §5
+      name: expense.zohoExpenseAccountName ?? expense.category?.name ?? null,
+      proposedZohoAccount: accountId,
     },
     paymentMethod: {
       id: expense.paymentMethodId,
       label: expense.paymentMethod?.label ?? null,
-      proposedPaidThroughAccount: expense.paymentMethod?.zohoAccountName ?? null,
+      proposedPaidThroughAccount: paidThrough ?? expense.paymentMethod?.zohoAccountName ?? null,
     },
     // Heuristic until decision A (reimbursable vs company-card) is finalized by accounting.
     reimbursable: expense.reimbursementStatus !== 'not_requested',
     submitter: { userId: expense.userId },
-    brand: env.ZOHO_DEFAULT_BRAND,
+    brand,
     zohoEntity: expense.zohoEntity,
     receipt: expense.receipts && expense.receipts.length > 0 ? { count: expense.receipts.length } : null,
     source: {

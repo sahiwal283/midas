@@ -15,6 +15,8 @@ const createSchema = z.object({
   lastFour: z.string().length(4).regex(/^\d{4}$/).optional(),
   brand: z.enum(['visa', 'mastercard', 'amex', 'discover', 'debit', 'cash', 'other']).optional(),
   zohoAccountName: z.string().optional(),
+  defaultZohoEntity: z.string().max(200).optional().nullable(),
+  requiresReimbursement: z.boolean().optional(),
   isCompanyWide: z.boolean().default(true),
   assignedUserId: z.string().uuid().optional(),
 });
@@ -52,6 +54,8 @@ router.post('/', requireRole('admin'), asyncHandler(async (req, res) => {
     lastFour: body.lastFour ?? null,
     brand: body.brand ?? null,
     zohoAccountName: body.zohoAccountName ?? null,
+    defaultZohoEntity: body.defaultZohoEntity ?? null,
+    requiresReimbursement: body.requiresReimbursement ?? false,
     assignedUserId: body.assignedUserId ?? null,
   }).returning();
 

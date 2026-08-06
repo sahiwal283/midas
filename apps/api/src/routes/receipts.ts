@@ -1,6 +1,8 @@
+import path from 'path';
+import fs from 'fs/promises';
 import { Router } from 'express';
 import multer from 'multer';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../db/index';
 import { receipts, expenses } from '../db/schema';
 import { authenticate } from '../middleware/auth';
@@ -8,6 +10,7 @@ import { asyncHandler, notFound, forbidden, createError } from '../middleware/er
 import { storage } from '../lib/storage';
 import { runReceiptOcr } from '../lib/runReceiptOcr';
 import { auditLog } from '../lib/audit';
+import { env } from '../config/env';
 
 const router = Router({ mergeParams: true });
 router.use(authenticate);
@@ -70,6 +73,26 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
 
   const withOcr = await runReceiptOcr(receipt.id, stored.storagePath);
   res.status(201).json({ receipt: withOcr, ocrMode: 'sync' });
+}));
+
+// Stream receipt file inline (session cookie auth — used by UI preview)
+router.get('/:receiptId/content', asyncHandler(async (req, res) => {
+  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.expenseId) });
+  if (!expense) throw notFound('Expense not found');
+  const isOwner = expense.userId === req.user!.id;
+  const isPrivileged = req.user!.role === 'accountant' || req.user!.role === 'admin';
+  if (!isOwner && !isPrivileged) throw forbidden();
+
+  const receipt = await db.query.receipts.findFirst({
+    where: and(eq(receipts.id, req.params.receiptId), eq(receipts.expenseId, req.params.expenseId)),
+  });
+  if (!receipt) throw notFound('Receipt not found');
+
+  const fullPath = path.join(env.UPLOADS_DIR, receipt.storagePath);
+  const data = await fs.readFile(fullPath);
+  res.setHeader('Content-Type', receipt.mimeType);
+  res.setHeader('Content-Disposition', `inline; filename="${receipt.filename.replace(/"/g, '')}"`);
+  res.send(data);
 }));
 
 // Delete a receipt

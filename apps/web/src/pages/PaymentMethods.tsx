@@ -24,6 +24,8 @@ export function PaymentMethods() {
     lastFour: '',
     brand: '',
     zohoAccountName: '',
+    defaultZohoEntity: '',
+    requiresReimbursement: false,
     isCompanyWide: true,
   });
 
@@ -38,13 +40,18 @@ export function PaymentMethods() {
       lastFour: form.lastFour || undefined,
       brand: form.brand || undefined,
       zohoAccountName: form.zohoAccountName || undefined,
+      defaultZohoEntity: form.defaultZohoEntity || undefined,
+      requiresReimbursement: form.requiresReimbursement,
       isCompanyWide: form.isCompanyWide,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payment-methods-admin'] });
       qc.invalidateQueries({ queryKey: ['payment-methods'] });
       setShowForm(false);
-      setForm({ label: '', lastFour: '', brand: '', zohoAccountName: '', isCompanyWide: true });
+      setForm({
+        label: '', lastFour: '', brand: '', zohoAccountName: '', defaultZohoEntity: '',
+        requiresReimbursement: false, isCompanyWide: true,
+      });
     },
   });
 
@@ -112,24 +119,47 @@ export function PaymentMethods() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Zoho account name</label>
+              <label className="mb-1 block text-xs font-medium text-gray-700">Zoho payment account ID / name</label>
               <input
                 value={form.zohoAccountName}
                 onChange={(e) => set('zohoAccountName', e.target.value)}
-                placeholder="Corporate AMEX"
+                placeholder="Zoho Books paid-through account id"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">Default Zoho entity</label>
+              <input
+                value={form.defaultZohoEntity}
+                onChange={(e) => set('defaultZohoEntity', e.target.value)}
+                placeholder="e.g. Nirvana Kulture"
                 className={inputCls}
               />
             </div>
           </div>
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="company-wide"
-              checked={form.isCompanyWide}
-              onChange={(e) => set('isCompanyWide', e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <label htmlFor="company-wide" className="text-sm text-gray-700">Visible to all employees</label>
+          <div className="mt-3 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="company-wide"
+                checked={form.isCompanyWide}
+                onChange={(e) => set('isCompanyWide', e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <label htmlFor="company-wide" className="text-sm text-gray-700">Visible to all employees</label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="requires-reimb"
+                checked={form.requiresReimbursement}
+                onChange={(e) => set('requiresReimbursement', e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <label htmlFor="requires-reimb" className="text-sm text-gray-700">
+                Personal card — expenses need reimbursement
+              </label>
+            </div>
           </div>
           <div className="mt-4 flex gap-2">
             <button
@@ -165,6 +195,7 @@ export function PaymentMethods() {
               <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <th className="px-6 py-3">Label</th>
                 <th className="px-6 py-3">Brand</th>
+                <th className="px-6 py-3">Entity</th>
                 <th className="px-6 py-3">Zoho Account</th>
                 <th className="px-6 py-3">Scope</th>
                 <th className="px-6 py-3">Status</th>
@@ -182,7 +213,16 @@ export function PaymentMethods() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-gray-600">{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : '—'}</td>
-                  <td className="px-6 py-4 text-gray-600">{pm.zohoAccountName ?? '—'}</td>
+                  <td className="px-6 py-4">
+                    {pm.defaultZohoEntity ? (
+                      <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        {pm.defaultZohoEntity}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 font-mono text-xs text-gray-600">{pm.zohoAccountName ?? '—'}</td>
                   <td className="px-6 py-4 text-gray-600">{pm.isCompanyWide ? 'Company-wide' : 'Assigned'}</td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>

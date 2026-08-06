@@ -2,7 +2,7 @@
 
 ## Zoho Integration Service connectivity (v0.1.4-alpha)
 
-Midas talks to Zoho **only** through the Zoho Integration Service (CT 9503, `http://192.168.1.205:8000`); it never calls Zoho directly. Auth is `X-Internal-Token` + `X-Brand` headers (token in `/opt/midas/.env` `ZOHO_SERVICE_TOKEN`, never printed).
+Midas talks to Zoho **only** through the Zoho Integration Service (CT 9503, `http://192.168.1.205:8000`); it never calls Zoho directly. Auth is `Authorization: Bearer <ZOHO_SERVICE_TOKEN>` + `X-Brand` (token in `/opt/midas/.env`, never printed). Do not send the app token as `X-Internal-Token`.
 
 Check connectivity (accountant/admin session required):
 ```bash

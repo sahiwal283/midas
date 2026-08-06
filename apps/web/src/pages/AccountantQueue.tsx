@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Clock, RefreshCw, XCircle, Send, FileX, Tag, CreditCard, Building2, Banknote, Eye } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, RefreshCw, XCircle, Send, FileX, Tag, CreditCard, Building2, Banknote } from 'lucide-react';
 import { accountantApi } from '../api/expenses';
-import { StatusBadge } from '../components/StatusBadge';
+import { StatusBadge, ZohoPushBadge, ReimbursementBadge } from '../components/StatusBadge';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
+import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 
@@ -12,7 +13,6 @@ import type { Expense } from '../types';
 
 type LaneId =
   | 'needs_review'
-  | 'in_review'
   | 'awaiting_user'
   | 'missing_receipt'
   | 'missing_category'
@@ -32,21 +32,15 @@ interface LaneDef {
 
 const LANES: Record<LaneId, LaneDef> = {
   needs_review: {
-    label: 'Needs Review',
+    label: 'Pending approval',
     icon: <Clock className="h-3.5 w-3.5" />,
-    description: 'New submissions waiting for first review — not yet claimed by an accountant',
-    filter: (e) => e.status === 'pending',
-  },
-  in_review: {
-    label: 'In Review',
-    icon: <Eye className="h-3.5 w-3.5" />,
-    description: 'Claimed by an accountant — actively being reviewed',
-    filter: (e) => e.status === 'in_review',
+    description: 'Submitted — ready to Approve, Reject, or request further review',
+    filter: (e) => e.status === 'pending' || e.status === 'in_review',
   },
   awaiting_user: {
-    label: 'Awaiting User',
+    label: 'Needs further review',
     icon: <AlertCircle className="h-3.5 w-3.5" />,
-    description: 'You asked for more information — waiting on employee response',
+    description: 'Accountant asked for more information — waiting on employee',
     filter: (e) => e.status === 'awaiting_info',
   },
   missing_receipt: {
@@ -56,9 +50,9 @@ const LANES: Record<LaneId, LaneDef> = {
     filter: (e) => e.status === 'approved' && (e.flags ?? []).includes('missing_receipt'),
   },
   missing_category: {
-    label: 'Missing Category',
+    label: 'Missing Expense Account',
     icon: <Tag className="h-3.5 w-3.5" />,
-    description: 'Approved expenses without a category — cannot push to Zoho',
+    description: 'Approved expenses without a Zoho expense account (or Midas category) — cannot push to Zoho',
     filter: (e) => e.status === 'approved' && (e.flags ?? []).includes('needs_category'),
   },
   missing_payment_method: {
@@ -76,20 +70,21 @@ const LANES: Record<LaneId, LaneDef> = {
   ready_for_zoho: {
     label: 'Ready for Zoho',
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
-    description: 'All required fields complete — ready to push to Zoho. Zoho is in mock mode: no real sync will occur.',
+    description: 'All required fields complete — ready to push to Zoho.',
     filter: (e) => (e.flags ?? []).includes('ready_for_zoho'),
   },
   zoho_failed: {
     label: 'Zoho Failed',
     icon: <RefreshCw className="h-3.5 w-3.5" />,
-    description: 'Zoho sync failed — needs retry. Zoho is in mock mode during this pilot.',
+    description: 'Zoho sync failed — needs retry.',
     filter: (e) => e.status === 'zoho_sync_failed',
   },
   reimbursement_pending: {
     label: 'Reimbursement',
     icon: <Banknote className="h-3.5 w-3.5" />,
-    description: 'Employees waiting to be reimbursed',
-    filter: (e) => (e.flags ?? []).includes('reimbursement_pending'),
+    description: 'Personal-card expenses waiting for reimbursement (needs reimbursement / approved pending payment)',
+    filter: (e) =>
+      e.reimbursementStatus === 'pending' || e.reimbursementStatus === 'approved',
   },
   all: {
     label: 'All Expenses',
@@ -101,7 +96,7 @@ const LANES: Record<LaneId, LaneDef> = {
 
 // Flag metadata for inline badges
 const FLAG_META: Record<string, { label: string; color: string }> = {
-  needs_category: { label: 'No Category', color: 'bg-orange-100 text-orange-700' },
+  needs_category: { label: 'No Expense Account', color: 'bg-orange-100 text-orange-700' },
   missing_receipt: { label: 'No Receipt', color: 'bg-red-100 text-red-700' },
   needs_payment_method: { label: 'No Payment', color: 'bg-purple-100 text-purple-700' },
   needs_entity: { label: 'No Entity', color: 'bg-indigo-100 text-indigo-700' },
@@ -117,11 +112,42 @@ export function AccountantQueue() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [activeLane, setActiveLane] = useState<LaneId>('needs_review');
+  const [quickViewId, setQuickViewId] = useState<string | null>(null);
 
   const { data: queue = [], isLoading: queueLoading } = useQuery({
     queryKey: ['accountant-queue'],
     queryFn: () => accountantApi.queue(),
   });
+
+  const { data: zohoHealth } = useQuery({
+    queryKey: ['zoho-service-health'],
+    queryFn: () => accountantApi.zohoServiceHealth(),
+    staleTime: 60_000,
+  });
+
+  const zohoPushSuffix = !zohoHealth
+    ? ''
+    : zohoHealth.readyForLivePush
+      ? ''
+      : zohoHealth.zohoMode === 'mock'
+        ? ' [mock]'
+        : zohoHealth.dryRun
+          ? ' [dry-run]'
+          : zohoHealth.zohoAuth?.ok === false
+            ? ' [blocked]'
+            : '';
+
+  const zohoLaneNote = !zohoHealth
+    ? null
+    : zohoHealth.readyForLivePush
+      ? 'Live Zoho writes are enabled.'
+      : zohoHealth.zohoMode === 'mock'
+        ? 'Zoho is in mock mode: no real sync will occur.'
+        : zohoHealth.dryRun
+          ? 'Zoho dry-run is on: Midas will not POST create_books.'
+          : zohoHealth.zohoAuth?.ok === false
+            ? `Zoho Integration Service auth blocked (${zohoHealth.zohoAuth.code ?? 'error'}): ${zohoHealth.zohoAuth.message ?? 'Authorization required'}.`
+            : 'Zoho service is not ready for live push.';
 
   const { data: allExpenses = [], isLoading: allLoading } = useQuery({
     queryKey: ['accountant-all'],
@@ -137,22 +163,6 @@ export function AccountantQueue() {
       requestType?: string;
       internalNote?: string;
     }) => accountantApi.review(id, { action, note, requestType, internalNote }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['accountant-queue'] });
-      qc.invalidateQueries({ queryKey: ['accountant-all'] });
-    },
-  });
-
-  const claimMutation = useMutation({
-    mutationFn: (id: string) => accountantApi.claim(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['accountant-queue'] });
-      qc.invalidateQueries({ queryKey: ['accountant-all'] });
-    },
-  });
-
-  const releaseClaimMutation = useMutation({
-    mutationFn: (id: string) => accountantApi.releaseClaim(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accountant-queue'] });
       qc.invalidateQueries({ queryKey: ['accountant-all'] });
@@ -193,8 +203,8 @@ export function AccountantQueue() {
   // Summary cards — the 4 most actionable queues
   const summaryLanes: { id: LaneId; color: string }[] = [
     { id: 'needs_review', color: 'yellow' },
-    { id: 'in_review', color: 'blue' },
     { id: 'awaiting_user', color: 'amber' },
+    { id: 'reimbursement_pending', color: 'orange' },
     { id: 'ready_for_zoho', color: 'teal' },
   ];
 
@@ -228,7 +238,7 @@ export function AccountantQueue() {
         {/* Primary attention queues */}
         <LaneGroup
           label="Needs Attention"
-          lanes={['needs_review', 'in_review', 'awaiting_user', 'zoho_failed']}
+          lanes={['needs_review', 'awaiting_user', 'zoho_failed']}
           activeLane={activeLane}
           laneCounts={laneCounts}
           onSelect={setActiveLane}
@@ -253,7 +263,12 @@ export function AccountantQueue() {
 
       {/* Lane description */}
       {activeLane !== 'all' && (
-        <p className="mb-3 text-xs text-gray-400">{LANES[activeLane].description}</p>
+        <p className="mb-3 text-xs text-gray-400">
+          {LANES[activeLane].description}
+          {(activeLane === 'ready_for_zoho' || activeLane === 'zoho_failed') && zohoLaneNote
+            ? ` ${zohoLaneNote}`
+            : ''}
+        </p>
       )}
 
       {/* Expense table */}
@@ -282,19 +297,14 @@ export function AccountantQueue() {
                 <ExpenseRow
                   key={expense.id}
                   expense={expense}
-                  activeLane={activeLane}
-                  currentUserId={user?.id}
-                  currentUserRole={user?.role}
-                  onClaim={() => claimMutation.mutate(expense.id)}
-                  onReleaseClaim={() => releaseClaimMutation.mutate(expense.id)}
+                  onOpenReceipt={setQuickViewId}
                   onReview={(action, note, requestType, internalNote) =>
                     reviewMutation.mutate({ id: expense.id, action, note, requestType, internalNote })
                   }
                   onResolve={() => resolveMutation.mutate(expense.id)}
                   onPushZoho={() => zohoMutation.mutate(expense.id)}
+                  zohoPushSuffix={zohoPushSuffix}
                   isActing={
-                    claimMutation.isPending ||
-                    releaseClaimMutation.isPending ||
                     reviewMutation.isPending ||
                     resolveMutation.isPending ||
                     zohoMutation.isPending
@@ -305,6 +315,17 @@ export function AccountantQueue() {
           </table>
         )}
       </div>
+
+      {quickViewId && (
+        <ExpenseQuickViewModal
+          expenseId={quickViewId}
+          onClose={() => setQuickViewId(null)}
+          onDeleted={() => {
+            void qc.invalidateQueries({ queryKey: ['accountant-queue'] });
+            void qc.invalidateQueries({ queryKey: ['accountant-all'] });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -431,25 +452,19 @@ const REQUEST_TYPE_OPTIONS = [
 
 function ExpenseRow({
   expense,
-  activeLane,
-  currentUserId,
-  currentUserRole,
-  onClaim,
-  onReleaseClaim,
+  onOpenReceipt,
   onReview,
   onResolve,
   onPushZoho,
+  zohoPushSuffix,
   isActing,
 }: {
   expense: Expense;
-  activeLane: LaneId;
-  currentUserId: string | undefined;
-  currentUserRole: string | undefined;
-  onClaim: () => void;
-  onReleaseClaim: () => void;
+  onOpenReceipt: (expenseId: string) => void;
   onReview: (action: 'approve' | 'reject' | 'request_info', note?: string, requestType?: string, internalNote?: string) => void;
   onResolve: () => void;
   onPushZoho: () => void;
+  zohoPushSuffix: string;
   isActing: boolean;
 }) {
   const [showAskForm, setShowAskForm] = useState(false);
@@ -459,17 +474,12 @@ function ExpenseRow({
 
   const flags = (expense.flags ?? []).filter((f) => f !== 'zoho_synced' && f !== 'from_extension');
   const isFromExtension = (expense.flags ?? []).includes('from_extension');
-  const isPending = expense.status === 'pending';
-  const isInReview = expense.status === 'in_review';
+  const canReview = expense.status === 'pending' || expense.status === 'in_review';
   const isAwaiting = expense.status === 'awaiting_info';
-
-  // Ownership: full Approve/Reject/Ask only for the claiming reviewer or admin.
-  // Any accountant can still release or act if no one has claimed it yet.
-  const isClaimer = expense.reviewedById === currentUserId;
-  const isAdmin = currentUserRole === 'admin';
-  const canAct = isInReview && (isClaimer || isAdmin || !expense.reviewedById);
   const isReadyForZoho = (expense.flags ?? []).includes('ready_for_zoho');
   const isZohoFailed = expense.status === 'zoho_sync_failed';
+  const needsReimb =
+    expense.reimbursementStatus === 'pending' || expense.reimbursementStatus === 'approved';
 
   function submitAsk() {
     if (!askNote.trim()) return;
@@ -500,12 +510,6 @@ function ExpenseRow({
                 · {expense.paymentMethod.label}{expense.paymentMethod.lastFour ? ` ···${expense.paymentMethod.lastFour}` : ''}
               </span>
             )}
-            {expense.status === 'in_review' && expense.reviewedBy && (
-              <span className="inline-flex items-center gap-0.5 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600">
-                <Eye className="h-3 w-3" />
-                {expense.reviewedBy.name}
-              </span>
-            )}
           </div>
         </td>
         <td className="px-5 py-3 text-gray-600">{expense.date}</td>
@@ -513,10 +517,21 @@ function ExpenseRow({
           {expense.currency} {Number(expense.amount).toFixed(2)}
         </td>
         <td className="px-5 py-3">
-          <StatusBadge status={expense.status} variant="accountant" />
+          <div className="flex flex-col items-start gap-1">
+            <StatusBadge status={expense.status} variant="accountant" />
+            <ZohoPushBadge
+              zohoExpenseId={expense.zohoExpenseId}
+              syncFailed={isZohoFailed}
+            />
+            {needsReimb && <ReimbursementBadge status={expense.reimbursementStatus} />}
+          </div>
         </td>
         <td className="px-5 py-3">
-          <ReceiptDetailsButton expenseId={expense.id} receipts={expense.receipts} />
+          <ReceiptDetailsButton
+            expenseId={expense.id}
+            receipts={expense.receipts}
+            onOpen={onOpenReceipt}
+          />
         </td>
         <td className="px-5 py-3">
           <div className="flex flex-wrap items-center gap-1">
@@ -526,37 +541,24 @@ function ExpenseRow({
         </td>
         <td className="px-5 py-3">
           <div className="flex items-center gap-1.5 flex-wrap">
-            {isPending && (
-              <ActionBtn color="blue" onClick={onClaim} disabled={isActing}>
-                Mark as Reviewing
-              </ActionBtn>
-            )}
-            {isInReview && canAct && (
+            {canReview && (
               <>
                 <ActionBtn color="green" onClick={() => onReview('approve')} disabled={isActing}>Approve</ActionBtn>
                 <ActionBtn color="red" onClick={() => onReview('reject')} disabled={isActing}>Reject</ActionBtn>
-                <ActionBtn color="blue" onClick={() => setShowAskForm(true)} disabled={isActing}>Ask</ActionBtn>
+                <ActionBtn color="blue" onClick={() => setShowAskForm(true)} disabled={isActing}>
+                  Needs review
+                </ActionBtn>
               </>
-            )}
-            {isInReview && !canAct && (
-              <span className="text-xs text-gray-400 italic">
-                Claimed by {expense.reviewedBy?.name ?? 'another accountant'}
-              </span>
-            )}
-            {isInReview && (
-              <ActionBtn color="gray" onClick={onReleaseClaim} disabled={isActing}>
-                Release
-              </ActionBtn>
             )}
             {isAwaiting && (
               <ActionBtn color="blue" onClick={onResolve} disabled={isActing}>Resolve</ActionBtn>
             )}
             {(isReadyForZoho || isZohoFailed) && (
               <ActionBtn color="teal" onClick={onPushZoho} disabled={isActing}>
-                {isZohoFailed ? 'Retry Zoho [mock]' : 'Push to Zoho [mock]'}
+                {isZohoFailed ? `Retry Zoho${zohoPushSuffix}` : `Push to Zoho${zohoPushSuffix}`}
               </ActionBtn>
             )}
-            {!isPending && !isInReview && !isAwaiting && !isReadyForZoho && !isZohoFailed && (
+            {!canReview && !isAwaiting && !isReadyForZoho && !isZohoFailed && (
               <span className="text-xs text-gray-400">—</span>
             )}
           </div>

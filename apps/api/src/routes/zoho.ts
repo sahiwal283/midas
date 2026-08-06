@@ -18,7 +18,7 @@ router.get('/:id/zoho-readiness', requireRole('accountant', 'admin'), asyncHandl
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, req.params.id),
     with: {
-      category: { columns: { id: true, name: true } },
+      category: { columns: { id: true, name: true, zohoAccountId: true } },
       paymentMethod: { columns: { id: true, label: true, zohoAccountName: true } },
       receipts: { columns: { id: true } },
       messages: { columns: { requestType: true, isResolved: true } },
