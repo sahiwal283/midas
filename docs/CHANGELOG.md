@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0-alpha (2026-08-06)
+
+### Daily expense auto-push
+- Complete staff-entered daily expenses (entered in Midas or via the browser extension) **skip accountant approval**: on submit they are auto-approved (audit `auto_approved`) and pushed to Zoho immediately. Eligibility = all Zoho-required info present (entity, expense account, payment method with paid-through, amount, merchant, receipt, no open requests).
+- Event expenses (Trade Show app, any ext-API source) and incomplete daily expenses still go to the accountant queue as before.
+- Failed auto-pushes land in `zoho_sync_failed` for accountant retry. Reimbursable (personal-card) expenses auto-push too but stay in the Reimbursement lane until paid.
+- Refactor: shared `lib/zohoPush.ts` used by both accountant push and auto-push.
+
 ## 0.5.1-alpha (2026-08-06)
 
 ### SSO
