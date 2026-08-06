@@ -179,13 +179,10 @@ router.get('/oidc/callback', asyncHandler(async (req, res) => {
     return;
   }
 
-  // Sync role from Authentik groups (Authentik groups are source of truth in SSO mode)
-  if (user.role !== role) {
-    await db.update(users)
-      .set({ role, updatedAt: new Date() })
-      .where(eq(users.id, user.id));
-    console.log('[oidc:role-synced]', { from: user.role, to: role });
-  }
+  // Midas owns roles. Authentik groups only gate app access (the denied_no_group
+  // check above) and set the initial role for auto-created users. Do NOT sync the
+  // role on login — admins assign roles in Midas (Admin → Users) and an SSO login
+  // must never overwrite that.
 
   // Touch lastSeenAt on returning SSO users (not on first-login — link was just created)
   if (!wasCreated && !wasLinkedByEmail) {
@@ -199,12 +196,12 @@ router.get('/oidc/callback', asyncHandler(async (req, res) => {
     entityType: 'user',
     entityId: user.id,
     action: 'sso.login_success',
-    metadata: { provider: 'authentik', sub: claims.sub, role, wasCreated, wasLinkedByEmail },
+    metadata: { provider: 'authentik', sub: claims.sub, role: user.role, mappedGroupRole: role, wasCreated, wasLinkedByEmail },
   });
 
   // Issue same JWT shape as local login
   const token = jwt.sign(
-    { sub: user.id, email: user.email, role },
+    { sub: user.id, email: user.email, role: user.role },
     env.JWT_SECRET,
     { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] },
   );
@@ -217,7 +214,7 @@ router.get('/oidc/callback', asyncHandler(async (req, res) => {
     maxAge: 8 * 60 * 60 * 1000,
   });
 
-  console.log('[oidc:session-created]', { userId: user.id, role, redirectTo: `${webBase}/dashboard` });
+  console.log('[oidc:session-created]', { userId: user.id, role: user.role, redirectTo: `${webBase}/dashboard` });
   res.redirect(`${webBase}/dashboard`);
 }));
 

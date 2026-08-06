@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1-alpha (2026-08-06)
+
+### SSO
+- **Fixed**: Authentik login no longer overwrites the user's Midas role on every login. Midas is the source of truth for roles (Admin → Users); Authentik groups only gate app access and set the initial role for auto-created users. Previously, roles assigned in Midas (e.g. developer/partner) were silently reset to the Authentik group mapping at next SSO login.
+
 ## 0.5.0-alpha (2026-08-06)
 
 ### Admin user management
