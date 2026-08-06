@@ -6,6 +6,7 @@ import type { UserRole } from '@midas/shared';
 import { env } from '../config/env';
 import { db } from '../db/index';
 import { appConnections, users } from '../db/schema';
+import { roleAllowed } from '../lib/roles';
 
 export interface AuthenticatedUser {
   id: string;
@@ -60,7 +61,7 @@ export function requireRole(...roles: UserRole[]) {
       res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Not authenticated' } });
       return;
     }
-    if (!roles.includes(req.user.role)) {
+    if (!roleAllowed(req.user.role, roles)) {
       res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } });
       return;
     }

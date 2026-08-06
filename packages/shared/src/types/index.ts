@@ -2,7 +2,7 @@ export { MIDAS_VERSION } from '../version';
 
 // ── Roles ────────────────────────────────────────────────────────────────────
 
-export type UserRole = 'user' | 'accountant' | 'admin';
+export type UserRole = 'user' | 'accountant' | 'admin' | 'partner' | 'developer';
 
 export interface User {
   id: string;
@@ -21,6 +21,10 @@ export interface PaymentMethod {
   lastFour: string | null;
   brand: string | null;
   zohoAccountName: string | null;
+  /** Default Zoho entity/org when this card is selected (e.g. "Nirvana Kulture"). */
+  defaultZohoEntity: string | null;
+  /** Personal / out-of-pocket card — expense should enter reimbursement workflow. */
+  requiresReimbursement: boolean;
   isActive: boolean;
   isCompanyWide: boolean;
   assignedUserId: string | null;
@@ -92,13 +96,16 @@ export interface Expense {
   description: string | null;
   status: ExpenseStatus;
   reimbursementStatus: ReimbursementStatus;
-  /** Set when an accountant claims the expense via POST /claim */
+  /** Set when an accountant completes a review action (approve/reject/request info) */
   reviewedById: string | null;
   reviewedAt: string | null;
   reviewedBy?: Pick<User, 'id' | 'name' | 'email'> | null;
   sourceLabel: string | null;
   sourceUrl: string | null;
   zohoEntity: string | null;
+  /** Live Zoho Books expense COA account_id (general/daily expenses). */
+  zohoExpenseAccountId?: string | null;
+  zohoExpenseAccountName?: string | null;
   zohoExpenseId: string | null;
   zohoSyncedAt: string | null;
   /** Last Zoho sync error. Stripped from responses for non-accountant/admin users. */
@@ -203,6 +210,9 @@ export interface CreateExpensePayload {
   categoryId?: string;
   paymentMethodId?: string;
   description?: string;
+  zohoEntity?: string;
+  zohoExpenseAccountId?: string;
+  zohoExpenseAccountName?: string;
   sourceApp?: string;
   sourceRefId?: string;
 }
@@ -225,6 +235,8 @@ export interface CreatePaymentMethodPayload {
   lastFour?: string;
   brand?: string;
   zohoAccountName?: string;
+  defaultZohoEntity?: string;
+  requiresReimbursement?: boolean;
   isCompanyWide?: boolean;
   assignedUserId?: string;
 }

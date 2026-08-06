@@ -102,6 +102,8 @@ async function seed() {
     { email: 'admin@midas.local', name: 'Admin User', role: 'admin' as const, password: 'admin123' },
     { email: 'accountant@midas.local', name: 'Accountant User', role: 'accountant' as const, password: 'accountant123' },
     { email: 'user@midas.local', name: 'Regular User', role: 'user' as const, password: 'user123' },
+    { email: 'partner@midas.local', name: 'Partner User', role: 'partner' as const, password: 'partner123' },
+    { email: 'developer@midas.local', name: 'Developer User', role: 'developer' as const, password: 'developer123' },
   ];
 
   for (const u of defaultUsers) {

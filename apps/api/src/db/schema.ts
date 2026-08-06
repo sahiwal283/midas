@@ -16,7 +16,7 @@ export type ExpenseSourceContext = {
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
-export const userRoleEnum = pgEnum('user_role', ['user', 'accountant', 'admin']);
+export const userRoleEnum = pgEnum('user_role', ['user', 'accountant', 'admin', 'partner', 'developer']);
 export const expenseStatusEnum = pgEnum('expense_status', [
   'draft', 'pending', 'in_review', 'awaiting_info', 'approved', 'zoho_sync_failed', 'rejected',
 ]);
@@ -46,6 +46,8 @@ export const expenseCategories = pgTable('expense_categories', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').unique().notNull(),
   description: text('description'),
+  /** Zoho Books expense (COA) account_id for create_books. */
+  zohoAccountId: text('zoho_account_id'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -57,7 +59,12 @@ export const paymentMethods = pgTable('payment_methods', {
   label: text('label').notNull(),
   lastFour: char('last_four', { length: 4 }),
   brand: text('brand'),
+  /** Zoho Books "paid through" account name or account id (Trade Show zohoPaymentAccountId). */
   zohoAccountName: text('zoho_account_name'),
+  /** Default Zoho Books org/entity when this card is selected (Trade Show card.entity). */
+  defaultZohoEntity: text('default_zoho_entity'),
+  /** True for personal / out-of-pocket cards that need employee reimbursement. */
+  requiresReimbursement: boolean('requires_reimbursement').default(false).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
   isCompanyWide: boolean('is_company_wide').default(true).notNull(),
   assignedUserId: uuid('assigned_user_id').references(() => users.id, { onDelete: 'set null' }),
@@ -95,6 +102,10 @@ export const expenses = pgTable('expenses', {
   reviewedById: uuid('reviewed_by_id').references(() => users.id, { onDelete: 'set null' }),
   reviewedAt: timestamp('reviewed_at'),
   zohoEntity: text('zoho_entity'),
+  /** Zoho Books expense COA account_id selected from live chart of accounts. */
+  zohoExpenseAccountId: text('zoho_expense_account_id'),
+  /** Display name for zohoExpenseAccountId (e.g. "Meals"). */
+  zohoExpenseAccountName: text('zoho_expense_account_name'),
   zohoExpenseId: text('zoho_expense_id'),
   zohoSyncedAt: timestamp('zoho_synced_at'),
   // Stores the last Zoho sync error message when status = zoho_sync_failed
