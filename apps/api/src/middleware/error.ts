@@ -7,6 +7,8 @@ import { mapOcrError } from '../lib/mapOcrError';
 export interface AppError extends Error {
   statusCode?: number;
   code?: string;
+  /** Extra fields merged into the JSON error body (e.g. { counts }). */
+  extras?: Record<string, unknown>;
 }
 
 export function errorHandler(err: AppError, req: Request, res: Response, _next: NextFunction) {
@@ -54,15 +56,22 @@ export function errorHandler(err: AppError, req: Request, res: Response, _next: 
     error: {
       code,
       message,
+      ...(err.extras ?? {}),
       ...(requestId ? { requestId } : {}),
     },
   });
 }
 
-export function createError(message: string, statusCode: number, code: string): AppError {
+export function createError(
+  message: string,
+  statusCode: number,
+  code: string,
+  extras?: Record<string, unknown>,
+): AppError {
   const err = new Error(message) as AppError;
   err.statusCode = statusCode;
   err.code = code;
+  if (extras) err.extras = extras;
   return err;
 }
 

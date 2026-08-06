@@ -1,16 +1,27 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, isNotNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull } from 'drizzle-orm';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
-import { users, expenseCategories, appConnections, ssoLinks } from '../db/schema';
+import {
+  users, expenseCategories, appConnections, ssoLinks,
+  expenses, expenseMessages, captures, partnerExpenses,
+} from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { storage } from '../lib/storage';
+import { canDeleteUser, canChangeRole, hasOwnedData, type OwnedCounts } from '../lib/userDelete';
 
 const router = Router();
 router.use(authenticate, requireRole('admin'));
+
+async function countActiveAdmins(): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(users)
+    .where(and(eq(users.role, 'admin'), eq(users.isActive, true)));
+  return Number(row?.n ?? 0);
+}
 
 // ── Users ──────────────────────────────────────────────────────────────────
 
@@ -37,7 +48,7 @@ router.get('/users', asyncHandler(async (_req, res) => {
 const createUserSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email(),
-  role: z.enum(['user', 'accountant', 'admin']),
+  role: z.enum(['user', 'accountant', 'admin', 'partner', 'developer']),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
@@ -73,7 +84,7 @@ router.post('/users', asyncHandler(async (req, res) => {
 
 const patchUserSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  role: z.enum(['user', 'accountant', 'admin']).optional(),
+  role: z.enum(['user', 'accountant', 'admin', 'partner', 'developer']).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -85,6 +96,18 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
 
   if ('isActive' in body && body.isActive === false && req.params.id === req.user!.id) {
     throw createError('You cannot deactivate your own account', 400, 'SELF_DEACTIVATION');
+  }
+
+  if (body.role !== undefined && body.role !== target.role) {
+    const decision = canChangeRole({
+      actorId: req.user!.id,
+      targetId: target.id,
+      targetRole: target.role,
+      newRole: body.role,
+      targetIsActive: target.isActive,
+      activeAdminCount: await countActiveAdmins(),
+    });
+    if (!decision.ok) throw createError(decision.message, decision.status, decision.code);
   }
 
   const [updated] = await db.update(users)
@@ -121,6 +144,81 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
   }
 
   res.json({ user: updated });
+}));
+
+// Hard delete. Default: only succeeds when the user owns no data (409 HAS_DATA
+// with counts otherwise). ?purge=true also removes everything they own, unless
+// any of their expenses is synced to Zoho (409 ZOHO_LINKED).
+router.delete('/users/:id', asyncHandler(async (req, res) => {
+  const purge = req.query.purge === 'true';
+
+  const target = await db.query.users.findFirst({ where: eq(users.id, req.params.id) });
+  if (!target) throw notFound('User not found');
+
+  const decision = canDeleteUser({
+    actorId: req.user!.id,
+    targetId: target.id,
+    targetRole: target.role,
+    targetIsActive: target.isActive,
+    activeAdminCount: await countActiveAdmins(),
+  });
+  if (!decision.ok) throw createError(decision.message, decision.status, decision.code);
+
+  const owned = await db.query.expenses.findMany({
+    where: eq(expenses.userId, target.id),
+    columns: { id: true, zohoExpenseId: true },
+    with: { receipts: { columns: { id: true, storagePath: true } } },
+  });
+  const [msgRow] = await db.select({ n: count() }).from(expenseMessages)
+    .where(eq(expenseMessages.senderId, target.id));
+  const [capRow] = await db.select({ n: count() }).from(captures)
+    .where(eq(captures.userId, target.id));
+  const [peRow] = await db.select({ n: count() }).from(partnerExpenses)
+    .where(eq(partnerExpenses.userId, target.id));
+
+  const counts: OwnedCounts = {
+    expenses: owned.length,
+    receipts: owned.reduce((n, e) => n + e.receipts.length, 0),
+    messages: Number(msgRow?.n ?? 0),
+    captures: Number(capRow?.n ?? 0),
+    partnerExpenses: Number(peRow?.n ?? 0),
+  };
+
+  if (hasOwnedData(counts) && !purge) {
+    throw createError('User owns data. Use purge to delete the user and all their data.', 409, 'HAS_DATA', { counts });
+  }
+
+  if (purge) {
+    const zohoLinked = owned.filter((e) => e.zohoExpenseId).length;
+    if (zohoLinked > 0) {
+      throw createError(
+        `${zohoLinked} expense(s) are synced to Zoho. Delete or unlink those expenses first.`,
+        409, 'ZOHO_LINKED',
+      );
+    }
+    for (const e of owned) {
+      for (const r of e.receipts) await storage.delete(r.storagePath);
+    }
+    if (owned.length > 0) {
+      await db.delete(expenses).where(inArray(expenses.id, owned.map((e) => e.id)));
+    }
+    await db.delete(expenseMessages).where(eq(expenseMessages.senderId, target.id));
+    await db.delete(captures).where(eq(captures.userId, target.id));
+    await db.delete(partnerExpenses).where(eq(partnerExpenses.userId, target.id));
+  }
+
+  await db.delete(users).where(eq(users.id, target.id));
+
+  await auditLog({
+    entityType: 'user',
+    entityId: target.id,
+    userId: req.user!.id,
+    action: purge ? 'admin.user.purged' : 'admin.user.deleted',
+    before: { email: target.email, name: target.name, role: target.role },
+    metadata: { counts },
+  });
+
+  res.json({ ok: true, purged: purge });
 }));
 
 router.post('/users/:id/reset-password', asyncHandler(async (req, res) => {
