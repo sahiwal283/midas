@@ -3,6 +3,7 @@ export type {
   Expense, ExpenseStatus, ReimbursementStatus,
   ExpenseCategory,
   PaymentMethod,
+  PartnerExpense, PartnerExpenseCategory,
   Receipt, OcrStatus,
   ExpenseMessage, MessageRequestType,
   Capture, CaptureSource, CaptureStatus,

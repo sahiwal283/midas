@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, CloudUpload } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, CloudUpload, Briefcase } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
@@ -16,8 +16,11 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 
 export function Sidebar() {
   const { user, logout } = useAuth();
-  const isPrivileged = user?.role === 'accountant' || user?.role === 'admin';
-  const isAdmin = user?.role === 'admin';
+  // Developer is an all-access role: it sees every nav section.
+  const isDeveloper = user?.role === 'developer';
+  const isPrivileged = user?.role === 'accountant' || user?.role === 'admin' || isDeveloper;
+  const isAdmin = user?.role === 'admin' || isDeveloper;
+  const isPartner = user?.role === 'partner' || isDeveloper;
 
   const { data: meta } = useQuery({
     queryKey: ['meta'],
@@ -65,6 +68,17 @@ export function Sidebar() {
             </span>
           )}
         </NavLink>
+
+        {isPartner && (
+          <>
+            <div className="my-2 border-t border-gray-100" />
+            <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Partner</p>
+            <NavLink to="/partner-expenses" className={linkClass}>
+              <Briefcase className="h-4 w-4" />
+              Partner Expenses
+            </NavLink>
+          </>
+        )}
 
         {isPrivileged && (
           <>

@@ -14,6 +14,7 @@ import { Captures } from './pages/Captures';
 import { ToUpload } from './pages/ToUpload';
 import { Admin } from './pages/Admin';
 import { PaymentMethods } from './pages/PaymentMethods';
+import { PartnerExpenses } from './pages/PartnerExpenses';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -42,6 +43,15 @@ export default function App() {
               <Route path="/expenses/:id" element={<ExpenseDetail />} />
               <Route path="/captures" element={<Captures />} />
               <Route path="/to-upload" element={<ToUpload />} />
+
+              <Route
+                path="/partner-expenses"
+                element={
+                  <ProtectedRoute roles={['partner', 'developer']}>
+                    <PartnerExpenses />
+                  </ProtectedRoute>
+                }
+              />
 
               <Route
                 path="/accountant"
