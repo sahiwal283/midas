@@ -25,6 +25,7 @@ export const reimbursementStatusEnum = pgEnum('reimbursement_status', [
 ]);
 export const ocrStatusEnum = pgEnum('ocr_status', ['pending', 'processing', 'done', 'failed']);
 export const captureSourceEnum = pgEnum('capture_source', ['extension', 'manual']);
+export const partnerExpenseCategoryEnum = pgEnum('partner_expense_category', ['business', 'personal']);
 export const captureStatusEnum = pgEnum('capture_status', ['draft', 'linked', 'discarded']);
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -252,6 +253,19 @@ export const categoryMappings = pgTable('category_mappings', {
   index('category_mappings_category_id_idx').on(t.categoryId),
 ]);
 
+// ── Partner Expenses ──────────────────────────────────────────────────────────
+// Standalone tracker for partner-related spend. Deliberately decoupled from the
+// normal expense flow: no receipts, no review queue, no reimbursement, no Zoho.
+
+export const partnerExpenses = pgTable('partner_expenses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  itemLocation: text('item_location').notNull(),
+  category: partnerExpenseCategoryEnum('category').default('business').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // ── Relations ─────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -292,4 +306,8 @@ export const expenseMessagesRelations = relations(expenseMessages, ({ one }) => 
 export const capturesRelations = relations(captures, ({ one }) => ({
   user: one(users, { fields: [captures.userId], references: [users.id] }),
   expense: one(expenses, { fields: [captures.expenseId], references: [expenses.id] }),
+}));
+
+export const partnerExpensesRelations = relations(partnerExpenses, ({ one }) => ({
+  user: one(users, { fields: [partnerExpenses.userId], references: [users.id] }),
 }));
