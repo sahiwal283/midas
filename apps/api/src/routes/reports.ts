@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { and, count, eq, gte, inArray, lte, not, sql, sum } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, isNull, lte, ne, not, or, sql, sum } from 'drizzle-orm';
 import { db } from '../db/index';
 import { expenses, expenseCategories, paymentMethods, users } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
@@ -14,7 +14,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Company-wide aggregates for the Reports page. Scope: committed spend
 // (everything except drafts and rejected) within [from, to].
 router.get('/summary', asyncHandler(async (req, res) => {
-  const { from, to, entity } = req.query as Record<string, string | undefined>;
+  const { from, to, entity, type } = req.query as Record<string, string | undefined>;
+  if (type !== undefined && type !== 'daily' && type !== 'event') {
+    throw createError("type must be 'daily' or 'event'", 400, 'INVALID_TYPE');
+  }
   if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to) || from > to) {
     throw createError('from/to must be YYYY-MM-DD with from <= to', 400, 'INVALID_RANGE');
   }
@@ -26,6 +29,14 @@ router.get('/summary', asyncHandler(async (req, res) => {
     gte(expenses.date, from),
     lte(expenses.date, to),
     ...(entity ? [eq(expenses.zohoEntity, entity)] : []),
+    // Daily = entered in Midas or via the extension; event = any external app
+    // (trade_show, …) — the same boundary the auto-push feature uses.
+    ...(type === 'daily'
+      ? [or(isNull(expenses.sourceApp), eq(expenses.sourceApp, 'browser_extension'))]
+      : []),
+    ...(type === 'event'
+      ? [and(sql`${expenses.sourceApp} is not null`, ne(expenses.sourceApp, 'browser_extension'))]
+      : []),
   );
 
   const num = (v: unknown) => Number(v ?? 0);

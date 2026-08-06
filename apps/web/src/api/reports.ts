@@ -13,7 +13,9 @@ export interface ReportSummary {
   topUsers: ReportRow[];
 }
 
+export type ReportType = 'daily' | 'event';
+
 export const reportApi = {
-  summary: (p: { from: string; to: string; entity?: string }) =>
+  summary: (p: { from: string; to: string; entity?: string; type?: ReportType }) =>
     client.get<ReportSummary>('/reports/summary', { params: p }).then((r) => r.data),
 };

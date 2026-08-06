@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { reportApi, type ReportRow } from '../api/reports';
+import { reportApi, type ReportRow, type ReportType } from '../api/reports';
 import { PRESETS, presetRange } from '../lib/reportRanges';
 
 /** Dataviz-validated categorical palette — fixed slot order, never cycled. */
@@ -125,10 +125,16 @@ export function Reports() {
   const [preset, setPreset] = useState('this_quarter');
   const [range, setRange] = useState(() => presetRange('this_quarter'));
   const [entity, setEntity] = useState('');
+  const [type, setType] = useState<ReportType | ''>('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['report-summary', range.from, range.to, entity],
-    queryFn: () => reportApi.summary({ from: range.from, to: range.to, ...(entity ? { entity } : {}) }),
+    queryKey: ['report-summary', range.from, range.to, entity, type],
+    queryFn: () => reportApi.summary({
+      from: range.from,
+      to: range.to,
+      ...(entity ? { entity } : {}),
+      ...(type ? { type } : {}),
+    }),
   });
 
   const categories = useMemo(() => foldRows(data?.byCategory ?? [], 7), [data]);
@@ -157,7 +163,7 @@ export function Reports() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Company-wide spend, {range.from} to {range.to}{entity ? ` · ${entity}` : ''}
+          Company-wide spend, {range.from} to {range.to}{entity ? ` · ${entity}` : ''}{type ? ` · ${type === 'daily' ? 'Daily' : 'Event'} expenses` : ''}
         </p>
       </div>
 
@@ -192,6 +198,20 @@ export function Reports() {
             onChange={(e) => applyCustom('to', e.target.value)}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none"
           />
+          <div className="flex rounded-lg border border-gray-200 bg-gray-100 p-1">
+            {([['', 'All'], ['daily', 'Daily'], ['event', 'Event']] as const).map(([id, label]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setType(id as ReportType | '')}
+                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+                  type === id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <select
             value={entity}
             onChange={(e) => setEntity(e.target.value)}

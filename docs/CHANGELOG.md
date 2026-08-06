@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0-alpha (2026-08-06)
+
+### Reports
+- New **All / Daily / Event** type filter: daily = expenses entered in Midas or via the extension; event = expenses from external apps (Trade Show). Same boundary as the auto-push feature. Applies to every chart, KPI, and table (`type=daily|event` on `/reports/summary`).
+
 ## 0.7.0-alpha (2026-08-06)
 
 ### Reports
