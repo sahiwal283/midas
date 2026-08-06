@@ -63,7 +63,40 @@ function UsersTab() {
     mutationFn: ({ id, ...body }: { id: string; isActive?: boolean; role?: string }) =>
       client.patch(`/admin/users/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
+    onError: (err: any) => alert(err?.response?.data?.error?.message ?? 'Update failed'),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ id, purge }: { id: string; purge?: boolean }) =>
+      client.delete(`/admin/users/${id}${purge ? '?purge=true' : ''}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
+  });
+
+  function handleDelete(u: { id: string; name: string }) {
+    if (!window.confirm(`Delete ${u.name}? This cannot be undone.`)) return;
+    deleteMutation.mutate({ id: u.id }, {
+      onError: (err: any) => {
+        const e = err?.response?.data?.error;
+        if (e?.code === 'HAS_DATA') {
+          const c = e.counts ?? {};
+          const summary = [
+            c.expenses ? `${c.expenses} expense(s)` : null,
+            c.receipts ? `${c.receipts} receipt(s)` : null,
+            c.messages ? `${c.messages} message(s)` : null,
+            c.captures ? `${c.captures} capture(s)` : null,
+            c.partnerExpenses ? `${c.partnerExpenses} partner expense(s)` : null,
+          ].filter(Boolean).join(', ');
+          if (window.confirm(`${u.name} owns: ${summary}.\n\nDelete the user AND all this data? This cannot be undone.`)) {
+            deleteMutation.mutate({ id: u.id, purge: true }, {
+              onError: (err2: any) => alert(err2?.response?.data?.error?.message ?? 'Delete failed'),
+            });
+          }
+        } else {
+          alert(e?.message ?? 'Delete failed');
+        }
+      },
+    });
+  }
 
   const resetMutation = useMutation({
     mutationFn: (id: string) => client.post(`/admin/users/${id}/reset-password`),
@@ -129,6 +162,8 @@ function UsersTab() {
                 <option value="user">User</option>
                 <option value="accountant">Accountant</option>
                 <option value="admin">Admin</option>
+                <option value="partner">Partner</option>
+                <option value="developer">Developer</option>
               </select>
             </div>
             <div>
@@ -172,7 +207,17 @@ function UsersTab() {
                   <td className="px-5 py-3 font-medium text-gray-900">{u.name}</td>
                   <td className="px-5 py-3 text-gray-600">{u.email}</td>
                   <td className="px-5 py-3 text-gray-600">
-                    <span className="capitalize">{u.role}</span>
+                    <select
+                      value={u.role}
+                      onChange={(e) => patchMutation.mutate({ id: u.id, role: e.target.value })}
+                      disabled={u.id === currentUser?.id || patchMutation.isPending}
+                      title={u.id === currentUser?.id ? 'You cannot change your own role' : ''}
+                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm capitalize text-gray-700 focus:border-brand-500 focus:outline-none disabled:cursor-not-allowed disabled:border-transparent disabled:bg-transparent disabled:appearance-none"
+                    >
+                      {['user', 'accountant', 'admin', 'partner', 'developer'].map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
                     <span
                       className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500"
                       title="How this user can sign in"
@@ -212,6 +257,15 @@ function UsersTab() {
                       >
                         Reset Password
                       </button>
+                      {u.id !== currentUser?.id && (
+                        <button
+                          onClick={() => handleDelete(u)}
+                          disabled={deleteMutation.isPending}
+                          className="rounded border border-red-300 bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-40"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
