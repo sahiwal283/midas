@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.4.0-alpha (2026-08-06)
+
+### Partner Expenses (new)
+- New **partner** role with a standalone partner expense tracker (`/partner-expenses`): shared table of User · Amount · Item/Location · Category, plus a simple intake form (Business/Personal, defaults Business). Fully decoupled from the normal expense flow — no receipts, review queue, reimbursement, or Zoho.
+- New **developer** role: all-access, passes every role gate (API `requireRole` + web `ProtectedRoute`/nav).
+- New `partner_expenses` table + `partner_expense_category` enum (migrations `0008`, `0009`); audit-logged creates.
+- Seed users: `partner@midas.local` / `partner123`, `developer@midas.local` / `developer123`.
+
+## 0.3.9-alpha (2026-08-03)
+
+### Zoho expense accounts (daily expenses)
+- New Expense: pick **brand/entity** first, then **expense account** from live Zoho COA (`GET /zoho/expense-accounts?zohoEntity=`).
+- Stores `zoho_expense_account_id` / `name` on the expense — no local category maintenance for daily use.
+- Trade Show can still use Midas `categoryId` + static `zoho_account_id` maps.
+
+## 0.3.8-alpha (2026-08-03)
+
+### Zoho
+- **Fixed** Integration Service auth: send `Authorization: Bearer <ZOHO_SERVICE_TOKEN>` (not `X-Internal-Token`). Wrong header caused `401 ZOHO_AUTH_INVALID` before Zoho OAuth. Live `organizations/list` / COA confirmed with Bearer.
+- Live create_books: send `account_id` + `paid_through_account_id`; parse nested `data.expense.expense_id`; strip nested `source` (Zoho Books field, 100-char limit).
+- Categories: `zoho_account_id` + Haute Brands COA seed; Personal card → Employee Reimbursements paid-through.
+- CT 3120: `ZOHO_MODE=service`, `ZOHO_DRY_RUN=false`. Smoke push succeeded (PORT of SD → Zoho expense id recorded).
+
+## 0.3.7-alpha (2026-08-03)
+
+### Zoho
+- Accountant push sends full `buildZohoServicePayload`; service-health probes Zoho auth; queue button labels follow live/mock/dry-run/blocked.
+
+## 0.3.6-alpha (2026-08-03)
+
+### Accountant
+- Removed **Claim / Release** (single-accountant workflow). Approve/Reject/Needs review work on pending directly.
+- User reply / resolve-request returns expenses to `pending` (not `in_review`). Existing `in_review` rows migrated to `pending`.
+
+## 0.3.5-alpha (2026-08-03)
+
+### Accountant workflow / statuses
+- Approval labels: **Pending approval**, **Approved**, **Rejected**, **Needs further review** (maps `pending`/`in_review` / `approved` / `rejected` / `awaiting_info`).
+- Zoho shown separately: **Not pushed** | **Pushed** (`ZohoPushBadge`) — not mixed into approval status.
+- Review Queue: **Approve / Reject / Needs review** available on pending expenses (no mandatory “Mark as Reviewing” first). Optional Claim/Release kept.
+- Quick-view modal: accountant approve/reject/needs-further-review + reimbursement dropdown.
+
+### Reimbursement (personal cards)
+- `payment_methods.requires_reimbursement`; Personal (Need reimbursement) flagged.
+- Auto-set `reimbursement_status=pending` when personal card is used; backfill existing personal-card rows.
+- Reimbursement labels: Needs reimbursement → Approved (pending payment) → Paid.
+
+## 0.3.4-alpha (2026-08-03)
+
+### Payment methods (Trade Show parity)
+- Synced all **12** Trade Show `cardOptions` into Midas `payment_methods` (label, last4, entity, Zoho paid-through id).
+- New column `payment_methods.default_zoho_entity`; UI Admin Payment Methods shows Entity.
+- Backfilled `payment_method_id` (+ `zohoEntity` when blank) on migrated `trade_show` expenses via `cardUsed` last-4.
+- Ext: `GET /api/v1/ext/payment-methods` (`expenses:read`). Handoff: `docs/TRADE_SHOW_PAYMENT_METHODS.md`.
+
+## 0.3.3-alpha (2026-08-03)
+
+### UI
+- **Receipt quick view**: paperclip pill opens a Trade Show–style modal with **inline receipt image/PDF** (not a navigate-away detail page). Also used on Accountant Queue.
+- **Expense detail**: receipt files render inline; **Delete** available when permitted.
+- **My Expenses**: row checkboxes, bulk delete, source-app filter (e.g. `trade_show`) for cleaning test imports.
+
+### API
+- `GET /expenses/:expenseId/receipts/:receiptId/content` — session-auth receipt stream for UI preview.
+- Expanded `DELETE /expenses/:id` — owner draft/unreviewed pending; accountant/admin any without Zoho; admin `?force=true` for Zoho-linked.
+- `POST /expenses/bulk-delete` — `{ ids, force? }` with per-id results.
+
 ## 0.3.2-alpha (2026-08-03)
 
 ### UI
