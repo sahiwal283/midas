@@ -9,6 +9,9 @@ import { auditLog } from '../lib/audit';
 import { storage } from '../lib/storage';
 import { canSessionDeleteExpense } from '../lib/expenseDelete';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
+import { evaluateZohoReadiness } from '../lib/zohoReadiness';
+import { isAutoPushEligible } from '../lib/autoApprove';
+import { pushExpenseToZoho } from '../lib/zohoPush';
 
 const router = Router();
 
@@ -169,11 +172,48 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 
 // Submit draft for review
 router.post('/:id/submit', asyncHandler(async (req, res) => {
-  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
+  const expense = await db.query.expenses.findFirst({
+    where: eq(expenses.id, req.params.id),
+    with: {
+      receipts: true,
+      category: { columns: { id: true, name: true, zohoAccountId: true } },
+      paymentMethod: { columns: { id: true, label: true, zohoAccountName: true } },
+      messages: { columns: { requestType: true, isResolved: true } },
+    },
+  });
   if (!expense) throw notFound('Expense not found');
   if (expense.userId !== req.user!.id) throw forbidden();
   if (expense.status !== 'draft') {
     res.status(409).json({ error: { code: 'CONFLICT', message: 'Expense is not in draft status' } });
+    return;
+  }
+
+  // Daily auto-push: complete staff-entered expenses skip accountant approval.
+  // Readiness is evaluated as-if approved ("ready once approved"). Event
+  // expenses (trade_show etc.) and incomplete ones fall through to pending.
+  const readiness = evaluateZohoReadiness({ ...expense, status: 'approved' });
+  if (isAutoPushEligible({ sourceApp: expense.sourceApp, ready: readiness.ready })) {
+    const [approved] = await db.update(expenses)
+      .set({ status: 'approved', updatedAt: new Date() })
+      .where(eq(expenses.id, expense.id))
+      .returning();
+    await auditLog({
+      entityType: 'expense',
+      entityId: expense.id,
+      userId: req.user!.id,
+      action: 'auto_approved',
+      before: { status: 'draft' },
+      after: { status: 'approved' },
+      metadata: { reason: 'complete daily expense', zohoMode: readiness.zohoMode },
+    });
+
+    const outcome = await pushExpenseToZoho({ ...expense, ...approved }, req.user!.id);
+    // Push failure → zoho_sync_failed (set by the lib) lands in the accountant
+    // retry lane; the submitter's part is done either way.
+    res.json({
+      expense: outcome.ok ? outcome.expense : { ...approved, status: 'zoho_sync_failed' },
+      autoPushed: outcome.ok,
+    });
     return;
   }
 
