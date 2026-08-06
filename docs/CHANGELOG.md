@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0-alpha (2026-08-06)
+
+### Reports
+- New **Reports** page (accountant/admin/developer): company-wide spend with preset filters (This/Last month, This/Last quarter, Q1–Q4, YTD) + custom date range + entity filter.
+- KPI tiles (total, count, average, reimbursements pending), spend-over-time bar chart (weekly buckets for short ranges), category donut, entity and payment-method breakdowns, top-10 vendors and spenders.
+- New `GET /api/v1/reports/summary` aggregate endpoint (SQL GROUP BYs, zero-filled periods); scope = all non-draft, non-rejected expenses.
+- New web dependency: recharts.
+
 ## 0.6.0-alpha (2026-08-06)
 
 ### Daily expense auto-push
