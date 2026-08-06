@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0-alpha (2026-08-06)
+
+### Admin user management
+- **Hard delete users**: instant for users with no data; users owning data get a 409 with per-type counts, and the UI offers an explicit **purge** (removes their expenses + receipt files, messages, captures, partner expenses). Zoho-synced expenses block purge (`ZOHO_LINKED`). Guards: no self-delete, never the last active admin. All deletions audit-logged (`admin.user.deleted` / `admin.user.purged`).
+- **Role assignment**: role is editable per user (all five roles incl. partner/developer) from Admin → Users; API blocks self-role-change and demoting the last active admin.
+
 ## 0.4.0-alpha (2026-08-06)
 
 ### Partner Expenses (new)
