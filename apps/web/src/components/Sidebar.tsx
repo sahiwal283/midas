@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, CloudUpload, Briefcase } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, CloudUpload, Briefcase, BarChart3 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
@@ -87,6 +87,10 @@ export function Sidebar() {
             <NavLink to="/accountant" className={linkClass}>
               <ClipboardList className="h-4 w-4" />
               Review Queue
+            </NavLink>
+            <NavLink to="/reports" className={linkClass}>
+              <BarChart3 className="h-4 w-4" />
+              Reports
             </NavLink>
           </>
         )}
