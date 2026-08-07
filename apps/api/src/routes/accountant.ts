@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, and, inArray, desc, isNotNull } from 'drizzle-orm';
+import { eq, and, or, inArray, desc, isNotNull, isNull, ilike, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../db/index';
 import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
 import { pushExpenseToZoho } from '../lib/zohoPush';
+import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 
@@ -45,11 +46,36 @@ const QUEUE_STATUSES: StatusValue[] = ['pending', 'in_review', 'awaiting_info', 
 // ── Queue ─────────────────────────────────────────────────────────────────────
 
 router.get('/queue', asyncHandler(async (req, res) => {
-  const { status } = req.query as Record<string, string>;
-  const queueStatuses: StatusValue[] = status ? [status as StatusValue] : QUEUE_STATUSES;
+  const f = parseQueueFilters(req.query as Record<string, string | undefined>);
+  const queueStatuses: StatusValue[] = f.status ? [f.status as StatusValue] : QUEUE_STATUSES;
+
+  const conds = [inArray(expenses.status, queueStatuses)];
+  if (f.userId) conds.push(eq(expenses.userId, f.userId));
+  if (f.search) {
+    conds.push(or(
+      ilike(expenses.merchant, `%${f.search}%`),
+      ilike(expenses.description, `%${f.search}%`),
+    )!);
+  }
+  if (f.amountMin !== undefined) conds.push(gte(expenses.amount, String(f.amountMin)));
+  if (f.amountMax !== undefined) conds.push(lte(expenses.amount, String(f.amountMax)));
+  if (f.from) conds.push(gte(expenses.date, f.from));
+  if (f.to) conds.push(lte(expenses.date, f.to));
+  if (f.categoryId) conds.push(eq(expenses.categoryId, f.categoryId));
+  if (f.paymentMethodId) conds.push(eq(expenses.paymentMethodId, f.paymentMethodId));
+  if (f.reimbursementStatus) conds.push(sql`${expenses.reimbursementStatus} = ${f.reimbursementStatus}`);
+  if (f.company) conds.push(eq(expenses.zohoEntity, f.company));
+  if (f.sourceApp) conds.push(eq(expenses.sourceApp, f.sourceApp));
+  if (f.zohoStatus === 'synced') conds.push(isNotNull(expenses.zohoExpenseId));
+  if (f.zohoStatus === 'not_synced') conds.push(isNull(expenses.zohoExpenseId));
+  if (f.zohoStatus === 'sync_failed') conds.push(eq(expenses.status, 'zoho_sync_failed'));
+  if (f.missingReceipt) conds.push(sql`not exists (select 1 from receipts r where r.expense_id = ${expenses.id})`);
+  if (f.ocrNeedsReview) conds.push(sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id} and r.ocr_needs_review = true)`);
+  if (f.missingCategory) conds.push(and(isNull(expenses.categoryId), isNull(expenses.zohoExpenseAccountId))!);
+  if (f.missingPayment) conds.push(isNull(expenses.paymentMethodId));
 
   const rows = await db.query.expenses.findMany({
-    where: inArray(expenses.status, queueStatuses),
+    where: and(...conds),
     with: {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
@@ -81,6 +107,9 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
       zohoExpenseId: true,
       reimbursementStatus: true,
       sourceApp: true,
+      amount: true,
+      userId: true,
+      zohoExpenseAccountId: true,
     },
   });
 
@@ -98,15 +127,29 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
     reimbursement_pending: 0,
   };
 
+  let readyForZohoAmount = 0;
+  let reimbursementPendingAmount = 0;
+  const reimbursementEmployeeIds = new Set<string>();
+
   for (const row of rows) {
     counts[row.status] = (counts[row.status] ?? 0) + 1;
     const flags = computeFlags(row as Parameters<typeof computeFlags>[0]);
     for (const flag of flags) {
       if (flag in counts) counts[flag]++;
     }
+    if (flags.includes('ready_for_zoho')) readyForZohoAmount += Number(row.amount || 0);
+    if (row.reimbursementStatus === 'pending') {
+      reimbursementPendingAmount += Number(row.amount || 0);
+      reimbursementEmployeeIds.add(row.userId);
+    }
   }
 
-  res.json({ counts });
+  res.json({
+    counts,
+    readyForZohoAmount,
+    reimbursementPendingAmount,
+    reimbursementEmployees: reimbursementEmployeeIds.size,
+  });
 }));
 
 router.get('/expenses', asyncHandler(async (_req, res) => {
@@ -125,6 +168,94 @@ router.get('/expenses', asyncHandler(async (_req, res) => {
     return { ...row, flags, zohoReady: flags.includes('ready_for_zoho') };
   });
   res.json({ expenses: expensesWithFlags });
+}));
+
+// Employees with expenses in the queue — powers the employee filter.
+router.get('/employees', asyncHandler(async (_req, res) => {
+  const rows = await db.selectDistinct({ id: users.id, name: users.name })
+    .from(expenses)
+    .innerJoin(users, eq(expenses.userId, users.id))
+    .where(inArray(expenses.status, QUEUE_STATUSES));
+  res.json({ employees: rows.sort((a, b) => a.name.localeCompare(b.name)) });
+}));
+
+// ── Bulk review (safe bulk approval) ─────────────────────────────────────────
+// Approves only pending/in_review; everything else is skipped with a reason.
+// The UI is responsible for showing the flagged summary BEFORE calling this.
+
+const bulkReviewSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(200),
+  action: z.literal('approve'),
+});
+
+router.post('/expenses/bulk-review', asyncHandler(async (req, res) => {
+  const { ids } = bulkReviewSchema.parse(req.body);
+
+  const rows = await db.query.expenses.findMany({
+    where: inArray(expenses.id, ids),
+    with: { paymentMethod: true },
+  });
+  const { approvable, skipped } = partitionBulkReview(rows, ids);
+
+  const approved: string[] = [];
+  const now = new Date();
+  for (const id of approvable) {
+    const expense = rows.find((r) => r.id === id)!;
+    let reimbursementStatus = expense.reimbursementStatus;
+    const next = nextReimbursementOnCardLink(expense.reimbursementStatus, expense.paymentMethod);
+    if (next) reimbursementStatus = next as typeof expense.reimbursementStatus;
+
+    await db.update(expenses)
+      .set({ status: 'approved', reviewedById: req.user!.id, reviewedAt: now, reimbursementStatus, updatedAt: now })
+      .where(eq(expenses.id, id));
+    await auditLog({
+      entityType: 'expense',
+      entityId: id,
+      userId: req.user!.id,
+      action: 'review.approve',
+      before: { status: expense.status },
+      after: { status: 'approved' },
+      metadata: { bulk: true },
+    });
+    approved.push(id);
+  }
+
+  res.json({ approved, skipped });
+}));
+
+// ── Bulk Zoho push ────────────────────────────────────────────────────────────
+
+const bulkPushSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(200) });
+
+router.post('/zoho/bulk-push', asyncHandler(async (req, res) => {
+  const { ids } = bulkPushSchema.parse(req.body);
+
+  const pushed: string[] = [];
+  const failed: Array<{ id: string; code: string; message: string }> = [];
+
+  for (const id of ids) {
+    const expense = await db.query.expenses.findFirst({
+      where: eq(expenses.id, id),
+      with: {
+        receipts: { columns: { id: true } },
+        category: { columns: { id: true, name: true, zohoAccountId: true } },
+        paymentMethod: { columns: { id: true, label: true, zohoAccountName: true } },
+      },
+    });
+    if (!expense) {
+      failed.push({ id, code: 'NOT_FOUND', message: 'Expense not found' });
+      continue;
+    }
+    if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') {
+      failed.push({ id, code: 'CONFLICT', message: `Not pushable from status '${expense.status}'` });
+      continue;
+    }
+    const outcome = await pushExpenseToZoho(expense, req.user!.id);
+    if (outcome.ok) pushed.push(id);
+    else failed.push({ id, code: outcome.code, message: outcome.message });
+  }
+
+  res.json({ pushed, failed });
 }));
 
 // ── Review ────────────────────────────────────────────────────────────────────
