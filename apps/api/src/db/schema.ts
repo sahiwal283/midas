@@ -37,6 +37,18 @@ export const users = pgTable('users', {
   role: userRoleEnum('role').default('user').notNull(),
   passwordHash: text('password_hash'),
   isActive: boolean('is_active').default(true).notNull(),
+  // ── Org profile (admin console) ────────────────────────────────────────────
+  department: text('department'),
+  employeeId: text('employee_id'),
+  costCenter: text('cost_center'),
+  managerId: uuid('manager_id'),
+  /** Default company for the expense wizard. */
+  defaultZohoEntity: text('default_zoho_entity'),
+  defaultPaymentMethodId: uuid('default_payment_method_id'),
+  lastLoginAt: timestamp('last_login_at'),
+  // ── Invitation (single-use, 7-day) ─────────────────────────────────────────
+  inviteToken: text('invite_token'),
+  inviteExpiresAt: timestamp('invite_expires_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
