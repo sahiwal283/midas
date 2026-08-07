@@ -1,6 +1,14 @@
 import client from './client';
 import type { Expense, ExpenseCategory, Receipt, ExpenseMessage, PaymentMethod, AuditLogEntry, ZohoReadinessResult } from '../types';
 
+export interface DuplicateMatch {
+  id: string;
+  merchant: string;
+  amount: string | number;
+  date: string;
+  status: string;
+}
+
 export const expenseApi = {
   list: (params?: Record<string, string>) =>
     client.get<{ expenses: Expense[] }>('/expenses', { params }).then((r) => r.data.expenses),
@@ -36,6 +44,14 @@ export const expenseApi = {
     zohoExpenseAccountName: string;
   }>) =>
     client.patch<{ expense: Expense }>(`/expenses/${id}`, data).then((r) => r.data.expense),
+
+  /** Rejected → corrected expense: clones into a fresh draft (owner only). */
+  clone: (id: string) =>
+    client.post<{ expense: Expense }>(`/expenses/${id}/clone`).then((r) => r.data.expense),
+
+  /** Non-blocking duplicate pre-check for the wizard. */
+  checkDuplicate: (data: { merchant: string; amount: number; date: string }) =>
+    client.post<{ duplicate: DuplicateMatch | null }>('/expenses/check-duplicate', data).then((r) => r.data),
 
   zohoEntities: () =>
     client.get<{ entities: Array<{ entity: string; brand: string }> }>('/zoho/entities')

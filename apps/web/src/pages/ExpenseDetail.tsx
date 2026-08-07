@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Paperclip, Send, Upload, AlertCircle, CheckCircle2,
-  Clock, XCircle, RefreshCw, CreditCard, Trash2,
+  Clock, XCircle, RefreshCw, CreditCard, Trash2, Pencil,
 } from 'lucide-react';
 import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
@@ -310,6 +310,162 @@ function RecentActivity({ expenseId }: { expenseId: string }) {
   );
 }
 
+// ── Edit details card (owner; draft/awaiting_info: all fields, pending: notes) ─
+
+function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'notes_only' }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({ merchant: '', amount: '', date: '', description: '' });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      expenseApi.update(
+        expense.id,
+        mode === 'all'
+          ? {
+              merchant: form.merchant.trim(),
+              amount: Number(form.amount),
+              date: form.date,
+              description: form.description,
+            }
+          : { description: form.description },
+      ),
+    onSuccess: () => {
+      setEditing(false);
+      setError('');
+      void qc.invalidateQueries({ queryKey: ['expense', expense.id] });
+      void qc.invalidateQueries({ queryKey: ['expenses'] });
+    },
+    onError: (err: unknown) => {
+      const apiError = (err as { response?: { data?: { error?: { code?: string; message?: string } } } })
+        ?.response?.data?.error;
+      setError(
+        apiError?.code === 'NOT_EDITABLE' && apiError.message
+          ? apiError.message
+          : 'Could not save changes. Please try again.',
+      );
+    },
+  });
+
+  function openEditor() {
+    setForm({
+      merchant: expense.merchant ?? '',
+      amount: String(expense.amount ?? ''),
+      date: expense.date ?? '',
+      description: expense.description ?? '',
+    });
+    setError('');
+    setEditing(true);
+  }
+
+  function handleSave(e: FormEvent) {
+    e.preventDefault();
+    if (mode === 'all' && (!form.merchant.trim() || !form.amount || Number(form.amount) <= 0)) {
+      setError('Merchant and a valid amount are required.');
+      return;
+    }
+    saveMutation.mutate();
+  }
+
+  const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none';
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-700">
+          {mode === 'all' ? 'Edit details' : 'Edit notes'}
+        </h2>
+        {!editing && (
+          <button
+            type="button"
+            onClick={openEditor}
+            className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-800"
+          >
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </button>
+        )}
+      </div>
+      {!editing ? (
+        <p className="text-xs text-gray-400">
+          {mode === 'all'
+            ? 'You can update the merchant, amount, date, and notes.'
+            : 'This expense is waiting for review — only the notes can be changed.'}
+        </p>
+      ) : (
+        <form onSubmit={handleSave} className="space-y-3">
+          {mode === 'all' && (
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Merchant</label>
+                <input
+                  value={form.merchant}
+                  onChange={(e) => setForm((f) => ({ ...f, merchant: e.target.value }))}
+                  className={inputCls}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Amount</label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={form.amount}
+                    onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Date</label>
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Notes</label>
+            <textarea
+              rows={2}
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+          {error && (
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saveMutation.isPending}
+              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+            >
+              {saveMutation.isPending ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditing(false); setError(''); }}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function ExpenseDetail() {
@@ -375,6 +531,14 @@ export function ExpenseDetail() {
     },
   });
 
+  const cloneMutation = useMutation({
+    mutationFn: () => expenseApi.clone(id!),
+    onSuccess: (clone) => {
+      void qc.invalidateQueries({ queryKey: ['expenses'] });
+      navigate(`/expenses/${clone.id}`);
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => expenseApi.delete(id!, Boolean(expense?.zohoExpenseId)),
     onSuccess: () => {
@@ -405,6 +569,25 @@ export function ExpenseDetail() {
     user?.role === 'accountant' || user?.role === 'admin' || user?.role === 'developer';
   const isDraft = expense.status === 'draft';
   const isAwaiting = expense.status === 'awaiting_info';
+  const isRejected = expense.status === 'rejected';
+  // Rejection reason: the most recent accountant (non-owner) or system message.
+  const rejectionReason = (() => {
+    if (!isRejected) return null;
+    const msgs = expense.messages ?? [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.isSystem || m.senderId !== expense.userId) return m.body;
+    }
+    return null;
+  })();
+  // Field editing mirrors the API's state rules: draft/awaiting_info fully
+  // editable, pending notes-only, everything else (incl. Zoho-synced) locked.
+  const editMode: 'all' | 'notes_only' | 'none' = (() => {
+    if (!isOwner || expense.zohoExpenseId) return 'none';
+    if (isDraft || isAwaiting) return 'all';
+    if (expense.status === 'pending') return 'notes_only';
+    return 'none';
+  })();
   const hasOpenRequest = expense.messages?.some(
     (m) => m.requestType && !m.isResolved,
   ) ?? false;
@@ -508,8 +691,38 @@ export function ExpenseDetail() {
         </div>
       )}
 
-      {/* Status banner — user-facing only */}
-      {!isPrivileged && <StatusBanner status={expense.status} isPrivileged={false} />}
+      {/* Rejected — reason + corrected-expense action (owner only) */}
+      {isOwner && isRejected && (
+        <div className="mb-6 rounded-xl border-2 border-red-300 bg-red-50 p-4">
+          <div className="flex items-start gap-3">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-900">Rejected</p>
+              <p className="mt-0.5 text-sm text-red-800">
+                {rejectionReason ?? 'See the conversation below.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => cloneMutation.mutate()}
+                disabled={cloneMutation.isPending}
+                className="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {cloneMutation.isPending ? 'Creating…' : 'Create corrected expense'}
+              </button>
+              {cloneMutation.isError && (
+                <p className="mt-2 text-xs text-red-700">
+                  Could not create the corrected expense. Please try again.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status banner — user-facing only (the owner's rejected card replaces it) */}
+      {!isPrivileged && !(isOwner && isRejected) && (
+        <StatusBanner status={expense.status} isPrivileged={false} />
+      )}
 
       {/* Action-needed callout for users */}
       {isOwner && isAwaiting && (
@@ -664,6 +877,11 @@ export function ExpenseDetail() {
               </button>
               <p className="mt-2 text-xs text-gray-400">Once submitted, your accountant will review this expense.</p>
             </div>
+          )}
+
+          {/* Field editing — owner only, gated by the API's state rules */}
+          {editMode !== 'none' && (
+            <EditDetailsCard expense={expense} mode={editMode} />
           )}
 
           {/* Reimbursement — accountant/admin only */}

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, Upload, PencilLine, X, FileText, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
-import { expenseApi } from '../api/expenses';
+import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, CheckCircle2, Sparkles } from 'lucide-react';
+import { expenseApi, type DuplicateMatch } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
 import type { Receipt } from '../types';
@@ -28,6 +28,7 @@ export function ExpenseNew() {
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null);
   const [result, setResult] = useState<{ autoPushed: boolean; pending: boolean } | null>(null);
 
   const [form, setForm] = useState({
@@ -183,6 +184,27 @@ export function ExpenseNew() {
       setError('Merchant and a valid amount are required.');
       return;
     }
+    // One duplicate pre-check per submit attempt. A network failure here must
+    // never block submission — proceed silently.
+    try {
+      const { duplicate: match } = await expenseApi.checkDuplicate({
+        merchant: form.merchant.trim(),
+        amount: Number(form.amount),
+        date: form.date,
+      });
+      if (match) {
+        setDuplicate(match);
+        return;
+      }
+    } catch {
+      // Duplicate check is best-effort only.
+    }
+    await doSubmit();
+  }
+
+  /** The actual submit flow — "Submit anyway" calls this directly, skipping the re-check. */
+  async function doSubmit() {
+    setDuplicate(null);
     setSubmitting(true);
     try {
       const payload = {
@@ -450,6 +472,37 @@ export function ExpenseNew() {
           <Field label="Notes (optional)">
             <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={2} placeholder="Anything the accountant should know" className={`${inputCls} resize-none`} />
           </Field>
+
+          {duplicate && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold text-amber-900">
+                    Possible duplicate — {duplicate.merchant} · ${Number(duplicate.amount).toFixed(2)} · {duplicate.date} ({duplicate.status})
+                  </p>
+                  <p className="mt-0.5 text-amber-800">A similar expense was already submitted.</p>
+                </div>
+              </div>
+              <div className="mt-2.5 flex gap-2 pl-6">
+                <button
+                  type="button"
+                  onClick={() => void doSubmit()}
+                  disabled={submitting}
+                  className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                >
+                  Submit anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDuplicate(null)}
+                  className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                >
+                  Go back
+                </button>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
