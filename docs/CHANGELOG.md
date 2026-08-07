@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.0-alpha (2026-08-07)
+
+### Admin console
+- **User org profiles**: department, employee ID, cost center, manager, default company, default payment method, last login (migration 0011). Wizard pre-fills from user defaults.
+- **Invitations**: invite users via one-time 7-day links (`/invite/:token` sets the password and signs in); resend supported; email delivery arrives with notifications.
+- **Audit Log UI** (Admin → Security): filterable, searchable, paginated with expandable before/after JSON.
+- **Payment method assignment**: cards are company-wide or assigned to a user; employees see company cards + their own; full per-card editing.
+- **Admin IA reorg**: Company / People / Expenses / Integrations / Security groups; all `alert()`/`confirm()` replaced with proper modals; destructive delete prefers "Deactivate instead" and shows owned-data counts.
+- **Bulk user operations**: multi-select deactivate/reactivate with confirmation (self and last-active-admin protected).
+
 ## 0.12.0-alpha (2026-08-07)
 
 ### Expense lifecycle integrity
