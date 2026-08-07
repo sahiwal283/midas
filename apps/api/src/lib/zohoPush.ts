@@ -4,6 +4,28 @@ import { expenses } from '../db/schema';
 import { auditLog } from './audit';
 import { zoho, ZohoServiceError, type ZohoPushResult } from './zoho';
 import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
+import { classifyZohoError } from './zohoErrors';
+
+const RETRY_DELAYS_MS = [2_000, 5_000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Push with auto-retry for transient failures (network/429/5xx) only. */
+async function pushWithRetry(payload: ReturnType<typeof buildZohoServicePayload>): Promise<ZohoPushResult> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) await sleep(RETRY_DELAYS_MS[attempt - 1]);
+    try {
+      return await zoho.pushExpense(payload);
+    } catch (err) {
+      lastErr = err;
+      if (!classifyZohoError(err).retryable) throw err;
+    }
+  }
+  throw lastErr;
+}
 
 export type PushableExpense = PayloadExpense & typeof expenses.$inferSelect;
 
@@ -42,10 +64,10 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
   }
 
   try {
-    const result = await zoho.pushExpense(payload);
+    const result = await pushWithRetry(payload);
 
     const [updated] = await db.update(expenses)
-      .set({ status: 'approved', zohoExpenseId: result.zohoExpenseId, zohoSyncedAt: result.syncedAt, updatedAt: new Date() })
+      .set({ status: 'approved', zohoExpenseId: result.zohoExpenseId, zohoSyncedAt: result.syncedAt, zohoSyncError: null, updatedAt: new Date() })
       .where(eq(expenses.id, expense.id))
       .returning();
 
@@ -59,11 +81,14 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
     });
     return { ok: true, expense: updated, zoho: result };
   } catch (err) {
+    const zohoErr = err instanceof ZohoServiceError ? err : null;
+    const { category } = classifyZohoError(err);
+    const syncError = `[${category}] ${zohoErr?.message ?? (err instanceof Error ? err.message : String(err))}`.slice(0, 500);
+
     await db.update(expenses)
-      .set({ status: 'zoho_sync_failed', updatedAt: new Date() })
+      .set({ status: 'zoho_sync_failed', zohoSyncError: syncError, updatedAt: new Date() })
       .where(eq(expenses.id, expense.id));
 
-    const zohoErr = err instanceof ZohoServiceError ? err : null;
     await auditLog({
       entityType: 'expense',
       entityId: expense.id,
@@ -72,6 +97,7 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
       metadata: {
         error: zohoErr?.message ?? String(err),
         code: zohoErr?.code ?? 'ZOHO_SYNC_FAILED',
+        category,
         requestId: zohoErr?.requestId ?? null,
       },
     });
