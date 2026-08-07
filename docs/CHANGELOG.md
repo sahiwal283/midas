@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0-alpha (2026-08-07)
+
+### Expense lifecycle integrity
+- **State-based edit rules**: draft/awaiting_info fully editable; pending notes-only; in-review/approved/rejected locked; **Zoho-synced never editable** (`NOT_EDITABLE`). New edit card on expense detail for editable states.
+- **Rejected → corrected expense**: rejected expenses show the reason + "Create corrected expense", cloning to a fresh draft without touching accounting history.
+- **Duplicate detection**: submit warns "Possible duplicate" on same amount, ±3-day date, similar merchant (non-blocking, Submit anyway available).
+- **Server-side list groundwork**: `GET /expenses` supports `search/from/to/status/page/pageSize` with a paged response shape (legacy shape unchanged without `page`).
+
 ## 0.11.0-alpha (2026-08-07)
 
 ### Zoho pipeline
