@@ -13,6 +13,18 @@ export interface User {
   createdAt: string;
 }
 
+// ── Companies ────────────────────────────────────────────────────────────────
+// The sister companies Midas serves. expenses.zohoEntity stores the company name.
+
+export interface Company {
+  id: string;
+  name: string;
+  /** false = this company never enters the Zoho pipeline (e.g. Summitt Labs). */
+  zohoEnabled: boolean;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
 // ── Partner Expenses ─────────────────────────────────────────────────────────
 
 export type PartnerExpenseCategory = 'business' | 'personal';

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
 
-type Tab = 'users' | 'categories' | 'connections';
+type Tab = 'users' | 'companies' | 'categories' | 'connections';
 
 export function Admin() {
   const [tab, setTab] = useState<Tab>('users');
@@ -13,7 +13,7 @@ export function Admin() {
       <h1 className="mb-6 text-2xl font-bold text-gray-900">Admin Settings</h1>
 
       <div className="mb-6 flex gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1 w-fit">
-        {(['users', 'categories', 'connections'] as Tab[]).map((t) => (
+        {(['users', 'companies', 'categories', 'connections'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -25,8 +25,117 @@ export function Admin() {
       </div>
 
       {tab === 'users' && <UsersTab />}
+      {tab === 'companies' && <CompaniesTab />}
       {tab === 'categories' && <CategoriesTab />}
       {tab === 'connections' && <ConnectionsTab />}
+    </div>
+  );
+}
+
+function CompaniesTab() {
+  const qc = useQueryClient();
+  const [name, setName] = useState('');
+  const { data: companies = [], isLoading } = useQuery({
+    queryKey: ['admin-companies'],
+    queryFn: () => client.get('/admin/companies').then((r) => r.data.companies),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: () => client.post('/admin/companies', { name }),
+    onSuccess: () => {
+      setName('');
+      qc.invalidateQueries({ queryKey: ['admin-companies'] });
+      qc.invalidateQueries({ queryKey: ['companies'] });
+    },
+    onError: (err: any) => alert(err?.response?.data?.error?.message ?? 'Could not add company'),
+  });
+
+  const patchMutation = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; zohoEnabled?: boolean; isActive?: boolean }) =>
+      client.patch(`/admin/companies/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-companies'] });
+      qc.invalidateQueries({ queryKey: ['companies'] });
+    },
+    onError: (err: any) => alert(err?.response?.data?.error?.message ?? 'Update failed'),
+  });
+
+  if (isLoading) return <div className="text-sm text-gray-400">Loading…</div>;
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm text-gray-500">
+        Companies appear in the expense form's Company picker. Companies with Zoho off never sync to Zoho —
+        their expenses always go to the accountant.
+      </p>
+
+      <div className="flex gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="New company name"
+          className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+        />
+        <button
+          onClick={() => createMutation.mutate()}
+          disabled={!name.trim() || createMutation.isPending}
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+        >
+          Add Company
+        </button>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-5 py-3">Name</th>
+              <th className="px-5 py-3">Zoho</th>
+              <th className="px-5 py-3">Status</th>
+              <th className="px-5 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {companies.map((c: any) => (
+              <tr key={c.id} className="hover:bg-gray-50">
+                <td className="px-5 py-3 font-medium text-gray-900">{c.name}</td>
+                <td className="px-5 py-3">
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.zohoEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {c.zohoEnabled ? 'Syncs to Zoho' : 'No Zoho'}
+                  </span>
+                </td>
+                <td className="px-5 py-3">
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {c.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td className="px-5 py-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => patchMutation.mutate({ id: c.id, zohoEnabled: !c.zohoEnabled })}
+                      disabled={patchMutation.isPending}
+                      className="rounded border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                    >
+                      {c.zohoEnabled ? 'Disable Zoho' : 'Enable Zoho'}
+                    </button>
+                    <button
+                      onClick={() => patchMutation.mutate({ id: c.id, isActive: !c.isActive })}
+                      disabled={patchMutation.isPending}
+                      className={`rounded border px-2.5 py-1 text-xs font-medium disabled:opacity-40 ${
+                        c.isActive
+                          ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                          : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+                      }`}
+                    >
+                      {c.isActive ? 'Deactivate' : 'Reactivate'}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
