@@ -1,11 +1,10 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, CloudUpload, Briefcase, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, Briefcase, BarChart3 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
 import { MIDAS_VERSION } from '@midas/shared';
 import { MidasLogo } from './MidasLogo';
-import { getUploadQueueCount } from '../lib/uploadQueue';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -26,12 +25,6 @@ export function Sidebar() {
     queryKey: ['meta'],
     queryFn: () => client.get<{ version: string }>('/meta').then((r) => r.data),
     staleTime: Infinity,
-  });
-
-  const { data: pendingUploads = 0 } = useQuery({
-    queryKey: ['upload-queue-count'],
-    queryFn: () => getUploadQueueCount(),
-    refetchInterval: 10_000,
   });
 
   const version = `v${meta?.version ?? MIDAS_VERSION}`;
@@ -58,15 +51,6 @@ export function Sidebar() {
         <NavLink to="/captures" className={linkClass}>
           <Camera className="h-4 w-4" />
           Captures
-        </NavLink>
-        <NavLink to="/to-upload" className={linkClass}>
-          <CloudUpload className="h-4 w-4" />
-          To upload
-          {pendingUploads > 0 && (
-            <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-              {pendingUploads}
-            </span>
-          )}
         </NavLink>
 
         {isPartner && (

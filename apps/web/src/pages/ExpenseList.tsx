@@ -225,7 +225,7 @@ export function ExpenseList() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 lg:p-8">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Expenses</h1>
@@ -412,7 +412,30 @@ export function ExpenseList() {
           </div>
         ) : (
           <>
-            <table className="w-full text-sm">
+            {/* Mobile: stacked cards */}
+            <div className="divide-y divide-gray-100 md:hidden">
+              {pageRows.map((expense) => (
+                <Link
+                  key={expense.id}
+                  to={`/expenses/${expense.id}`}
+                  className={`block px-4 py-3 active:bg-gray-50 ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 truncate font-medium text-gray-900">{expense.merchant}</p>
+                    <p className="shrink-0 font-semibold text-gray-900">
+                      {expense.currency} {Number(expense.amount).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <p className="text-xs text-gray-500">{expense.date}{expense.category?.name ? ` · ${expense.category.name}` : ''}</p>
+                    <StatusBadge status={expense.status} variant="user" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+
+            {/* Desktop: full table */}
+            <table className="hidden w-full text-sm md:table">
               <thead>
                 <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                   {canBulkDelete && (

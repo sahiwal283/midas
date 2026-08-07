@@ -19,7 +19,7 @@ export function Dashboard() {
   const recent = [...expenses].slice(0, 5);
 
   return (
-    <div className="p-8">
+    <div className="p-4 lg:p-8">
       <div className="mb-8 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Welcome, {user?.name?.split(' ')[0]}</h1>
@@ -63,7 +63,7 @@ export function Dashboard() {
       )}
 
       {/* Stats */}
-      <div className="mb-8 grid grid-cols-3 gap-4">
+      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
         <StatCard label="Total Expenses" value={expenses.length} icon={<ReceiptText className="h-5 w-5 text-brand-600" />} />
         <StatCard label="Under Review" value={inFlight.length} icon={<AlertCircle className="h-5 w-5 text-yellow-600" />} />
         <StatCard label="Approved" value={approved.length} icon={<CheckCircle2 className="h-5 w-5 text-green-600" />} />
