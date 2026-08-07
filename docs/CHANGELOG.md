@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0-alpha (2026-08-07)
+
+### Employee mobile-first capture
+- **Receipt-first Add Expense wizard**: Scan (camera) / Upload / Enter manually → OCR prefills merchant, amount, date → correct → payment method, **Company** (auto-filled from card, editable), category, notes → Submit. Success screen shows Approved vs Submitted-for-review.
+- **Companies backbone**: new `companies` table (migration 0010) + Admin → Companies tab. "Entity" renamed to **Company** in employee UI. Summitt Labs is Zoho-disabled — its expenses never auto-push and always go to the accountant.
+- **iPhone photos**: HEIC/HEIF accepted and converted to JPEG server-side (new `heic-convert` dependency).
+- **Mobile shell**: bottom navigation (Home · camera Add · Expenses · More sheet) below `lg`; desktop sidebar unchanged. My Expenses renders as cards on phones; dashboard stats stack.
+- **Upload queue simplified**: "N expenses couldn't finish uploading — Tap to retry" banner replaces the To upload nav item (page remains as the banner's Details link).
+- **Action-first dashboard**: "Needs your attention" leads; lifetime total removed. Employee statuses now distinguish **Approved ✓** from **Accounting complete ✓** (synced); sync failures stay "Approved" for employees.
+
 ## 0.8.0-alpha (2026-08-06)
 
 ### Reports
