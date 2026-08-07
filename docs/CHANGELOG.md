@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0-alpha (2026-08-07)
+
+### Accountant workspace
+- **Server-side queue filters**: employee, merchant search, amount range, date range, category, payment method, reimbursement status, Zoho status, company, source app, plus flag filters (OCR needs review, missing receipt/category/payment).
+- **Safe bulk approval**: selection modal shows count, total $, and flagged items (missing receipt/category/payment, unresolved issues) — approves only the ready subset, never blind (`POST /accountant/expenses/bulk-review`).
+- **Bulk Zoho push**: "Ready for Zoho — N expenses · $X → Push N" with per-item results (`POST /accountant/zoho/bulk-push`).
+- **Split-screen review** at `/accountant/:id`: receipt left; details, Zoho readiness checklist, conversation right; Approve/Reject/Ask in the header.
+- **Accountant dashboard**: queue counts (linking into filtered lanes), $ ready for Zoho, $ awaiting reimbursement with employee count.
+
 ## 0.9.0-alpha (2026-08-07)
 
 ### Employee mobile-first capture
