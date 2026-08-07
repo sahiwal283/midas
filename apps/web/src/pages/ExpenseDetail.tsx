@@ -700,7 +700,8 @@ export function ExpenseDetail() {
           {canSeeZohoSync && (
             <ZohoSyncCard
               expense={expense}
-              onRetry={isPrivileged ? () => zohoRetryMutation.mutate() : undefined}
+              // developer passes every role gate server-side, so retry works for them too
+              onRetry={canSeeZohoSync ? () => zohoRetryMutation.mutate() : undefined}
               retrying={zohoRetryMutation.isPending}
             />
           )}
