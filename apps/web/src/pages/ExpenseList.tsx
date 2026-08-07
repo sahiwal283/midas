@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Plus, AlertCircle, ChevronLeft, ChevronRight, Search, Trash2 } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
-import { StatusBadge } from '../components/StatusBadge';
+import { StatusBadge, ReimbursementBadge } from '../components/StatusBadge';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,6 +12,15 @@ import type { Expense } from '../types';
 const PAGE_SIZE = 10;
 
 type StatusTab = 'all' | 'needs_reply' | 'under_review' | 'approved' | 'rejected' | 'draft';
+
+type ReimbFilter = '' | 'pending' | 'approved' | 'paid';
+
+const REIMB_CHIPS: Array<{ id: ReimbFilter; label: string }> = [
+  { id: '', label: 'All' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'approved', label: 'Approved' },
+  { id: 'paid', label: 'Paid' },
+];
 
 const STATUS_TABS: Array<{ id: StatusTab; label: string }> = [
   { id: 'all', label: 'All' },
@@ -92,6 +101,7 @@ export function ExpenseList() {
   const [month, setMonth] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [sourceApp, setSourceApp] = useState('');
+  const [reimbFilter, setReimbFilter] = useState<ReimbFilter>('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [quickViewId, setQuickViewId] = useState<string | null>(null);
@@ -142,6 +152,11 @@ export function ExpenseList() {
     return [...keys].sort();
   }, [expenses]);
 
+  const hasReimbursements = useMemo(
+    () => expenses.some((e) => e.reimbursementStatus !== 'not_requested'),
+    [expenses],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return expenses.filter((e) => {
@@ -149,13 +164,14 @@ export function ExpenseList() {
       if (month && monthKey(e.date) !== month) return false;
       if (categoryId && e.categoryId !== categoryId) return false;
       if (sourceApp && e.sourceApp !== sourceApp) return false;
+      if (reimbFilter && e.reimbursementStatus !== reimbFilter) return false;
       if (q) {
         const hay = `${e.merchant} ${e.description ?? ''} ${e.category?.name ?? ''} ${e.sourceLabel ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [expenses, tab, month, categoryId, sourceApp, query]);
+  }, [expenses, tab, month, categoryId, sourceApp, reimbFilter, query]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -167,7 +183,7 @@ export function ExpenseList() {
 
   useEffect(() => {
     setPage(1);
-  }, [tab, month, categoryId, sourceApp, query]);
+  }, [tab, month, categoryId, sourceApp, reimbFilter, query]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -175,7 +191,7 @@ export function ExpenseList() {
 
   useEffect(() => {
     setSelected(new Set());
-  }, [tab, month, categoryId, sourceApp, query]);
+  }, [tab, month, categoryId, sourceApp, reimbFilter, query]);
 
   const bulkDeleteMutation = useMutation({
     mutationFn: () => expenseApi.bulkDelete([...selected], forceZoho && isAdmin),
@@ -294,6 +310,30 @@ export function ExpenseList() {
         })}
       </div>
 
+      {/* Reimbursement chips */}
+      {hasReimbursements && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-gray-400">Reimbursements</span>
+          {REIMB_CHIPS.map((c) => {
+            const active = reimbFilter === c.id;
+            return (
+              <button
+                key={c.label}
+                type="button"
+                onClick={() => setReimbFilter(c.id)}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  active
+                    ? 'border-brand-300 bg-brand-100 text-brand-800'
+                    : 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Filters */}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -338,7 +378,7 @@ export function ExpenseList() {
             ))}
           </select>
         )}
-        {(query || month || categoryId || sourceApp || tab !== 'all') && (
+        {(query || month || categoryId || sourceApp || reimbFilter || tab !== 'all') && (
           <button
             type="button"
             onClick={() => {
@@ -346,6 +386,7 @@ export function ExpenseList() {
               setMonth('');
               setCategoryId('');
               setSourceApp('');
+              setReimbFilter('');
               setTab('all');
             }}
             className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
@@ -428,7 +469,10 @@ export function ExpenseList() {
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-3">
                     <p className="text-xs text-gray-500">{expense.date}{expense.category?.name ? ` · ${expense.category.name}` : ''}</p>
-                    <StatusBadge status={expense.status} variant="user" zohoExpenseId={expense.zohoExpenseId} />
+                    <div className="flex shrink-0 items-center gap-1">
+                      <ReimbursementBadge status={expense.reimbursementStatus} />
+                      <StatusBadge status={expense.status} variant="user" zohoExpenseId={expense.zohoExpenseId} />
+                    </div>
                   </div>
                 </Link>
               ))}
@@ -490,7 +534,10 @@ export function ExpenseList() {
                       {expense.currency} {Number(expense.amount).toFixed(2)}
                     </td>
                     <td className="px-6 py-4">
-                      <StatusBadge status={expense.status} variant="user" zohoExpenseId={expense.zohoExpenseId} />
+                      <div className="flex flex-col items-start gap-1">
+                        <StatusBadge status={expense.status} variant="user" zohoExpenseId={expense.zohoExpenseId} />
+                        <ReimbursementBadge status={expense.reimbursementStatus} />
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <ReceiptDetailsButton

@@ -308,6 +308,39 @@ export function Reports() {
               : <BreakdownList rows={paymentMethods} />}
           </Card>
 
+          {/* Reimbursements */}
+          <Card title="Reimbursements">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <KpiTile label="Reimbursable total" value={usd(data.reimbursement.reimbursableTotal)} />
+              <KpiTile label="Company card total" value={usd(data.reimbursement.companyCardTotal)} />
+              <KpiTile label="Outstanding" value={usd(data.reimbursement.outstanding)} accent={data.reimbursement.outstanding > 0} />
+              <KpiTile label="Paid" value={usd(data.reimbursement.paid)} />
+            </div>
+            {data.reimbursement.byEmployee.length > 0 && (
+              <div className="mt-4">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">By employee</h3>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      <th className="py-2 pr-2">Name</th>
+                      <th className="py-2 pr-2 text-right">Outstanding</th>
+                      <th className="py-2 pl-3 text-right">Paid</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {data.reimbursement.byEmployee.map((r) => (
+                      <tr key={r.name}>
+                        <td className="py-2 pr-2 font-medium text-gray-900 truncate max-w-0" title={r.name}>{r.name}</td>
+                        <td className="py-2 pr-2 text-right text-gray-700">{usd(r.outstanding)}</td>
+                        <td className="py-2 pl-3 text-right text-gray-700">{usd(r.paid)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
           {/* Ranked tables */}
           <div className="grid gap-5 lg:grid-cols-2">
             <RankedTable title="Top vendors" rows={data.topVendors} />

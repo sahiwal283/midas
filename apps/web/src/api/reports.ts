@@ -11,6 +11,13 @@ export interface ReportSummary {
   byPaymentMethod: ReportRow[];
   topVendors: ReportRow[];
   topUsers: ReportRow[];
+  reimbursement: {
+    reimbursableTotal: number;
+    companyCardTotal: number;
+    outstanding: number;
+    paid: number;
+    byEmployee: Array<{ name: string; outstanding: number; paid: number }>;
+  };
 }
 
 export type ReportType = 'daily' | 'event';

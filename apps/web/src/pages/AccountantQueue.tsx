@@ -192,7 +192,10 @@ export function AccountantQueue() {
   const [quickViewId, setQuickViewId] = useState<string | null>(null);
 
   // Filter bar state (search input is debounced before hitting the server)
-  const [filters, setFilters] = useState<QueueFilters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<QueueFilters>(() => {
+    const reimbursementStatus = searchParams.get('reimbursementStatus');
+    return reimbursementStatus ? { ...EMPTY_FILTERS, reimbursementStatus } : EMPTY_FILTERS;
+  });
   const [searchInput, setSearchInput] = useState('');
   useEffect(() => {
     const t = setTimeout(() => {

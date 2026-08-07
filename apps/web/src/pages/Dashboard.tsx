@@ -119,7 +119,7 @@ function AccountantDashboard({ name }: { name: string }) {
           </p>
         </Link>
         <Link
-          to="/accountant?status=reimbursement_pending"
+          to="/accountant?reimbursementStatus=pending"
           className="rounded-xl border border-orange-200 bg-orange-50 p-5 transition-colors hover:bg-orange-100"
         >
           <div className="flex items-center justify-between">
