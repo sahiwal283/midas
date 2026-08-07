@@ -123,3 +123,36 @@ This endpoint is read-only and never triggers a Zoho write.
 - The token is stored in `/opt/midas/.env` on CT 3120. It is excluded from all git commits.
 - Midas does not store Zoho OAuth tokens. The integration service owns those.
 - The dry-run gate (`ZOHO_DRY_RUN=true`) is the default and must be explicitly overridden.
+
+---
+
+## Settled accounting policies (2026-08-07)
+
+Canonical decisions for the previously open mapping questions (full rationale in
+`docs/superpowers/specs/2026-08-07-zoho-pipeline-design.md`):
+
+- **Record type:** Zoho Books expense records via `create_books`. No other record types.
+- **Category → COA:** daily = live COA pick in the wizard (OCR suggestion preselects,
+  user can change); Trade Show = Midas category → `expense_categories.zoho_account_id`.
+- **Paid-through:** `payment_methods.zoho_account_name`, managed in Admin → Payment
+  Methods. Missing mapping fails the push as `MAPPING_ERROR`.
+- **Company assignment:** derived from the card's `defaultZohoEntity`, user-editable.
+  Companies with `zoho_enabled = false` (Summitt Labs) never enter this pipeline.
+- **Sync mode:** automatic on submit for complete staff-entered daily expenses;
+  explicit accountant push for event expenses and anything incomplete.
+- **Vendors:** Midas NEVER creates Zoho vendors. Merchant text is descriptive only.
+  Vendor matching (exact → alias → flag → create-if-configured) is the Integration
+  Service's contract.
+- **Duplicates (Zoho side):** idempotency key per expense on every push.
+- **OCR mismatches:** `ocr_needs_review` does not block auto-push (submitter confirmed
+  the fields); accountants spot-check via the queue's "OCR needs review" filter.
+
+## Sync errors & retry
+
+- Failures are classified (`apps/api/src/lib/zohoErrors.ts`) into: `AUTH_ERROR`,
+  `MAPPING_ERROR`, `VALIDATION_ERROR`, `RATE_LIMIT`, `NETWORK_ERROR`, `ZOHO_ERROR`,
+  `DUPLICATE`, `UNKNOWN`.
+- Transient classes (network, 429, 5xx) auto-retry twice (2s/5s backoff) inside the
+  push; everything else goes straight to `zoho_sync_failed`.
+- The last error is stored on `expenses.zoho_sync_error` as `[CATEGORY] message` and
+  shown to accountants in the Zoho sync card (with Retry). Employees never see it.
