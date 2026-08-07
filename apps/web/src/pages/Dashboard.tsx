@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, ReceiptText, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { expenseApi } from '../api/expenses';
-import { USER_LABELS } from '../components/StatusBadge';
+import { userStatusLabel } from '../components/StatusBadge';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -62,10 +62,10 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Stats */}
+      {/* Action-first: what needs you, then what's in flight */}
       <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-        <StatCard label="Total Expenses" value={expenses.length} icon={<ReceiptText className="h-5 w-5 text-brand-600" />} />
-        <StatCard label="Under Review" value={inFlight.length} icon={<AlertCircle className="h-5 w-5 text-yellow-600" />} />
+        <StatCard label="Needs your attention" value={actionNeeded.length} icon={<AlertCircle className={`h-5 w-5 ${actionNeeded.length > 0 ? 'text-amber-600' : 'text-gray-300'}`} />} />
+        <StatCard label="Under Review" value={inFlight.length} icon={<ReceiptText className="h-5 w-5 text-yellow-600" />} />
         <StatCard label="Approved" value={approved.length} icon={<CheckCircle2 className="h-5 w-5 text-green-600" />} />
       </div>
 
@@ -108,7 +108,7 @@ export function Dashboard() {
                         Action needed
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-500">{USER_LABELS[expense.status] ?? expense.status}</span>
+                      <span className="text-xs text-gray-500">{userStatusLabel(expense.status, expense.zohoExpenseId)}</span>
                     )}
                   </div>
                 </div>

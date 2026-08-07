@@ -428,7 +428,7 @@ export function ExpenseList() {
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-3">
                     <p className="text-xs text-gray-500">{expense.date}{expense.category?.name ? ` · ${expense.category.name}` : ''}</p>
-                    <StatusBadge status={expense.status} variant="user" />
+                    <StatusBadge status={expense.status} variant="user" zohoExpenseId={expense.zohoExpenseId} />
                   </div>
                 </Link>
               ))}
@@ -490,7 +490,7 @@ export function ExpenseList() {
                       {expense.currency} {Number(expense.amount).toFixed(2)}
                     </td>
                     <td className="px-6 py-4">
-                      <StatusBadge status={expense.status} variant="user" />
+                      <StatusBadge status={expense.status} variant="user" zohoExpenseId={expense.zohoExpenseId} />
                     </td>
                     <td className="px-6 py-4">
                       <ReceiptDetailsButton

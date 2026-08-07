@@ -51,13 +51,27 @@ const REIMB_LABELS: Record<ReimbursementStatus, string> = {
   paid: 'Paid',
 };
 
+/**
+ * Employee-facing label. Approved expenses distinguish "made it to the books"
+ * (Accounting complete) from plain approval; a failed sync is still just
+ * "Approved" to the employee — the retry is accounting's concern.
+ */
+export function userStatusLabel(status: ExpenseStatus, zohoExpenseId?: string | null): string {
+  if ((status === 'approved' || status === 'zoho_sync_failed') && zohoExpenseId) {
+    return 'Accounting complete';
+  }
+  return USER_LABELS[status] ?? status;
+}
+
 interface StatusBadgeProps {
   status: ExpenseStatus;
   variant?: 'user' | 'accountant';
+  /** Pass on user-variant badges so approved expenses can show "Accounting complete". */
+  zohoExpenseId?: string | null;
 }
 
-export function StatusBadge({ status, variant = 'accountant' }: StatusBadgeProps) {
-  const label = variant === 'user' ? USER_LABELS[status] : ACCOUNTANT_LABELS[status];
+export function StatusBadge({ status, variant = 'accountant', zohoExpenseId }: StatusBadgeProps) {
+  const label = variant === 'user' ? userStatusLabel(status, zohoExpenseId) : ACCOUNTANT_LABELS[status];
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[status]}`}>
       {label}
