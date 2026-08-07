@@ -21,6 +21,10 @@ export function ExpenseNew() {
   const [receipt, setReceipt] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [ocrRan, setOcrRan] = useState(false);
+  // OCR-suggested expense category (raw string from the receipt scan).
+  const [ocrCategorySuggestion, setOcrCategorySuggestion] = useState<string | null>(null);
+  // True when the current category selection came from the OCR suggestion.
+  const [categoryAutoSuggested, setCategoryAutoSuggested] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -104,6 +108,7 @@ export function ExpenseNew() {
   function applyOcr(r: Receipt) {
     const fields = r.ocrData?.fields;
     setOcrRan(true);
+    setOcrCategorySuggestion(fields?.category?.value ?? null);
     setForm((f) => ({
       ...f,
       merchant: fields?.merchant?.value ?? f.merchant,
@@ -111,6 +116,25 @@ export function ExpenseNew() {
       date: fields?.date?.value ?? f.date,
     }));
   }
+
+  // Preselect the COA account matching the OCR category suggestion once the
+  // company's account list loads — never overriding a non-empty user pick.
+  // Re-applies if the user switches company (which clears the selection).
+  useEffect(() => {
+    if (!ocrCategorySuggestion || form.zohoExpenseAccountId) return;
+    const accounts = accountData?.accounts ?? [];
+    const sugg = ocrCategorySuggestion.trim().toLowerCase();
+    if (!sugg || accounts.length === 0) return;
+    const match = accounts.find((a) => {
+      const name = a.accountName.toLowerCase();
+      return name.includes(sugg) || sugg.includes(name);
+    });
+    if (!match) return;
+    setForm((f) => (f.zohoExpenseAccountId
+      ? f
+      : { ...f, zohoExpenseAccountId: match.accountId, zohoExpenseAccountName: match.accountName }));
+    setCategoryAutoSuggested(true);
+  }, [ocrCategorySuggestion, accountData, form.zohoExpenseAccountId]);
 
   /** Photo/upload entry: create empty draft, upload receipt, let OCR prefill. */
   async function startWithReceipt(file: File) {
@@ -225,6 +249,8 @@ export function ExpenseNew() {
                 setExpenseId(null);
                 setReceipt(null);
                 setOcrRan(false);
+                setOcrCategorySuggestion(null);
+                setCategoryAutoSuggested(false);
                 setResult(null);
                 setForm((f) => ({ ...f, merchant: '', amount: '', description: '', zohoExpenseAccountId: '', zohoExpenseAccountName: '' }));
               }}
@@ -337,7 +363,7 @@ export function ExpenseNew() {
                 <p className="mt-1 truncate text-xs text-gray-400">{receipt.name}</p>
                 <button
                   type="button"
-                  onClick={() => { setReceipt(null); setOcrRan(false); }}
+                  onClick={() => { setReceipt(null); setOcrRan(false); setOcrCategorySuggestion(null); }}
                   className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-600"
                 >
                   <X className="h-3 w-3" /> Remove
@@ -404,6 +430,7 @@ export function ExpenseNew() {
                 value={form.zohoExpenseAccountId}
                 onChange={(e) => {
                   const acct = expenseAccounts.find((a) => a.accountId === e.target.value);
+                  setCategoryAutoSuggested(false);
                   setForm((f) => ({ ...f, zohoExpenseAccountId: e.target.value, zohoExpenseAccountName: acct?.accountName ?? '' }));
                 }}
                 disabled={accountsLoading}
@@ -414,6 +441,9 @@ export function ExpenseNew() {
                   <option key={a.accountId} value={a.accountId}>{a.accountName}</option>
                 ))}
               </select>
+              {categoryAutoSuggested && !!form.zohoExpenseAccountId && (
+                <p className="mt-1 text-xs text-gray-400">Suggested from the receipt — change if wrong.</p>
+              )}
             </Field>
           )}
 

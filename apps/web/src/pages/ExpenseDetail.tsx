@@ -8,6 +8,7 @@ import {
 import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
 import { ReceiptPreview } from '../components/ReceiptPreview';
+import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, MessageRequestType, AuditLogEntry } from '../types';
 
@@ -365,6 +366,15 @@ export function ExpenseDetail() {
     },
   });
 
+  const zohoRetryMutation = useMutation({
+    mutationFn: () => accountantApi.pushToZoho(id!),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['expense', id] });
+      qc.invalidateQueries({ queryKey: ['expense-audit', id] });
+      qc.invalidateQueries({ queryKey: ['zoho-readiness', id] });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => expenseApi.delete(id!, Boolean(expense?.zohoExpenseId)),
     onSuccess: () => {
@@ -391,6 +401,8 @@ export function ExpenseDetail() {
 
   const isOwner = expense.userId === user?.id;
   const isPrivileged = user?.role === 'accountant' || user?.role === 'admin';
+  const canSeeZohoSync =
+    user?.role === 'accountant' || user?.role === 'admin' || user?.role === 'developer';
   const isDraft = expense.status === 'draft';
   const isAwaiting = expense.status === 'awaiting_info';
   const hasOpenRequest = expense.messages?.some(
@@ -684,6 +696,15 @@ export function ExpenseDetail() {
             <ZohoReadinessPanel expenseId={expense.id} />
           )}
 
+          {/* Zoho sync history — accountant/admin/developer only */}
+          {canSeeZohoSync && (
+            <ZohoSyncCard
+              expense={expense}
+              onRetry={isPrivileged ? () => zohoRetryMutation.mutate() : undefined}
+              retrying={zohoRetryMutation.isPending}
+            />
+          )}
+
           {/* Recent Activity — accountant only */}
           {isPrivileged && <RecentActivity expenseId={expense.id} />}
 
@@ -713,7 +734,6 @@ export function ExpenseDetail() {
               {isPrivileged && expense.reviewedAt && (
                 <Row label="Review started" value={new Date(expense.reviewedAt).toLocaleString()} />
               )}
-              {isPrivileged && expense.zohoExpenseId && <Row label="Zoho ID" value={expense.zohoExpenseId} />}
               {expense.sourceApp && <Row label="Source app" value={expense.sourceApp} />}
               {expense.sourceRefId && <Row label="Source ref" value={expense.sourceRefId} />}
               {expense.sourceLabel && <Row label="Source label" value={expense.sourceLabel} />}

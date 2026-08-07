@@ -184,6 +184,8 @@ export interface Receipt {
       merchant?: { value: string | null };
       amount?: { value: number | null };
       date?: { value: string | null };
+      /** OCR-suggested expense category — used to preselect the COA account in the wizard. */
+      category?: { value: string | null };
     };
   } | null;
   ocrCostEstimateUsd: string | null;

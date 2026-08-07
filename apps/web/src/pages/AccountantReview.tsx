@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, XCircle, Send, MessageCircleQuestion, FileText } from 'lucide-react';
 import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge } from '../components/StatusBadge';
+import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { receiptContentUrl } from '../components/ReceiptPreview';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, Receipt } from '../types';
@@ -256,6 +257,15 @@ export function AccountantReview() {
     },
   });
 
+  const zohoRetryMutation = useMutation({
+    mutationFn: () => accountantApi.pushToZoho(id!),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['expense', id] });
+      qc.invalidateQueries({ queryKey: ['accountant-queue'] });
+      qc.invalidateQueries({ queryKey: ['accountant-queue-summary'] });
+    },
+  });
+
   function submitAsk() {
     if (!askNote.trim()) return;
     reviewMutation.mutate({
@@ -422,6 +432,13 @@ export function AccountantReview() {
 
           {/* Zoho readiness */}
           <ZohoReadinessCard expense={expense} />
+
+          {/* Zoho sync history */}
+          <ZohoSyncCard
+            expense={expense}
+            onRetry={() => zohoRetryMutation.mutate()}
+            retrying={zohoRetryMutation.isPending}
+          />
 
           {/* Conversation */}
           <div className="rounded-xl border border-gray-200 bg-white p-5">
