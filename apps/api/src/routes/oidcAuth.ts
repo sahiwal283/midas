@@ -191,6 +191,11 @@ router.get('/oidc/callback', asyncHandler(async (req, res) => {
       .where(and(eq(ssoLinks.provider, 'authentik'), eq(ssoLinks.subject, claims.sub)));
   }
 
+  // Every successful OIDC callback counts as a login.
+  await db.update(users)
+    .set({ lastLoginAt: new Date() })
+    .where(eq(users.id, user.id));
+
   // Audit successful login
   await auditLog({
     entityType: 'user',

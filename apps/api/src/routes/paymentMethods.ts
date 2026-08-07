@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import { db } from '../db/index';
 import { paymentMethods } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
@@ -18,14 +18,15 @@ const createSchema = z.object({
   defaultZohoEntity: z.string().max(200).optional().nullable(),
   requiresReimbursement: z.boolean().optional(),
   isCompanyWide: z.boolean().default(true),
-  assignedUserId: z.string().uuid().optional(),
+  assignedUserId: z.string().uuid().nullable().optional(),
 });
 
 const updateSchema = createSchema.partial().extend({
   isActive: z.boolean().optional(),
 });
 
-// List active payment methods — all authenticated users can see company-wide methods
+// List active payment methods — non-privileged users see company-wide methods
+// plus any card assigned specifically to them.
 router.get('/', asyncHandler(async (req, res) => {
   const isPrivileged = req.user!.role !== 'user';
 
@@ -37,7 +38,10 @@ router.get('/', asyncHandler(async (req, res) => {
     : await db.query.paymentMethods.findMany({
         where: and(
           eq(paymentMethods.isActive, true),
-          eq(paymentMethods.isCompanyWide, true),
+          or(
+            eq(paymentMethods.isCompanyWide, true),
+            eq(paymentMethods.assignedUserId, req.user!.id),
+          ),
         ),
         orderBy: (pm, { asc }) => [asc(pm.label)],
       });
@@ -56,7 +60,9 @@ router.post('/', requireRole('admin'), asyncHandler(async (req, res) => {
     zohoAccountName: body.zohoAccountName ?? null,
     defaultZohoEntity: body.defaultZohoEntity ?? null,
     requiresReimbursement: body.requiresReimbursement ?? false,
-    assignedUserId: body.assignedUserId ?? null,
+    // Invariant: company-wide XOR assigned to one user.
+    isCompanyWide: body.assignedUserId ? false : body.isCompanyWide,
+    assignedUserId: body.isCompanyWide && !body.assignedUserId ? null : body.assignedUserId ?? null,
   }).returning();
 
   await auditLog({
@@ -80,8 +86,13 @@ router.patch('/:id', requireRole('admin'), asyncHandler(async (req, res) => {
   const body = updateSchema.parse(req.body);
   const before = { ...pm };
 
+  // Invariant: a card is either company-wide OR assigned to exactly one user.
+  const patch = { ...body };
+  if (patch.isCompanyWide === true) patch.assignedUserId = null;
+  if (patch.assignedUserId) patch.isCompanyWide = false;
+
   const [updated] = await db.update(paymentMethods)
-    .set({ ...body, updatedAt: new Date() })
+    .set({ ...patch, updatedAt: new Date() })
     .where(eq(paymentMethods.id, req.params.id))
     .returning();
 

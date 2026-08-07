@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, CheckCircle2, Sparkles } from 'lucide-react';
 import { expenseApi, type DuplicateMatch } from '../api/expenses';
 import { companyApi } from '../api/companies';
+import { useAuth } from '../contexts/AuthContext';
 import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
 import type { Receipt } from '../types';
 
@@ -46,14 +47,34 @@ export function ExpenseNew() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  const { user } = useAuth();
+  const defaultsApplied = useRef(false);
+
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => companyApi.list(),
   });
-  const { data: paymentMethods = [] } = useQuery({
+  const { data: paymentMethods = [], isFetched: paymentMethodsFetched } = useQuery({
     queryKey: ['payment-methods'],
     queryFn: () => expenseApi.paymentMethods(),
   });
+
+  // Prefill company / payment method from the user's admin-configured defaults.
+  // Runs once; never overwrites values the user (or a picked card) already set.
+  useEffect(() => {
+    if (defaultsApplied.current || !user) return;
+    if (!user.defaultZohoEntity && !user.defaultPaymentMethodId) return;
+    // Wait for the payment methods list when a default card is set, so we can
+    // resolve its entity and confirm the card is still selectable.
+    if (user.defaultPaymentMethodId && !paymentMethodsFetched) return;
+    defaultsApplied.current = true;
+    const pm = paymentMethods.find((p) => p.id === user.defaultPaymentMethodId);
+    setForm((f) => {
+      if (f.paymentMethodId || f.company) return f;
+      const company = user.defaultZohoEntity || pm?.defaultZohoEntity || '';
+      return { ...f, paymentMethodId: pm?.id ?? '', company };
+    });
+  }, [user, paymentMethods, paymentMethodsFetched]);
 
   const selectedCompany = companies.find((c) => c.name === form.company);
   const zohoOn = selectedCompany ? selectedCompany.zohoEnabled : true;

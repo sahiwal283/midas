@@ -214,6 +214,7 @@ export const paymentMethodsApi = {
     defaultZohoEntity?: string | null;
     requiresReimbursement?: boolean;
     isCompanyWide?: boolean;
+    assignedUserId?: string | null;
     isActive?: boolean;
   }) =>
     client.patch<{ paymentMethod: PaymentMethod }>(`/payment-methods/${id}`, data).then((r) => r.data.paymentMethod),

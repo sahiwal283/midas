@@ -1,18 +1,22 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, count, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lte, or } from 'drizzle-orm';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
 import {
   users, expenseCategories, appConnections, ssoLinks,
   expenses, expenseMessages, captures, partnerExpenses, companies,
+  paymentMethods, auditLogs,
 } from '../db/schema';
+import { env } from '../config/env';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
 import { storage } from '../lib/storage';
 import { canDeleteUser, canChangeRole, hasOwnedData, type OwnedCounts } from '../lib/userDelete';
+import { issueInvite } from '../lib/invites';
+import { parseAuditFilters } from '../lib/auditFilters';
 
 const router = Router();
 router.use(authenticate, requireRole('admin'));
@@ -80,7 +84,10 @@ router.patch('/companies/:id', asyncHandler(async (req, res) => {
 
 router.get('/users', asyncHandler(async (_req, res) => {
   const rows = await db.query.users.findMany({
-    columns: { passwordHash: false },
+    // Never return the hash or the raw invite token (the invite URL is shown
+    // once at issue time; leaking the token here would let any admin session
+    // hijack a pending invite silently).
+    columns: { passwordHash: false, inviteToken: false },
     orderBy: (u, { asc }) => [asc(u.name)],
   });
   // Derive a SAFE auth-source signal (booleans only) so the UI can show an
@@ -135,11 +142,58 @@ router.post('/users', asyncHandler(async (req, res) => {
   res.status(201).json({ user });
 }));
 
-const patchUserSchema = z.object({
+const profileFieldsSchema = z.object({
+  department: z.string().max(120).nullable().optional(),
+  employeeId: z.string().max(60).nullable().optional(),
+  costCenter: z.string().max(60).nullable().optional(),
+  managerId: z.string().uuid().nullable().optional(),
+  defaultZohoEntity: z.string().max(200).nullable().optional(),
+  defaultPaymentMethodId: z.string().uuid().nullable().optional(),
+});
+
+const PROFILE_FIELDS = [
+  'department', 'employeeId', 'costCenter', 'managerId', 'defaultZohoEntity', 'defaultPaymentMethodId',
+] as const;
+
+const patchUserSchema = profileFieldsSchema.extend({
   name: z.string().min(1).max(100).optional(),
   role: z.enum(['user', 'accountant', 'admin', 'partner', 'developer']).optional(),
   isActive: z.boolean().optional(),
 });
+
+const userReturningColumns = {
+  id: users.id,
+  email: users.email,
+  name: users.name,
+  role: users.role,
+  isActive: users.isActive,
+  department: users.department,
+  employeeId: users.employeeId,
+  costCenter: users.costCenter,
+  managerId: users.managerId,
+  defaultZohoEntity: users.defaultZohoEntity,
+  defaultPaymentMethodId: users.defaultPaymentMethodId,
+  lastLoginAt: users.lastLoginAt,
+  createdAt: users.createdAt,
+  updatedAt: users.updatedAt,
+} as const;
+
+/** Validates manager / default payment method references on user writes. */
+async function validateProfileRefs(body: { managerId?: string | null; defaultPaymentMethodId?: string | null }, selfId?: string) {
+  if (body.managerId) {
+    if (selfId && body.managerId === selfId) {
+      throw createError('A user cannot be their own manager', 400, 'SELF_MANAGER');
+    }
+    const mgr = await db.query.users.findFirst({ where: eq(users.id, body.managerId), columns: { id: true } });
+    if (!mgr) throw createError('Manager not found', 400, 'MANAGER_NOT_FOUND');
+  }
+  if (body.defaultPaymentMethodId) {
+    const pm = await db.query.paymentMethods.findFirst({
+      where: eq(paymentMethods.id, body.defaultPaymentMethodId), columns: { id: true },
+    });
+    if (!pm) throw createError('Payment method not found', 400, 'PAYMENT_METHOD_NOT_FOUND');
+  }
+}
 
 router.patch('/users/:id', asyncHandler(async (req, res) => {
   const body = patchUserSchema.parse(req.body);
@@ -163,18 +217,16 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
     if (!decision.ok) throw createError(decision.message, decision.status, decision.code);
   }
 
+  await validateProfileRefs(body, target.id);
+
   const [updated] = await db.update(users)
     .set({ ...body, updatedAt: new Date() })
     .where(eq(users.id, req.params.id))
-    .returning({
-      id: users.id,
-      email: users.email,
-      name: users.name,
-      role: users.role,
-      isActive: users.isActive,
-      createdAt: users.createdAt,
-      updatedAt: users.updatedAt,
-    });
+    .returning(userReturningColumns);
+
+  const changedProfileFields = PROFILE_FIELDS.filter(
+    (k) => k in body && (body as Record<string, unknown>)[k] !== (target as Record<string, unknown>)[k],
+  );
 
   if ('isActive' in body) {
     await auditLog({
@@ -185,14 +237,16 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
       before: { isActive: target.isActive },
       after: { isActive: body.isActive },
     });
-  } else if (body.name !== undefined || body.role !== undefined) {
+  } else if (body.name !== undefined || body.role !== undefined || changedProfileFields.length > 0) {
+    const pick = (src: Record<string, unknown>) =>
+      Object.fromEntries(changedProfileFields.map((k) => [k, src[k] ?? null]));
     await auditLog({
       entityType: 'user',
       entityId: target.id,
       userId: req.user!.id,
       action: 'admin.user.updated',
-      before: { name: target.name, role: target.role },
-      after: { name: updated.name, role: updated.role },
+      before: { name: target.name, role: target.role, ...pick(target as Record<string, unknown>) },
+      after: { name: updated.name, role: updated.role, ...pick(updated as Record<string, unknown>) },
     });
   }
 
@@ -298,6 +352,172 @@ router.post('/users/:id/reset-password', asyncHandler(async (req, res) => {
     tempPassword,
     warning: 'This temporary password is shown only once. Share it securely with the user.',
   });
+}));
+
+// ── Invitations ────────────────────────────────────────────────────────────
+// Email delivery lands with sub-project F — for now the returned inviteUrl is
+// shown once in the admin UI and shared out-of-band.
+
+function inviteUrlFor(token: string): string {
+  const webBase = (env.MIDAS_WEB_BASE_URL ?? env.CORS_ORIGIN).replace(/\/$/, '');
+  return `${webBase}/invite/${token}`;
+}
+
+const inviteUserSchema = profileFieldsSchema.extend({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  role: z.enum(['user', 'accountant', 'admin', 'partner', 'developer']),
+});
+
+router.post('/users/invite', asyncHandler(async (req, res) => {
+  const body = inviteUserSchema.parse(req.body);
+
+  const existing = await db.query.users.findFirst({ where: eq(users.email, body.email) });
+  if (existing) throw createError('Email already in use', 409, 'CONFLICT');
+
+  await validateProfileRefs(body);
+
+  const { token, expiresAt } = issueInvite(new Date());
+  const [user] = await db.insert(users)
+    .values({ ...body, passwordHash: null, isActive: true, inviteToken: token, inviteExpiresAt: expiresAt })
+    .returning(userReturningColumns);
+
+  await auditLog({
+    entityType: 'user',
+    entityId: user.id,
+    userId: req.user!.id,
+    action: 'admin.user.invited',
+    after: { email: body.email, name: body.name, role: body.role },
+    metadata: { inviteExpiresAt: expiresAt.toISOString() },
+  });
+
+  res.status(201).json({ user, inviteUrl: inviteUrlFor(token) });
+}));
+
+router.post('/users/:id/invite/resend', asyncHandler(async (req, res) => {
+  const target = await db.query.users.findFirst({ where: eq(users.id, req.params.id) });
+  if (!target) throw notFound('User not found');
+
+  if (target.passwordHash) {
+    throw createError('User already has a password — invites only apply before first login', 409, 'HAS_PASSWORD');
+  }
+  const ssoLink = await db.query.ssoLinks.findFirst({
+    where: eq(ssoLinks.userId, target.id), columns: { id: true },
+  });
+  if (ssoLink) {
+    throw createError('User signs in via SSO — an invite is not applicable', 409, 'SSO_LINKED');
+  }
+
+  const { token, expiresAt } = issueInvite(new Date());
+  await db.update(users)
+    .set({ inviteToken: token, inviteExpiresAt: expiresAt, updatedAt: new Date() })
+    .where(eq(users.id, target.id));
+
+  await auditLog({
+    entityType: 'user',
+    entityId: target.id,
+    userId: req.user!.id,
+    action: 'admin.user.invite_resent',
+    metadata: { targetEmail: target.email, inviteExpiresAt: expiresAt.toISOString() },
+  });
+
+  res.json({ inviteUrl: inviteUrlFor(token), expiresAt });
+}));
+
+// ── Bulk user operations ───────────────────────────────────────────────────
+// Deactivate/reactivate only — bulk delete is intentionally NOT offered.
+
+const bulkUsersSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(200),
+  action: z.enum(['deactivate', 'reactivate']),
+});
+
+router.post('/users/bulk', asyncHandler(async (req, res) => {
+  const { ids, action } = bulkUsersSchema.parse(req.body);
+  const wantActive = action === 'reactivate';
+
+  const rows = await db.select({ id: users.id, role: users.role, isActive: users.isActive })
+    .from(users).where(inArray(users.id, ids));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  let activeAdmins = await countActiveAdmins();
+  const updated: string[] = [];
+  const skipped: Array<{ id: string; reason: string }> = [];
+
+  for (const id of new Set(ids)) {
+    const row = byId.get(id);
+    if (!row) { skipped.push({ id, reason: 'not_found' }); continue; }
+    if (id === req.user!.id) { skipped.push({ id, reason: 'self' }); continue; }
+    if (row.isActive === wantActive) {
+      skipped.push({ id, reason: wantActive ? 'already_active' : 'already_inactive' });
+      continue;
+    }
+    if (!wantActive && row.role === 'admin' && row.isActive && activeAdmins <= 1) {
+      skipped.push({ id, reason: 'last_admin' });
+      continue;
+    }
+    if (row.role === 'admin') activeAdmins += wantActive ? 1 : -1;
+    updated.push(id);
+  }
+
+  if (updated.length > 0) {
+    await db.update(users)
+      .set({ isActive: wantActive, updatedAt: new Date() })
+      .where(inArray(users.id, updated));
+  }
+
+  await auditLog({
+    entityType: 'user',
+    entityId: 'bulk',
+    userId: req.user!.id,
+    action: wantActive ? 'admin.user.bulk_reactivated' : 'admin.user.bulk_deactivated',
+    metadata: { requested: ids.length, updated, skipped },
+  });
+
+  res.json({ updated, skipped });
+}));
+
+// ── Audit log ──────────────────────────────────────────────────────────────
+
+router.get('/audit', asyncHandler(async (req, res) => {
+  const f = parseAuditFilters(req.query as Record<string, string | undefined>);
+
+  const conds = [];
+  if (f.entityType) conds.push(eq(auditLogs.entityType, f.entityType));
+  if (f.action) conds.push(ilike(auditLogs.action, `${f.action}%`));
+  if (f.userId) conds.push(eq(auditLogs.userId, f.userId));
+  if (f.entityId) conds.push(eq(auditLogs.entityId, f.entityId));
+  if (f.from) conds.push(gte(auditLogs.createdAt, new Date(`${f.from}T00:00:00.000`)));
+  if (f.to) conds.push(lte(auditLogs.createdAt, new Date(`${f.to}T23:59:59.999`)));
+  if (f.search) {
+    conds.push(or(
+      ilike(auditLogs.action, `%${f.search}%`),
+      ilike(auditLogs.entityType, `%${f.search}%`),
+    )!);
+  }
+  const where = conds.length > 0 ? and(...conds) : undefined;
+
+  const [totalRow] = await db.select({ n: count() }).from(auditLogs).where(where);
+  const entries = await db.select({
+    id: auditLogs.id,
+    entityType: auditLogs.entityType,
+    entityId: auditLogs.entityId,
+    action: auditLogs.action,
+    before: auditLogs.before,
+    after: auditLogs.after,
+    metadata: auditLogs.metadata,
+    createdAt: auditLogs.createdAt,
+    actorId: auditLogs.userId,
+    actorName: users.name,
+  })
+    .from(auditLogs)
+    .leftJoin(users, eq(auditLogs.userId, users.id))
+    .where(where)
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(f.pageSize)
+    .offset((f.page - 1) * f.pageSize);
+
+  res.json({ entries, total: Number(totalRow?.n ?? 0), page: f.page, pageSize: f.pageSize });
 }));
 
 // ── Categories ─────────────────────────────────────────────────────────────

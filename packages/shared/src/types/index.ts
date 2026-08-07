@@ -11,6 +11,16 @@ export interface User {
   role: UserRole;
   isActive: boolean;
   createdAt: string;
+  // ── Org profile (admin console) — present on /admin/users and (defaults) /auth/me ──
+  department?: string | null;
+  employeeId?: string | null;
+  costCenter?: string | null;
+  managerId?: string | null;
+  /** Default company preselected in the expense wizard. */
+  defaultZohoEntity?: string | null;
+  /** Default payment method preselected in the expense wizard. */
+  defaultPaymentMethodId?: string | null;
+  lastLoginAt?: string | null;
 }
 
 // ── Companies ────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { UploadQueueProvider } from './components/UploadQueueProvider';
 import { Login } from './pages/Login';
+import { InviteAccept } from './pages/InviteAccept';
 import { Dashboard } from './pages/Dashboard';
 import { ExpenseList } from './pages/ExpenseList';
 import { ExpenseNew } from './pages/ExpenseNew';
@@ -30,6 +31,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/invite/:token" element={<InviteAccept />} />
 
             <Route
               element={
