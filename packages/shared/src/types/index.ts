@@ -178,6 +178,14 @@ export interface Receipt {
   ocrNeedsReview: boolean | null;
   ocrReviewReasons: string[] | null;
   ocrErrorSummary: string | null;
+  /** Full OCR result payload; `fields.{merchant,amount,date}.value` prefill the wizard. */
+  ocrData?: {
+    fields?: {
+      merchant?: { value: string | null };
+      amount?: { value: number | null };
+      date?: { value: string | null };
+    };
+  } | null;
   ocrCostEstimateUsd: string | null;
   ocrSubmittedAt: string | null;
   ocrCompletedAt: string | null;

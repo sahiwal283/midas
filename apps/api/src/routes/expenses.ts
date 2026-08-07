@@ -18,10 +18,12 @@ const router = Router();
 router.use(authenticate);
 
 const createExpenseSchema = z.object({
-  merchant: z.string().min(1),
-  amount: z.coerce.number().positive(),
+  merchant: z.string().min(1).optional(),
+  amount: z.coerce.number().positive().optional(),
   currency: z.string().length(3).default('USD'),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** Wizard flow: create an empty draft before OCR fills the fields. */
+  draft: z.boolean().optional(),
   categoryId: z.string().uuid().optional(),
   paymentMethodId: z.string().uuid().optional(),
   description: z.string().optional(),
@@ -97,6 +99,12 @@ router.get('/:id', asyncHandler(async (req, res) => {
 router.post('/', asyncHandler(async (req, res) => {
   const body = createExpenseSchema.parse(req.body);
 
+  // Non-draft creates keep the original required fields; the wizard's
+  // draft:true path defers them until submit (which re-validates).
+  if (!body.draft && (!body.merchant || body.amount === undefined || !body.date)) {
+    throw createError('merchant, amount, and date are required', 400, 'VALIDATION_ERROR');
+  }
+
   let reimbursementStatus: 'not_requested' | 'pending' = 'not_requested';
   let zohoEntity = body.zohoEntity ?? null;
   if (body.paymentMethodId) {
@@ -114,10 +122,10 @@ router.post('/', asyncHandler(async (req, res) => {
 
   const [expense] = await db.insert(expenses).values({
     userId: req.user!.id,
-    merchant: body.merchant,
-    amount: String(body.amount),
+    merchant: body.merchant ?? '',
+    amount: String(body.amount ?? 0),
     currency: body.currency,
-    date: body.date,
+    date: body.date ?? new Date().toISOString().slice(0, 10),
     categoryId: body.categoryId ?? null,
     paymentMethodId: body.paymentMethodId ?? null,
     description: body.description,
@@ -185,6 +193,10 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
   if (expense.userId !== req.user!.id) throw forbidden();
   if (expense.status !== 'draft') {
     res.status(409).json({ error: { code: 'CONFLICT', message: 'Expense is not in draft status' } });
+    return;
+  }
+  if (!expense.merchant.trim() || Number(expense.amount) <= 0) {
+    res.status(409).json({ error: { code: 'INCOMPLETE_DRAFT', message: 'Merchant and amount are required before submitting' } });
     return;
   }
 

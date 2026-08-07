@@ -9,9 +9,11 @@ export const expenseApi = {
     client.get<{ expense: Expense }>(`/expenses/${id}`).then((r) => r.data.expense),
 
   create: (data: {
-    merchant: string;
-    amount: number;
-    date: string;
+    merchant?: string;
+    amount?: number;
+    date?: string;
+    /** Wizard flow: create an empty draft before OCR fills the fields. */
+    draft?: boolean;
     currency?: string;
     categoryId?: string;
     paymentMethodId?: string;
@@ -51,7 +53,7 @@ export const expenseApi = {
     }>('/zoho/expense-accounts', { params: { zohoEntity } }).then((r) => r.data),
 
   submit: (id: string) =>
-    client.post<{ expense: Expense }>(`/expenses/${id}/submit`).then((r) => r.data.expense),
+    client.post<{ expense: Expense; autoPushed?: boolean }>(`/expenses/${id}/submit`).then((r) => r.data),
 
   delete: (id: string, force = false) =>
     client.delete(`/expenses/${id}`, { params: force ? { force: 'true' } : undefined }).then((r) => r.data),
