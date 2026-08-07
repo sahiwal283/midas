@@ -10,6 +10,7 @@ import { ExpenseList } from './pages/ExpenseList';
 import { ExpenseNew } from './pages/ExpenseNew';
 import { ExpenseDetail } from './pages/ExpenseDetail';
 import { AccountantQueue } from './pages/AccountantQueue';
+import { AccountantReview } from './pages/AccountantReview';
 import { Captures } from './pages/Captures';
 import { ToUpload } from './pages/ToUpload';
 import { Admin } from './pages/Admin';
@@ -68,6 +69,14 @@ export default function App() {
                 element={
                   <ProtectedRoute roles={['accountant', 'admin']}>
                     <AccountantQueue />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/accountant/:id"
+                element={
+                  <ProtectedRoute roles={['accountant', 'admin']}>
+                    <AccountantReview />
                   </ProtectedRoute>
                 }
               />

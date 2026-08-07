@@ -103,9 +103,34 @@ export const expenseApi = {
     client.get<{ readiness: ZohoReadinessResult }>(`/expenses/${expenseId}/zoho-readiness`).then((r) => r.data.readiness),
 };
 
+export interface QueueSummary {
+  counts: Record<string, number>;
+  readyForZohoAmount: number;
+  reimbursementPendingAmount: number;
+  reimbursementEmployees: number;
+}
+
 export const accountantApi = {
-  queue: (status?: string) =>
-    client.get<{ expenses: Expense[] }>('/accountant/queue', { params: status ? { status } : undefined }).then((r) => r.data.expenses),
+  queue: (params?: Record<string, string>) =>
+    client.get<{ expenses: Expense[] }>('/accountant/queue', {
+      params: params && Object.keys(params).length > 0 ? params : undefined,
+    }).then((r) => r.data.expenses),
+
+  employees: () =>
+    client.get<{ employees: Array<{ id: string; name: string }> }>('/accountant/employees')
+      .then((r) => r.data.employees),
+
+  bulkReview: (ids: string[]) =>
+    client.post<{
+      approved: string[];
+      skipped: Array<{ id: string; reason: string }>;
+    }>('/accountant/expenses/bulk-review', { ids, action: 'approve' }).then((r) => r.data),
+
+  bulkZohoPush: (ids: string[]) =>
+    client.post<{
+      pushed: string[];
+      failed: Array<{ id: string; code: string; message: string }>;
+    }>('/accountant/zoho/bulk-push', { ids }).then((r) => r.data),
 
   all: () =>
     client.get<{ expenses: Expense[] }>('/accountant/expenses').then((r) => r.data.expenses),
@@ -132,7 +157,7 @@ export const accountantApi = {
     client.post(`/accountant/expenses/${id}/resolve-request`).then((r) => r.data),
 
   queueSummary: () =>
-    client.get<{ counts: Record<string, number> }>('/accountant/queue/summary').then((r) => r.data.counts),
+    client.get<QueueSummary>('/accountant/queue/summary').then((r) => r.data),
 
   getAuditTrail: (id: string) =>
     client.get<{ entries: AuditLogEntry[] }>(`/accountant/expenses/${id}/audit`).then((r) => r.data.entries),

@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Clock, RefreshCw, XCircle, Send, FileX, Tag, CreditCard, Building2, Banknote } from 'lucide-react';
-import { accountantApi } from '../api/expenses';
-import { StatusBadge, ZohoPushBadge, ReimbursementBadge } from '../components/StatusBadge';
+import { Link, useSearchParams } from 'react-router-dom';
+import { AlertCircle, CheckCircle2, Clock, RefreshCw, XCircle, Send, FileX, Tag, CreditCard, Building2, Banknote, X } from 'lucide-react';
+import { accountantApi, expenseApi } from '../api/expenses';
+import { companyApi } from '../api/companies';
+import { StatusBadge, ZohoPushBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -62,9 +63,9 @@ const LANES: Record<LaneId, LaneDef> = {
     filter: (e) => e.status === 'approved' && (e.flags ?? []).includes('needs_payment_method'),
   },
   missing_entity: {
-    label: 'Missing Entity',
+    label: 'Missing Company',
     icon: <Building2 className="h-3.5 w-3.5" />,
-    description: 'Approved but Zoho accounting entity not set',
+    description: 'Approved but company not set',
     filter: (e) => e.status === 'approved' && (e.flags ?? []).includes('needs_entity'),
   },
   ready_for_zoho: {
@@ -99,24 +100,142 @@ const FLAG_META: Record<string, { label: string; color: string }> = {
   needs_category: { label: 'No Expense Account', color: 'bg-orange-100 text-orange-700' },
   missing_receipt: { label: 'No Receipt', color: 'bg-red-100 text-red-700' },
   needs_payment_method: { label: 'No Payment', color: 'bg-purple-100 text-purple-700' },
-  needs_entity: { label: 'No Entity', color: 'bg-indigo-100 text-indigo-700' },
+  needs_entity: { label: 'No Company', color: 'bg-indigo-100 text-indigo-700' },
   ready_for_zoho: { label: 'Ready for Zoho', color: 'bg-teal-100 text-teal-700' },
   from_extension: { label: 'Extension', color: 'bg-blue-100 text-blue-700' },
   zoho_synced: { label: 'Synced', color: 'bg-green-100 text-green-700' },
   reimbursement_pending: { label: 'Reimb. Pending', color: 'bg-orange-100 text-orange-700' },
 };
 
+// ── Filters ───────────────────────────────────────────────────────────────────
+
+interface QueueFilters {
+  search: string;
+  userId: string;
+  company: string;
+  categoryId: string;
+  paymentMethodId: string;
+  from: string;
+  to: string;
+  amountMin: string;
+  amountMax: string;
+  reimbursementStatus: string;
+  zohoStatus: string;
+  sourceApp: string;
+  ocrNeedsReview: boolean;
+  missingReceipt: boolean;
+  missingCategory: boolean;
+  missingPayment: boolean;
+}
+
+const EMPTY_FILTERS: QueueFilters = {
+  search: '',
+  userId: '',
+  company: '',
+  categoryId: '',
+  paymentMethodId: '',
+  from: '',
+  to: '',
+  amountMin: '',
+  amountMax: '',
+  reimbursementStatus: '',
+  zohoStatus: '',
+  sourceApp: '',
+  ocrNeedsReview: false,
+  missingReceipt: false,
+  missingCategory: false,
+  missingPayment: false,
+};
+
+function filtersToParams(f: QueueFilters): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (f.search.trim()) params.search = f.search.trim();
+  if (f.userId) params.userId = f.userId;
+  if (f.company) params.company = f.company;
+  if (f.categoryId) params.categoryId = f.categoryId;
+  if (f.paymentMethodId) params.paymentMethodId = f.paymentMethodId;
+  if (f.from) params.from = f.from;
+  if (f.to) params.to = f.to;
+  if (f.amountMin) params.amountMin = f.amountMin;
+  if (f.amountMax) params.amountMax = f.amountMax;
+  if (f.reimbursementStatus) params.reimbursementStatus = f.reimbursementStatus;
+  if (f.zohoStatus) params.zohoStatus = f.zohoStatus;
+  if (f.sourceApp) params.sourceApp = f.sourceApp;
+  if (f.ocrNeedsReview) params.ocrNeedsReview = 'true';
+  if (f.missingReceipt) params.missingReceipt = 'true';
+  if (f.missingCategory) params.missingCategory = 'true';
+  if (f.missingPayment) params.missingPayment = 'true';
+  return params;
+}
+
+function fmtMoney(n: number): string {
+  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function humanizeSourceApp(app: string): string {
+  return app
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function AccountantQueue() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const [activeLane, setActiveLane] = useState<LaneId>('needs_review');
+  const [searchParams] = useSearchParams();
+  const [activeLane, setActiveLane] = useState<LaneId>(() => {
+    const fromUrl = searchParams.get('status');
+    return fromUrl && fromUrl in LANES ? (fromUrl as LaneId) : 'needs_review';
+  });
   const [quickViewId, setQuickViewId] = useState<string | null>(null);
 
+  // Filter bar state (search input is debounced before hitting the server)
+  const [filters, setFilters] = useState<QueueFilters>(EMPTY_FILTERS);
+  const [searchInput, setSearchInput] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilters((f) => (f.search === searchInput ? f : { ...f, search: searchInput }));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const queryParams = useMemo(() => filtersToParams(filters), [filters]);
+  const hasActiveFilters = Object.keys(queryParams).length > 0;
+
+  // Bulk selection + result toasts
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [toast, setToast] = useState<{ text: string; details?: string[] } | null>(null);
+
   const { data: queue = [], isLoading: queueLoading } = useQuery({
-    queryKey: ['accountant-queue'],
-    queryFn: () => accountantApi.queue(),
+    queryKey: ['accountant-queue', queryParams],
+    queryFn: () => accountantApi.queue(queryParams),
+  });
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ['accountant-employees'],
+    queryFn: () => accountantApi.employees(),
+    staleTime: 60_000,
+  });
+
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => companyApi.list(),
+    staleTime: 60_000,
+  });
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ['expense-categories'],
+    queryFn: () => expenseApi.categories(),
+    staleTime: 60_000,
+  });
+
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['payment-methods'],
+    queryFn: () => expenseApi.paymentMethods(),
+    staleTime: 60_000,
   });
 
   const { data: zohoHealth } = useQuery({
@@ -155,6 +274,12 @@ export function AccountantQueue() {
     enabled: activeLane === 'all',
   });
 
+  function refetchQueueAndSummary() {
+    qc.invalidateQueries({ queryKey: ['accountant-queue'] });
+    qc.invalidateQueries({ queryKey: ['accountant-all'] });
+    qc.invalidateQueries({ queryKey: ['accountant-queue-summary'] });
+  }
+
   const reviewMutation = useMutation({
     mutationFn: ({ id, action, note, requestType, internalNote }: {
       id: string;
@@ -163,25 +288,61 @@ export function AccountantQueue() {
       requestType?: string;
       internalNote?: string;
     }) => accountantApi.review(id, { action, note, requestType, internalNote }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['accountant-queue'] });
-      qc.invalidateQueries({ queryKey: ['accountant-all'] });
-    },
+    onSuccess: refetchQueueAndSummary,
   });
 
   const resolveMutation = useMutation({
     mutationFn: (id: string) => accountantApi.resolveRequest(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['accountant-queue'] });
-      qc.invalidateQueries({ queryKey: ['accountant-all'] });
-    },
+    onSuccess: refetchQueueAndSummary,
   });
 
   const zohoMutation = useMutation({
     mutationFn: (id: string) => accountantApi.pushToZoho(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['accountant-queue'] });
-      qc.invalidateQueries({ queryKey: ['accountant-all'] });
+    onSuccess: refetchQueueAndSummary,
+  });
+
+  const bulkApproveMutation = useMutation({
+    mutationFn: ({ ids }: { ids: string[]; flaggedCount: number }) =>
+      accountantApi.bulkReview(ids),
+    onSuccess: (result, variables) => {
+      const skippedTotal = result.skipped.length + variables.flaggedCount;
+      setToast({
+        text: `Approved ${result.approved.length}. Skipped ${skippedTotal}.`,
+        details: result.skipped.length > 0
+          ? result.skipped.map((s) => {
+              const row = queue.find((e) => e.id === s.id);
+              return `${row?.merchant ?? s.id}: ${s.reason}`;
+            })
+          : undefined,
+      });
+      setSelected(new Set());
+      setShowApproveModal(false);
+      refetchQueueAndSummary();
+    },
+    onError: () => {
+      setToast({ text: 'Bulk approval failed. No expenses were changed.' });
+      setShowApproveModal(false);
+    },
+  });
+
+  const bulkPushMutation = useMutation({
+    mutationFn: (ids: string[]) => accountantApi.bulkZohoPush(ids),
+    onSuccess: (result) => {
+      const parts = [`${result.pushed.length} synced`];
+      if (result.failed.length > 0) parts.push(`${result.failed.length} require${result.failed.length === 1 ? 's' : ''} attention`);
+      setToast({
+        text: parts.join(', '),
+        details: result.failed.length > 0
+          ? result.failed.map((f) => {
+              const row = queue.find((e) => e.id === f.id);
+              return `${row?.merchant ?? f.id}: ${f.message}`;
+            })
+          : undefined,
+      });
+      refetchQueueAndSummary();
+    },
+    onError: () => {
+      setToast({ text: 'Bulk Zoho push failed.' });
     },
   });
 
@@ -200,6 +361,52 @@ export function AccountantQueue() {
 
   const isLoading = activeLane === 'all' ? allLoading : queueLoading;
 
+  // Bulk selection — resolved against currently loaded rows
+  const selectedRows = sourceData.filter((e) => selected.has(e.id));
+  const selectedTotal = selectedRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const allOnPageSelected = displayData.length > 0 && displayData.every((e) => selected.has(e.id));
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllOnPage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        for (const e of displayData) next.delete(e.id);
+      } else {
+        for (const e of displayData) next.add(e.id);
+      }
+      return next;
+    });
+  }
+
+  // Ready-for-Zoho card — computed from currently loaded queue rows
+  const readyRows = queue.filter((e) => e.zohoReady);
+  const readyTotal = readyRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  // Source app options for the filter — fixed set plus anything seen in the data
+  const sourceAppOptions = useMemo(() => {
+    const set = new Set<string>(['trade_show', 'browser_extension']);
+    for (const e of queue) if (e.sourceApp) set.add(e.sourceApp);
+    return [...set].sort();
+  }, [queue]);
+
+  function clearFilters() {
+    setFilters(EMPTY_FILTERS);
+    setSearchInput('');
+  }
+
+  function setFilter<K extends keyof QueueFilters>(key: K, value: QueueFilters[K]) {
+    setFilters((f) => ({ ...f, [key]: value }));
+  }
+
   // Summary cards — the 4 most actionable queues
   const summaryLanes: { id: LaneId; color: string }[] = [
     { id: 'needs_review', color: 'yellow' },
@@ -207,6 +414,9 @@ export function AccountantQueue() {
     { id: 'reimbursement_pending', color: 'orange' },
     { id: 'ready_for_zoho', color: 'teal' },
   ];
+
+  const filterSelectClass = 'rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none';
+  const filterInputClass = 'rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none';
 
   return (
     <div className="p-8">
@@ -218,6 +428,51 @@ export function AccountantQueue() {
             : 'All queues clear — nothing urgent.'}
         </p>
       </div>
+
+      {/* Result toast */}
+      {toast && (
+        <div className="mb-4 rounded-xl border border-teal-200 bg-teal-50 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-teal-900">{toast.text}</p>
+              {toast.details && toast.details.length > 0 && (
+                <ul className="mt-1.5 space-y-0.5">
+                  {toast.details.map((d, i) => (
+                    <li key={i} className="text-xs text-teal-800">• {d}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button onClick={() => setToast(null)} className="rounded p-1 text-teal-600 hover:bg-teal-100" aria-label="Dismiss">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Ready-for-Zoho card */}
+      {readyRows.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 p-4">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-teal-600" />
+            <div>
+              <p className="text-sm font-semibold text-teal-900">
+                Ready for Zoho — {readyRows.length} expense{readyRows.length !== 1 ? 's' : ''} · {fmtMoney(readyTotal)}
+              </p>
+              {zohoLaneNote && <p className="mt-0.5 text-xs text-teal-700">{zohoLaneNote}</p>}
+            </div>
+          </div>
+          <button
+            onClick={() => bulkPushMutation.mutate(readyRows.map((e) => e.id))}
+            disabled={bulkPushMutation.isPending}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+          >
+            {bulkPushMutation.isPending
+              ? 'Pushing…'
+              : `Push ${readyRows.length} to Zoho${zohoPushSuffix}`}
+          </button>
+        </div>
+      )}
 
       {/* Summary stat cards */}
       <div className="mb-6 grid grid-cols-4 gap-3">
@@ -261,6 +516,136 @@ export function AccountantQueue() {
         />
       </div>
 
+      {/* Filter bar */}
+      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search merchant or description…"
+            className={`${filterInputClass} col-span-2`}
+          />
+          <select value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)} className={filterSelectClass}>
+            <option value="">All employees</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>{emp.name}</option>
+            ))}
+          </select>
+          <select value={filters.company} onChange={(e) => setFilter('company', e.target.value)} className={filterSelectClass}>
+            <option value="">Company: all</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+          <select value={filters.categoryId} onChange={(e) => setFilter('categoryId', e.target.value)} className={filterSelectClass}>
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <select value={filters.paymentMethodId} onChange={(e) => setFilter('paymentMethodId', e.target.value)} className={filterSelectClass}>
+            <option value="">All payment methods</option>
+            {paymentMethods.map((pm) => (
+              <option key={pm.id} value={pm.id}>
+                {pm.label}{pm.lastFour ? ` ···${pm.lastFour}` : ''}
+              </option>
+            ))}
+          </select>
+          <select value={filters.reimbursementStatus} onChange={(e) => setFilter('reimbursementStatus', e.target.value)} className={filterSelectClass}>
+            <option value="">Reimbursement: any</option>
+            {REIMBURSEMENT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <select value={filters.zohoStatus} onChange={(e) => setFilter('zohoStatus', e.target.value)} className={filterSelectClass}>
+            <option value="">Zoho: any</option>
+            <option value="synced">Synced</option>
+            <option value="not_synced">Not synced</option>
+            <option value="sync_failed">Sync failed</option>
+          </select>
+          <select value={filters.sourceApp} onChange={(e) => setFilter('sourceApp', e.target.value)} className={filterSelectClass}>
+            <option value="">Source: any</option>
+            {sourceAppOptions.map((app) => (
+              <option key={app} value={app}>{humanizeSourceApp(app)}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={filters.from}
+              onChange={(e) => setFilter('from', e.target.value)}
+              className={`${filterInputClass} w-full`}
+              aria-label="Date from"
+            />
+            <span className="text-xs text-gray-400">to</span>
+            <input
+              type="date"
+              value={filters.to}
+              onChange={(e) => setFilter('to', e.target.value)}
+              className={`${filterInputClass} w-full`}
+              aria-label="Date to"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={filters.amountMin}
+              onChange={(e) => setFilter('amountMin', e.target.value)}
+              placeholder="Min $"
+              className={`${filterInputClass} w-full`}
+              aria-label="Amount minimum"
+            />
+            <span className="text-xs text-gray-400">–</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={filters.amountMax}
+              onChange={(e) => setFilter('amountMax', e.target.value)}
+              placeholder="Max $"
+              className={`${filterInputClass} w-full`}
+              aria-label="Amount maximum"
+            />
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <FilterChip
+            label="OCR needs review"
+            active={filters.ocrNeedsReview}
+            onToggle={() => setFilter('ocrNeedsReview', !filters.ocrNeedsReview)}
+          />
+          <FilterChip
+            label="Missing receipt"
+            active={filters.missingReceipt}
+            onToggle={() => setFilter('missingReceipt', !filters.missingReceipt)}
+          />
+          <FilterChip
+            label="Missing category"
+            active={filters.missingCategory}
+            onToggle={() => setFilter('missingCategory', !filters.missingCategory)}
+          />
+          <FilterChip
+            label="Missing payment"
+            active={filters.missingPayment}
+            onToggle={() => setFilter('missingPayment', !filters.missingPayment)}
+          />
+          {(hasActiveFilters || searchInput) && (
+            <button
+              onClick={clearFilters}
+              className="ml-auto flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear filters
+            </button>
+          )}
+        </div>
+        {activeLane === 'all' && hasActiveFilters && (
+          <p className="mt-2 text-xs text-amber-600">Filters apply to the review queue lanes — the All Expenses lane shows every expense.</p>
+        )}
+      </div>
+
       {/* Lane description */}
       {activeLane !== 'all' && (
         <p className="mb-3 text-xs text-gray-400">
@@ -269,6 +654,29 @@ export function AccountantQueue() {
             ? ` ${zohoLaneNote}`
             : ''}
         </p>
+      )}
+
+      {/* Bulk action bar */}
+      {selectedRows.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
+          <p className="text-sm font-medium text-gray-800">
+            {selectedRows.length} selected · {fmtMoney(selectedTotal)}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowApproveModal(true)}
+              className="rounded-lg bg-brand-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              Approve selected…
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="rounded-lg px-2.5 py-1.5 text-sm text-gray-600 hover:bg-white"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Expense table */}
@@ -283,6 +691,15 @@ export function AccountantQueue() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allOnPageSelected}
+                    onChange={toggleAllOnPage}
+                    className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                    aria-label="Select all"
+                  />
+                </th>
                 <th className="px-5 py-3">Merchant / Employee</th>
                 <th className="px-5 py-3">Date</th>
                 <th className="px-5 py-3 text-right">Amount</th>
@@ -297,6 +714,8 @@ export function AccountantQueue() {
                 <ExpenseRow
                   key={expense.id}
                   expense={expense}
+                  selected={selected.has(expense.id)}
+                  onToggleSelect={() => toggleRow(expense.id)}
                   onOpenReceipt={setQuickViewId}
                   onReview={(action, note, requestType, internalNote) =>
                     reviewMutation.mutate({ id: expense.id, action, note, requestType, internalNote })
@@ -326,7 +745,130 @@ export function AccountantQueue() {
           }}
         />
       )}
+
+      {showApproveModal && (
+        <BulkApproveModal
+          rows={selectedRows}
+          isPending={bulkApproveMutation.isPending}
+          onCancel={() => setShowApproveModal(false)}
+          onConfirm={(readyIds, flaggedCount) =>
+            bulkApproveMutation.mutate({ ids: readyIds, flaggedCount })
+          }
+        />
+      )}
     </div>
+  );
+}
+
+// ── Bulk approve confirmation modal ───────────────────────────────────────────
+
+function BulkApproveModal({
+  rows,
+  isPending,
+  onCancel,
+  onConfirm,
+}: {
+  rows: Expense[];
+  isPending: boolean;
+  onCancel: () => void;
+  onConfirm: (readyIds: string[], flaggedCount: number) => void;
+}) {
+  const total = rows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const missingReceipt = rows.filter((e) => (e.flags ?? []).includes('missing_receipt'));
+  const missingCategory = rows.filter((e) => (e.flags ?? []).includes('needs_category'));
+  const missingPayment = rows.filter((e) => (e.flags ?? []).includes('needs_payment_method'));
+  const awaiting = rows.filter((e) => e.status === 'awaiting_info');
+
+  const flaggedIds = new Set<string>();
+  for (const list of [missingReceipt, missingCategory, missingPayment, awaiting]) {
+    for (const e of list) flaggedIds.add(e.id);
+  }
+  const flaggedRows = rows.filter((e) => flaggedIds.has(e.id));
+  const readyRows = rows.filter((e) => !flaggedIds.has(e.id));
+
+  const breakdown: string[] = [];
+  if (missingReceipt.length > 0) breakdown.push(`${missingReceipt.length} have missing receipts`);
+  if (missingCategory.length > 0) breakdown.push(`${missingCategory.length} missing category`);
+  if (missingPayment.length > 0) breakdown.push(`${missingPayment.length} missing payment method`);
+  if (awaiting.length > 0) breakdown.push(`${awaiting.length} have unresolved issues`);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-bold text-gray-900">
+          Approve {rows.length} expense{rows.length !== 1 ? 's' : ''}?
+        </h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Total selected: <span className="font-semibold text-gray-900">{fmtMoney(total)}</span>
+        </p>
+
+        {breakdown.length > 0 && (
+          <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
+            <p className="text-xs font-semibold text-amber-900">Flagged in this selection:</p>
+            <ul className="mt-1 space-y-0.5">
+              {breakdown.map((line) => (
+                <li key={line} className="text-xs text-amber-800">• {line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {flaggedRows.length > 0 && (
+          <div className="mt-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Will be skipped</p>
+            <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto">
+              {flaggedRows.map((e) => (
+                <li key={e.id} className="text-xs text-gray-600">
+                  • {e.merchant} — {fmtMoney(Number(e.amount || 0))}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={isPending}
+            className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(readyRows.map((e) => e.id), flaggedRows.length)}
+            disabled={isPending || readyRows.length === 0}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+          >
+            {isPending
+              ? 'Approving…'
+              : `Approve ${readyRows.length} ready expense${readyRows.length !== 1 ? 's' : ''}`}
+          </button>
+        </div>
+        {readyRows.length === 0 && (
+          <p className="mt-2 text-right text-xs text-red-600">
+            Every selected expense is flagged — nothing to approve.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Filter chip ───────────────────────────────────────────────────────────────
+
+function FilterChip({ label, active, onToggle }: { label: string; active: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+        active
+          ? 'border-brand-300 bg-brand-100 text-brand-800'
+          : 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100'
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -393,6 +935,7 @@ function SummaryCard({
     amber: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100',
     blue: 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100',
     red: 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100',
+    orange: 'border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100',
     teal: 'border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100',
   };
   return (
@@ -452,6 +995,8 @@ const REQUEST_TYPE_OPTIONS = [
 
 function ExpenseRow({
   expense,
+  selected,
+  onToggleSelect,
   onOpenReceipt,
   onReview,
   onResolve,
@@ -460,6 +1005,8 @@ function ExpenseRow({
   isActing,
 }: {
   expense: Expense;
+  selected: boolean;
+  onToggleSelect: () => void;
   onOpenReceipt: (expenseId: string) => void;
   onReview: (action: 'approve' | 'reject' | 'request_info', note?: string, requestType?: string, internalNote?: string) => void;
   onResolve: () => void;
@@ -492,9 +1039,18 @@ function ExpenseRow({
 
   return (
     <>
-      <tr className="hover:bg-gray-50">
+      <tr className={selected ? 'bg-brand-50/50' : 'hover:bg-gray-50'}>
+        <td className="w-10 px-4 py-3">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            aria-label={`Select ${expense.merchant}`}
+          />
+        </td>
         <td className="px-5 py-3">
-          <Link to={`/expenses/${expense.id}`} className="font-medium text-gray-900 hover:text-brand-700">
+          <Link to={`/accountant/${expense.id}`} className="font-medium text-gray-900 hover:text-brand-700">
             {expense.merchant}
           </Link>
           <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
@@ -567,7 +1123,7 @@ function ExpenseRow({
 
       {showAskForm && (
         <tr className="bg-blue-50">
-          <td colSpan={6} className="px-5 py-3">
+          <td colSpan={8} className="px-5 py-3">
             <div className="space-y-2">
               <div className="flex items-start gap-2">
                 <select
