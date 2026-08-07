@@ -70,6 +70,13 @@ router.get('/summary', asyncHandler(async (req, res) => {
     .where(scope).groupBy(users.name)
     .orderBy(sql`sum(${expenses.amount}) desc`).limit(10);
 
+  const byReimb = await db.select({ status: expenses.reimbursementStatus, spend: sum(expenses.amount) })
+    .from(expenses).where(scope).groupBy(expenses.reimbursementStatus);
+  const reimbByEmployee = await db.select({ name: users.name, status: expenses.reimbursementStatus, spend: sum(expenses.amount) })
+    .from(expenses).innerJoin(users, eq(expenses.userId, users.id))
+    .where(and(scope, inArray(expenses.reimbursementStatus, ['pending', 'approved', 'paid'])))
+    .groupBy(users.name, expenses.reimbursementStatus);
+
   const granularity = granularityFor(from, to);
   const periodMap = new Map<string, { spend: number; count: number }>();
   for (const r of byDate) {
@@ -93,6 +100,23 @@ router.get('/summary', asyncHandler(async (req, res) => {
     byPaymentMethod: mapRows(byPm, 'Unspecified'),
     topVendors: mapRows(topVendors, 'Unknown'),
     topUsers: mapRows(topUsers, 'Unknown'),
+    reimbursement: (() => {
+      const byStatus = new Map(byReimb.map((r) => [r.status, num(r.spend)]));
+      const employees = new Map<string, { name: string; outstanding: number; paid: number }>();
+      for (const r of reimbByEmployee) {
+        const e = employees.get(r.name) ?? { name: r.name, outstanding: 0, paid: 0 };
+        if (r.status === 'paid') e.paid += num(r.spend);
+        else e.outstanding += num(r.spend);
+        employees.set(r.name, e);
+      }
+      return {
+        reimbursableTotal: (byStatus.get('pending') ?? 0) + (byStatus.get('approved') ?? 0) + (byStatus.get('paid') ?? 0) + (byStatus.get('rejected') ?? 0),
+        companyCardTotal: byStatus.get('not_requested') ?? 0,
+        outstanding: (byStatus.get('pending') ?? 0) + (byStatus.get('approved') ?? 0),
+        paid: byStatus.get('paid') ?? 0,
+        byEmployee: [...employees.values()].sort((a, b) => b.outstanding - a.outstanding).slice(0, 10),
+      };
+    })(),
   });
 }));
 
