@@ -20,6 +20,7 @@ import extensionRouter from './routes/extensionExpenses';
 import paymentMethodsRouter from './routes/paymentMethods';
 import partnerExpensesRouter from './routes/partnerExpenses';
 import reportsRouter from './routes/reports';
+import companiesRouter from './routes/companies';
 import metaRouter from './routes/meta';
 import oidcAuthRouter from './routes/oidcAuth';
 import zohoRouter from './routes/zoho';
@@ -82,6 +83,7 @@ app.use('/api/v1/extension', extensionRouter); // browser extension (session coo
 app.use('/api/v1/payment-methods', paymentMethodsRouter);
 app.use('/api/v1/partner-expenses', partnerExpensesRouter);
 app.use('/api/v1/reports', reportsRouter);
+app.use('/api/v1/companies', companiesRouter);
 app.use('/api/v1/expenses', zohoRouter);
 app.use('/api/v1/zoho', zohoServiceRouter);
 app.use('/api/v1/meta', metaRouter);

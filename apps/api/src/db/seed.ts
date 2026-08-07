@@ -1,5 +1,5 @@
 import { db } from './index';
-import { users, expenseCategories, categoryMappings } from './schema';
+import { users, expenseCategories, categoryMappings, companies } from './schema';
 import bcrypt from 'bcryptjs';
 import { and, eq } from 'drizzle-orm';
 
@@ -112,6 +112,21 @@ async function seed() {
       const passwordHash = await bcrypt.hash(u.password, 12);
       await db.insert(users).values({ email: u.email, name: u.name, role: u.role, passwordHash });
       console.log(`  + user: ${u.email} (${u.role}) — password: ${u.password}`);
+    }
+  }
+
+  const defaultCompanies = [
+    { name: 'Haute Brands', zohoEnabled: true, sortOrder: 1 },
+    { name: 'Nirvana Kulture', zohoEnabled: true, sortOrder: 2 },
+    { name: 'Boomin Brands', zohoEnabled: true, sortOrder: 3 },
+    { name: 'Summitt Labs', zohoEnabled: false, sortOrder: 4 },
+  ];
+
+  for (const c of defaultCompanies) {
+    const existing = await db.query.companies.findFirst({ where: eq(companies.name, c.name) });
+    if (!existing) {
+      await db.insert(companies).values(c);
+      console.log(`  + company: ${c.name}${c.zohoEnabled ? '' : ' (Zoho disabled)'}`);
     }
   }
 

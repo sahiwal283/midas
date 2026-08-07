@@ -73,6 +73,19 @@ export const paymentMethods = pgTable('payment_methods', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// ── Companies ─────────────────────────────────────────────────────────────────
+// The sister companies Midas serves. expenses.zoho_entity stores the company
+// NAME. zoho_enabled=false companies never enter the Zoho pipeline.
+
+export const companies = pgTable('companies', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').unique().notNull(),
+  zohoEnabled: boolean('zoho_enabled').default(true).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
 export const expenses = pgTable('expenses', {

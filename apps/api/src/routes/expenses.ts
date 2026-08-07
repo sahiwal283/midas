@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseCategories, paymentMethods } from '../db/schema';
+import { expenses, expenseCategories, paymentMethods, companies } from '../db/schema';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
@@ -190,9 +190,17 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
 
   // Daily auto-push: complete staff-entered expenses skip accountant approval.
   // Readiness is evaluated as-if approved ("ready once approved"). Event
-  // expenses (trade_show etc.) and incomplete ones fall through to pending.
+  // expenses (trade_show etc.), incomplete ones, and expenses for companies
+  // with Zoho disabled fall through to pending.
+  const company = expense.zohoEntity
+    ? await db.query.companies.findFirst({ where: eq(companies.name, expense.zohoEntity) })
+    : undefined;
   const readiness = evaluateZohoReadiness({ ...expense, status: 'approved' });
-  if (isAutoPushEligible({ sourceApp: expense.sourceApp, ready: readiness.ready })) {
+  if (isAutoPushEligible({
+    sourceApp: expense.sourceApp,
+    ready: readiness.ready,
+    companyZohoEnabled: company?.zohoEnabled,
+  })) {
     const [approved] = await db.update(expenses)
       .set({ status: 'approved', updatedAt: new Date() })
       .where(eq(expenses.id, expense.id))

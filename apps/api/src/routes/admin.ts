@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
 import {
   users, expenseCategories, appConnections, ssoLinks,
-  expenses, expenseMessages, captures, partnerExpenses,
+  expenses, expenseMessages, captures, partnerExpenses, companies,
 } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, createError } from '../middleware/error';
@@ -22,6 +22,59 @@ async function countActiveAdmins(): Promise<number> {
     .where(and(eq(users.role, 'admin'), eq(users.isActive, true)));
   return Number(row?.n ?? 0);
 }
+
+// ── Companies ───────────────────────────────────────────────────────────────
+
+const companySchema = z.object({
+  name: z.string().min(1).max(120),
+  zohoEnabled: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+router.get('/companies', asyncHandler(async (_req, res) => {
+  const rows = await db.query.companies.findMany({
+    orderBy: (c, { asc }) => [asc(c.sortOrder), asc(c.name)],
+  });
+  res.json({ companies: rows });
+}));
+
+router.post('/companies', asyncHandler(async (req, res) => {
+  const body = companySchema.parse(req.body);
+  const existing = await db.query.companies.findFirst({ where: eq(companies.name, body.name) });
+  if (existing) throw createError('Company name already exists', 409, 'CONFLICT');
+
+  const [company] = await db.insert(companies).values(body).returning();
+  await auditLog({
+    entityType: 'company',
+    entityId: company.id,
+    userId: req.user!.id,
+    action: 'admin.company.created',
+    after: company,
+  });
+  res.status(201).json({ company });
+}));
+
+router.patch('/companies/:id', asyncHandler(async (req, res) => {
+  const body = companySchema.partial().parse(req.body);
+  const target = await db.query.companies.findFirst({ where: eq(companies.id, req.params.id) });
+  if (!target) throw notFound('Company not found');
+
+  const [updated] = await db.update(companies)
+    .set(body)
+    .where(eq(companies.id, req.params.id))
+    .returning();
+
+  await auditLog({
+    entityType: 'company',
+    entityId: target.id,
+    userId: req.user!.id,
+    action: 'admin.company.updated',
+    before: target,
+    after: updated,
+  });
+  res.json({ company: updated });
+}));
 
 // ── Users ──────────────────────────────────────────────────────────────────
 

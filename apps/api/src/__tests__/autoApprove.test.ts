@@ -15,4 +15,13 @@ describe('isAutoPushEligible', () => {
     expect(isAutoPushEligible({ sourceApp: 'trade_show', ready: true })).toBe(false);
     expect(isAutoPushEligible({ sourceApp: 'milo', ready: true })).toBe(false);
   });
+
+  it('never eligible when the company has Zoho disabled', () => {
+    expect(isAutoPushEligible({ sourceApp: null, ready: true, companyZohoEnabled: false })).toBe(false);
+  });
+
+  it('companyZohoEnabled true or unknown keeps existing behavior', () => {
+    expect(isAutoPushEligible({ sourceApp: null, ready: true, companyZohoEnabled: true })).toBe(true);
+    expect(isAutoPushEligible({ sourceApp: null, ready: true, companyZohoEnabled: undefined })).toBe(true);
+  });
 });
