@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0-alpha (2026-08-07)
+
+### Zoho pipeline
+- **Settled accounting policies** (record type, category→COA, paid-through, vendors-never-auto-created, company derivation, sync modes, idempotent dedupe, OCR-mismatch handling) — documented in `docs/ZOHO_INTEGRATION.md`.
+- **Structured sync errors**: failures classified (AUTH/MAPPING/VALIDATION/RATE_LIMIT/NETWORK/ZOHO/DUPLICATE/UNKNOWN) and stored on the expense (`zoho_sync_error`).
+- **Auto-retry with backoff** (2 retries: 2s/5s) for transient failures only (network/429/5xx); data errors go straight to Zoho Failed.
+- **Zoho sync history card** on accountant views: Created + date + Zoho ID, or Sync failed + categorized reason + Retry. Employees never see it.
+- **OCR category suggestions**: the wizard preselects the matching Zoho category from the receipt ("Suggested from the receipt — change if wrong"), never overriding a manual pick.
+
 ## 0.10.0-alpha (2026-08-07)
 
 ### Accountant workspace
