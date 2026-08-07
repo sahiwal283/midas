@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0-alpha (2026-08-07)
+
+### Reimbursements
+- Payment stays intentionally manual — all copy says **"Mark as paid"**; Midas never moves money.
+- **Employee view**: Reimbursements filter chips (Pending/Approved/Paid) in My Expenses, with badges on rows.
+- **Reports**: new Reimbursements section — reimbursable vs company-card totals, outstanding, paid, and a by-employee breakdown.
+- Accountant dashboard's "$ awaiting reimbursement" now links into the queue pre-filtered to pending reimbursements.
+
 ## 0.13.0-alpha (2026-08-07)
 
 ### Admin console
