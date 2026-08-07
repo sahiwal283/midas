@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, or, desc, ilike, gte, lte, count, sql } from 'drizzle-orm';
 import { db } from '../db/index';
 import { expenses, expenseCategories, paymentMethods, companies } from '../db/schema';
 import { authenticate } from '../middleware/auth';
@@ -10,6 +10,8 @@ import { storage } from '../lib/storage';
 import { canSessionDeleteExpense } from '../lib/expenseDelete';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { evaluateZohoReadiness } from '../lib/zohoReadiness';
+import { editableFields, editRefusalMessage } from '../lib/expenseEdit';
+import { isLikelyDuplicate } from '../lib/duplicates';
 import { isAutoPushEligible } from '../lib/autoApprove';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 
@@ -36,24 +38,54 @@ const createExpenseSchema = z.object({
 
 const updateExpenseSchema = createExpenseSchema.partial();
 
-// List own expenses (or all for accountant/admin)
+// List own expenses (or all for accountant/admin). Optional server-side
+// search/date filters and pagination: when `page` is present the response is
+// { expenses, total, page, pageSize }; otherwise the legacy full array.
 router.get('/', asyncHandler(async (req, res) => {
   const isPrivileged = req.user!.role === 'accountant' || req.user!.role === 'admin';
-  const { status, categoryId } = req.query as Record<string, string>;
+  const { status, categoryId, search, from, to, page, pageSize } = req.query as Record<string, string>;
 
   const conditions = [];
   if (!isPrivileged) conditions.push(eq(expenses.userId, req.user!.id));
   if (status) conditions.push(eq(expenses.status, status as typeof expenses.status.enumValues[number]));
   if (categoryId) conditions.push(eq(expenses.categoryId, categoryId));
+  if (search?.trim()) {
+    conditions.push(or(
+      ilike(expenses.merchant, `%${search.trim()}%`),
+      ilike(expenses.description, `%${search.trim()}%`),
+    )!);
+  }
+  if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) conditions.push(gte(expenses.date, from));
+  if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) conditions.push(lte(expenses.date, to));
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const relations = {
+    user: { columns: { id: true, name: true, email: true } },
+    category: { columns: { id: true, name: true } },
+    paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
+    receipts: { columns: { id: true, filename: true, mimeType: true, ocrStatus: true, uploadedAt: true } },
+  } as const;
+
+  if (page !== undefined) {
+    const p = Math.max(1, Number(page) || 1);
+    const size = Math.min(100, Math.max(1, Number(pageSize) || 50));
+    const [rows, [{ n }]] = await Promise.all([
+      db.query.expenses.findMany({
+        where,
+        with: relations,
+        orderBy: [desc(expenses.createdAt)],
+        limit: size,
+        offset: (p - 1) * size,
+      }),
+      db.select({ n: count() }).from(expenses).where(where ?? sql`true`),
+    ]);
+    res.json({ expenses: rows, total: Number(n), page: p, pageSize: size });
+    return;
+  }
 
   const rows = await db.query.expenses.findMany({
-    where: conditions.length > 0 ? and(...conditions) : undefined,
-    with: {
-      user: { columns: { id: true, name: true, email: true } },
-      category: { columns: { id: true, name: true } },
-      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
-      receipts: { columns: { id: true, filename: true, mimeType: true, ocrStatus: true, uploadedAt: true } },
-    },
+    where,
+    with: relations,
     orderBy: [desc(expenses.createdAt)],
   });
 
@@ -141,17 +173,28 @@ router.post('/', asyncHandler(async (req, res) => {
   res.status(201).json({ expense });
 }));
 
-// Update draft expense
+// Update expense — state-based rules (draft/awaiting_info: all fields;
+// pending: notes only; synced or reviewed states: locked).
 router.patch('/:id', asyncHandler(async (req, res) => {
   const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
   if (!expense) throw notFound('Expense not found');
   if (expense.userId !== req.user!.id) throw forbidden();
-  if (expense.status !== 'draft') {
-    res.status(409).json({ error: { code: 'CONFLICT', message: 'Only draft expenses can be edited' } });
+
+  const editability = editableFields(expense.status, expense.zohoExpenseId);
+  if (editability === 'none') {
+    res.status(409).json({ error: { code: 'NOT_EDITABLE', message: editRefusalMessage(expense.status, expense.zohoExpenseId) } });
     return;
   }
 
-  const body = updateExpenseSchema.parse(req.body);
+  let body = updateExpenseSchema.parse(req.body);
+  if (editability === 'notes_only') {
+    const requested = Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined);
+    if (requested.some((k) => k !== 'description')) {
+      res.status(409).json({ error: { code: 'NOT_EDITABLE', message: editRefusalMessage(expense.status, expense.zohoExpenseId) } });
+      return;
+    }
+    body = { description: body.description };
+  }
   const before = { ...expense };
 
   let reimbursementPatch: { reimbursementStatus?: 'pending' } = {};
@@ -179,6 +222,72 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 }));
 
 // Submit draft for review
+// Rejected → corrected expense: clone into a fresh draft (no receipts, no
+// review/Zoho state) so accounting history stays intact.
+router.post('/:id/clone', asyncHandler(async (req, res) => {
+  const source = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
+  if (!source) throw notFound('Expense not found');
+  if (source.userId !== req.user!.id) throw forbidden();
+  if (source.status !== 'rejected') {
+    res.status(409).json({ error: { code: 'CONFLICT', message: 'Only rejected expenses can be cloned' } });
+    return;
+  }
+
+  const [clone] = await db.insert(expenses).values({
+    userId: req.user!.id,
+    merchant: source.merchant,
+    amount: source.amount,
+    currency: source.currency,
+    date: source.date,
+    categoryId: source.categoryId,
+    paymentMethodId: source.paymentMethodId,
+    description: source.description,
+    zohoEntity: source.zohoEntity,
+    zohoExpenseAccountId: source.zohoExpenseAccountId,
+    zohoExpenseAccountName: source.zohoExpenseAccountName,
+    status: 'draft',
+    reimbursementStatus: 'not_requested',
+  }).returning();
+
+  await auditLog({
+    entityType: 'expense',
+    entityId: clone.id,
+    userId: req.user!.id,
+    action: 'cloned_from_rejected',
+    metadata: { sourceExpenseId: source.id },
+  });
+
+  res.status(201).json({ expense: clone });
+}));
+
+// Non-blocking duplicate check for the wizard.
+const duplicateCheckSchema = z.object({
+  merchant: z.string().min(1),
+  amount: z.coerce.number().positive(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+router.post('/check-duplicate', asyncHandler(async (req, res) => {
+  const body = duplicateCheckSchema.parse(req.body);
+
+  const candidates = await db.query.expenses.findMany({
+    where: and(
+      eq(expenses.userId, req.user!.id),
+      eq(expenses.amount, String(body.amount)),
+    ),
+    columns: { id: true, merchant: true, amount: true, date: true, status: true },
+    orderBy: [desc(expenses.createdAt)],
+    limit: 50,
+  });
+
+  const duplicate = candidates.find((c) =>
+    c.status !== 'rejected' && c.status !== 'draft'
+    && isLikelyDuplicate(body, { merchant: c.merchant, amount: c.amount, date: c.date }),
+  ) ?? null;
+
+  res.json({ duplicate });
+}));
+
 router.post('/:id/submit', asyncHandler(async (req, res) => {
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, req.params.id),
