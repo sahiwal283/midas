@@ -9,23 +9,25 @@ import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { storage } from '../lib/storage';
 import { runReceiptOcr } from '../lib/runReceiptOcr';
+import { toJpegIfHeic } from '../lib/receiptImage';
 import { auditLog } from '../lib/audit';
 import { env } from '../config/env';
 
 const router = Router({ mergeParams: true });
 router.use(authenticate);
 
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'image/heic', 'image/heif']);
+const ALLOWED_EXT = new Set(['pdf', 'heic', 'heif']);
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_SIZE },
   fileFilter: (_req, file, cb) => {
-    // Some browsers send application/octet-stream for PDFs — allow by extension as a fallback
-    const ext = file.originalname.split('.').pop()?.toLowerCase();
-    if (ALLOWED_MIME.has(file.mimetype) || ext === 'pdf') return cb(null, true);
-    cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed: jpeg, png, webp, pdf`));
+    // Some browsers send application/octet-stream for PDFs/HEIC — allow by extension as a fallback
+    const ext = file.originalname.split('.').pop()?.toLowerCase() ?? '';
+    if (ALLOWED_MIME.has(file.mimetype) || ALLOWED_EXT.has(ext)) return cb(null, true);
+    cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed: jpeg, png, webp, heic, heif, pdf`));
   },
 });
 
@@ -51,13 +53,16 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
 
   const runAsync = req.query.async === '1' || req.query.async === 'true';
 
-  const stored = await storage.save(req.file.buffer, req.file.originalname, req.file.mimetype);
+  // iPhone HEIC/HEIF photos become JPEG so OCR and browsers can read them.
+  const file = await toJpegIfHeic(req.file.buffer, req.file.mimetype, req.file.originalname);
+
+  const stored = await storage.save(file.buffer, file.filename, file.mimeType);
 
   const [receipt] = await db.insert(receipts).values({
     expenseId: req.params.expenseId,
-    filename: req.file.originalname,
-    mimeType: req.file.mimetype,
-    sizeBytes: req.file.size,
+    filename: file.filename,
+    mimeType: file.mimeType,
+    sizeBytes: file.buffer.length,
     storagePath: stored.storagePath,
     ocrStatus: 'pending',
   }).returning();
