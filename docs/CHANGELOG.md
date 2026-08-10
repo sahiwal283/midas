@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.21.0-alpha (2026-08-10)
+## 0.27.0-alpha (2026-08-10)
 
 ### Transactions, Purchase Orders, Budgets (landed from parallel session)
 - Transaction/PO foundation: purchase orders with line items, vendors, Zoho items catalog, PO queue + detail + bulk review, Zoho PO sync parity, budgets section, integration health page, audit-log immutability triggers (migrations 0014-0016, idempotent SQL runner).
@@ -63,7 +63,7 @@
 - **Multi-company**: `zohoEntity` must match an active `companies` row (`UNKNOWN_COMPANY`).
 - **Branding**: Tailwind brand scale centered on Haute gold `#C9A227`.
 
-## 0.21.0-alpha (2026-08-10)
+## 0.27.0-alpha (2026-08-10)
 
 ### Transaction + purchase-order foundation (Phases 1–2)
 - **Domain model**: `transactions`, `purchase_orders`, `transaction_line_items`, `vendors`, `expense_details`; expenses dual-write into transactions; soft-cancel; `integrationStatus` split from workflow status.
