@@ -2,10 +2,13 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { eq, and, or, inArray, desc, isNotNull, isNull, ilike, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users } from '../db/schema';
+import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users, closedPeriods } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
-import { asyncHandler, notFound, createError } from '../middleware/error';
+import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { PERIOD_RE, isInClosedPeriods, periodOf, closedPeriodMessage } from '../lib/closedPeriods';
+import { getClosedPeriods } from '../lib/closedPeriodsDb';
+import { roleAllowed } from '../lib/roles';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
 import { computeFlags } from '../lib/flags';
@@ -200,8 +203,13 @@ router.post('/expenses/bulk-review', asyncHandler(async (req, res) => {
 
   const approved: string[] = [];
   const now = new Date();
+  const closed = await getClosedPeriods();
   for (const id of approvable) {
     const expense = rows.find((r) => r.id === id)!;
+    if (isInClosedPeriods(expense.date, closed)) {
+      skipped.push({ id, reason: closedPeriodMessage(periodOf(expense.date)) });
+      continue;
+    }
     let reimbursementStatus = expense.reimbursementStatus;
     const next = nextReimbursementOnCardLink(expense.reimbursementStatus, expense.paymentMethod);
     if (next) reimbursementStatus = next as typeof expense.reimbursementStatus;
@@ -288,6 +296,11 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
       409,
       'CONFLICT',
     );
+  }
+
+  const closed = await getClosedPeriods();
+  if (isInClosedPeriods(expense.date, closed)) {
+    throw createError(closedPeriodMessage(periodOf(expense.date)), 409, 'PERIOD_CLOSED');
   }
 
   const newStatus: StatusValue = action === 'approve' ? 'approved'
@@ -409,6 +422,11 @@ router.patch('/expenses/:id/reimbursement', asyncHandler(async (req, res) => {
   const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
   if (!expense) throw notFound('Expense not found');
 
+  const closed = await getClosedPeriods();
+  if (isInClosedPeriods(expense.date, closed)) {
+    throw createError(closedPeriodMessage(periodOf(expense.date)), 409, 'PERIOD_CLOSED');
+  }
+
   const { status, note } = reimbursementSchema.parse(req.body);
   const before = { reimbursementStatus: expense.reimbursementStatus };
 
@@ -476,6 +494,69 @@ router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
       requestId: outcome.requestId,
     },
   });
+}));
+
+// ── Closed accounting periods ─────────────────────────────────────────────────
+// Closing a month ('YYYY-MM') locks every expense dated in it. Reopen (DELETE)
+// is admin-only — the router-level gate admits accountants, so re-check here.
+
+router.get('/closed-periods', asyncHandler(async (_req, res) => {
+  const rows = await db.query.closedPeriods.findMany({
+    with: { closedBy: { columns: { id: true, name: true } } },
+    orderBy: [desc(closedPeriods.period)],
+  });
+  res.json({ closedPeriods: rows });
+}));
+
+const closePeriodSchema = z.object({
+  period: z.string().regex(PERIOD_RE, 'period must be YYYY-MM'),
+  note: z.string().max(500).optional(),
+});
+
+router.post('/closed-periods', asyncHandler(async (req, res) => {
+  const { period, note } = closePeriodSchema.parse(req.body);
+
+  const existing = await db.query.closedPeriods.findFirst({ where: eq(closedPeriods.period, period) });
+  if (existing) {
+    throw createError(`Period ${period} is already closed`, 409, 'ALREADY_CLOSED');
+  }
+
+  const [row] = await db.insert(closedPeriods)
+    .values({ period, note: note ?? null, closedById: req.user!.id })
+    .returning();
+
+  await auditLog({
+    entityType: 'closed_period',
+    entityId: period,
+    userId: req.user!.id,
+    action: 'period.closed',
+    after: { period, note: note ?? null },
+  });
+
+  res.status(201).json({ closedPeriod: row });
+}));
+
+router.delete('/closed-periods/:period', asyncHandler(async (req, res) => {
+  // Reopen is admin-only (developer passes every role gate via roleAllowed).
+  if (!roleAllowed(req.user!.role, ['admin'])) {
+    throw forbidden('Only an admin can reopen a closed period');
+  }
+
+  const { period } = req.params;
+  const existing = await db.query.closedPeriods.findFirst({ where: eq(closedPeriods.period, period) });
+  if (!existing) throw notFound('Period is not closed');
+
+  await db.delete(closedPeriods).where(eq(closedPeriods.period, period));
+
+  await auditLog({
+    entityType: 'closed_period',
+    entityId: period,
+    userId: req.user!.id,
+    action: 'period.reopened',
+    before: { period, note: existing.note },
+  });
+
+  res.json({ ok: true });
 }));
 
 // ── Audit trail for an expense ────────────────────────────────────────────────

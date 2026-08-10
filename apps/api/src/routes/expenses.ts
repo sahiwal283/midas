@@ -8,6 +8,9 @@ import { asyncHandler, notFound, forbidden, createError } from '../middleware/er
 import { auditLog } from '../lib/audit';
 import { storage } from '../lib/storage';
 import { canSessionDeleteExpense } from '../lib/expenseDelete';
+import { isInClosedPeriods, periodOf, closedPeriodMessage } from '../lib/closedPeriods';
+import { getClosedPeriods } from '../lib/closedPeriodsDb';
+import { roleAllowed } from '../lib/roles';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { evaluateZohoReadiness } from '../lib/zohoReadiness';
 import { editableFields, editRefusalMessage } from '../lib/expenseEdit';
@@ -187,6 +190,15 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   }
 
   let body = updateExpenseSchema.parse(req.body);
+
+  // Closed accounting periods lock the expense's current month — and reject
+  // moving an expense into a closed month.
+  const closedPeriods = await getClosedPeriods();
+  const closedDate = [expense.date, body.date].find((d) => d && isInClosedPeriods(d, closedPeriods));
+  if (closedDate) {
+    throw createError(closedPeriodMessage(periodOf(closedDate)), 409, 'PERIOD_CLOSED');
+  }
+
   if (editability === 'notes_only') {
     const requested = Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined);
     if (requested.some((k) => k !== 'description')) {
@@ -309,6 +321,11 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
     return;
   }
 
+  const closedPeriods = await getClosedPeriods();
+  if (isInClosedPeriods(expense.date, closedPeriods)) {
+    throw createError(closedPeriodMessage(periodOf(expense.date)), 409, 'PERIOD_CLOSED');
+  }
+
   // Daily auto-push: complete staff-entered expenses skip accountant approval.
   // Readiness is evaluated as-if approved ("ready once approved"). Event
   // expenses (trade_show etc.), incomplete ones, and expenses for companies
@@ -363,8 +380,9 @@ const bulkDeleteSchema = z.object({
 
 async function deleteExpenseRecord(
   expenseId: string,
-  actor: { id: string; role: string },
+  actor: { id: string; role: import('@midas/shared').UserRole },
   force: boolean,
+  closedPeriods: string[],
 ): Promise<{ ok: true } | { ok: false; status: 403 | 404 | 409; code: string; message: string }> {
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, expenseId),
@@ -382,6 +400,12 @@ async function deleteExpenseRecord(
   });
   if (!decision.ok) {
     return { ok: false, status: decision.status, code: decision.code, message: decision.message };
+  }
+
+  // Closed accounting period locks deletes; admin force is the audited override.
+  const adminForce = force && roleAllowed(actor.role, ['admin']);
+  if (isInClosedPeriods(expense.date, closedPeriods) && !adminForce) {
+    return { ok: false, status: 409, code: 'PERIOD_CLOSED', message: closedPeriodMessage(periodOf(expense.date)) };
   }
 
   for (const r of expense.receipts) {
@@ -412,8 +436,9 @@ router.post('/bulk-delete', asyncHandler(async (req, res) => {
   const deleted: string[] = [];
   const failed: Array<{ id: string; code: string; message: string }> = [];
 
+  const closedPeriods = await getClosedPeriods();
   for (const id of body.ids) {
-    const result = await deleteExpenseRecord(id, actor, force);
+    const result = await deleteExpenseRecord(id, actor, force, closedPeriods);
     if (result.ok) deleted.push(id);
     else failed.push({ id, code: result.code, message: result.message });
   }
@@ -424,7 +449,8 @@ router.post('/bulk-delete', asyncHandler(async (req, res) => {
 // Delete expense (owner draft/pending; accountant/admin any without Zoho; admin+force with Zoho)
 router.delete('/:id', asyncHandler(async (req, res) => {
   const force = req.query.force === '1' || req.query.force === 'true';
-  const result = await deleteExpenseRecord(req.params.id, { id: req.user!.id, role: req.user!.role }, force);
+  const closedPeriods = await getClosedPeriods();
+  const result = await deleteExpenseRecord(req.params.id, { id: req.user!.id, role: req.user!.role }, force, closedPeriods);
   if (!result.ok) {
     if (result.status === 404) throw notFound(result.message);
     if (result.status === 403) throw forbidden();

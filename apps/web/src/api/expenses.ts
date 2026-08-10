@@ -1,5 +1,5 @@
 import client from './client';
-import type { Expense, ExpenseCategory, Receipt, ExpenseMessage, PaymentMethod, AuditLogEntry, ZohoReadinessResult } from '../types';
+import type { Expense, ExpenseCategory, Receipt, ExpenseMessage, PaymentMethod, AuditLogEntry, ZohoReadinessResult, ClosedPeriod } from '../types';
 
 export interface DuplicateMatch {
   id: string;
@@ -177,6 +177,15 @@ export const accountantApi = {
 
   getAuditTrail: (id: string) =>
     client.get<{ entries: AuditLogEntry[] }>(`/accountant/expenses/${id}/audit`).then((r) => r.data.entries),
+
+  closedPeriods: () =>
+    client.get<{ closedPeriods: ClosedPeriod[] }>('/accountant/closed-periods').then((r) => r.data.closedPeriods),
+
+  closePeriod: (period: string, note?: string) =>
+    client.post<{ closedPeriod: ClosedPeriod }>('/accountant/closed-periods', { period, note }).then((r) => r.data.closedPeriod),
+
+  reopenPeriod: (period: string) =>
+    client.delete<{ ok: boolean }>(`/accountant/closed-periods/${period}`).then((r) => r.data),
 
   zohoServiceHealth: () =>
     client.get<{

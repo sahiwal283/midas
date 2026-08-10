@@ -1,8 +1,8 @@
 import type { Receipt } from '../types';
 
-/** Authenticated content URL (cookie sent on same-origin img/iframe). */
-export function receiptContentUrl(expenseId: string, receiptId: string): string {
-  return `/api/v1/expenses/${expenseId}/receipts/${receiptId}/content`;
+/** Authenticated file URL (cookie sent on same-origin img/iframe). */
+export function receiptContentUrl(_expenseId: string, receiptId: string): string {
+  return `/api/v1/files/receipts/${receiptId}`;
 }
 
 export function ReceiptPreview({

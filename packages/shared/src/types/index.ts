@@ -348,6 +348,18 @@ export interface AuditLogEntry {
   actorRole: string | null;
 }
 
+// ── Closed accounting periods ─────────────────────────────────────────────────
+
+export interface ClosedPeriod {
+  id: string;
+  /** 'YYYY-MM' */
+  period: string;
+  closedById: string | null;
+  note: string | null;
+  createdAt: string;
+  closedBy?: { id: string; name: string } | null;
+}
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid';

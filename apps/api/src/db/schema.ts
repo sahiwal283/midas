@@ -221,6 +221,19 @@ export const captures = pgTable('captures', {
   index('captures_expense_id_idx').on(t.expenseId),
 ]);
 
+// ── Closed Accounting Periods ─────────────────────────────────────────────────
+// A closed month ('YYYY-MM') locks every expense dated in it: no edits,
+// deletes, submits, reviews, or reimbursement changes (admin force-delete is
+// the audited override). Reopen by deleting the row (admin only).
+
+export const closedPeriods = pgTable('closed_periods', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  period: char('period', { length: 7 }).unique().notNull(),
+  closedById: uuid('closed_by_id').references(() => users.id, { onDelete: 'set null' }),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // ── Audit Log ─────────────────────────────────────────────────────────────────
 
 export const auditLogs = pgTable('audit_logs', {
@@ -349,6 +362,10 @@ export const expenseMessagesRelations = relations(expenseMessages, ({ one }) => 
 export const capturesRelations = relations(captures, ({ one }) => ({
   user: one(users, { fields: [captures.userId], references: [users.id] }),
   expense: one(expenses, { fields: [captures.expenseId], references: [expenses.id] }),
+}));
+
+export const closedPeriodsRelations = relations(closedPeriods, ({ one }) => ({
+  closedBy: one(users, { fields: [closedPeriods.closedById], references: [users.id] }),
 }));
 
 export const partnerExpensesRelations = relations(partnerExpenses, ({ one }) => ({

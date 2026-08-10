@@ -5,6 +5,7 @@ import { expenses, expenseCategories, paymentMethods, users } from '../db/schema
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, createError } from '../middleware/error';
 import { granularityFor, periodKey, fillPeriods } from '../lib/reportBuckets';
+import { normalizeMerchant } from '../lib/merchants';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -61,9 +62,21 @@ router.get('/summary', asyncHandler(async (req, res) => {
     .from(expenses).leftJoin(paymentMethods, eq(expenses.paymentMethodId, paymentMethods.id))
     .where(scope).groupBy(paymentMethods.label);
 
-  const topVendors = await db.select({ name: expenses.merchant, spend: sum(expenses.amount), n: count() })
-    .from(expenses).where(scope).groupBy(expenses.merchant)
-    .orderBy(sql`sum(${expenses.amount}) desc`).limit(10);
+  // Vendors regroup post-SQL by normalized merchant name so processor
+  // decorations ("AMAZON.COM*1A2B3", "SQ *COFFEE") collapse into one vendor.
+  const vendorRows = await db.select({ name: expenses.merchant, spend: sum(expenses.amount), n: count() })
+    .from(expenses).where(scope).groupBy(expenses.merchant);
+  const vendorMap = new Map<string, { name: string; spend: number; count: number }>();
+  for (const r of vendorRows) {
+    const name = (r.name?.trim() ? normalizeMerchant(r.name) : '') || 'Unknown';
+    const cur = vendorMap.get(name) ?? { name, spend: 0, count: 0 };
+    cur.spend += num(r.spend);
+    cur.count += Number(r.n);
+    vendorMap.set(name, cur);
+  }
+  const topVendors = [...vendorMap.values()]
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 10);
 
   const topUsers = await db.select({ name: users.name, spend: sum(expenses.amount), n: count() })
     .from(expenses).innerJoin(users, eq(expenses.userId, users.id))
@@ -98,7 +111,7 @@ router.get('/summary', asyncHandler(async (req, res) => {
     byCategory: mapRows(byCategory, 'Uncategorized'),
     byEntity: mapRows(byEntity, 'Unassigned'),
     byPaymentMethod: mapRows(byPm, 'Unspecified'),
-    topVendors: mapRows(topVendors, 'Unknown'),
+    topVendors,
     topUsers: mapRows(topUsers, 'Unknown'),
     reimbursement: (() => {
       const byStatus = new Map(byReimb.map((r) => [r.status, num(r.spend)]));

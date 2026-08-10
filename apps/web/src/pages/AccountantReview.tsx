@@ -340,6 +340,13 @@ export function AccountantReview() {
           </div>
         </div>
 
+        {reviewMutation.isError && (
+          <p className="mt-2 text-xs font-medium text-red-600">
+            {(reviewMutation.error as { response?: { data?: { error?: { message?: string } } } })
+              ?.response?.data?.error?.message ?? 'Review failed. Please try again.'}
+          </p>
+        )}
+
         {!canReview && (
           <p className="mt-2 text-xs text-gray-400">
             This expense is in status &lsquo;{expense.status}&rsquo; and cannot be reviewed from here.

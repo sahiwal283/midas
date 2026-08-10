@@ -3,7 +3,6 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import path from 'path';
 import { env } from './config/env';
 import { logger } from './lib/logger';
 import { errorHandler } from './middleware/error';
@@ -13,6 +12,7 @@ import expensesRouter from './routes/expenses';
 import receiptsRouter from './routes/receipts';
 import messagesRouter from './routes/messages';
 import capturesRouter from './routes/captures';
+import filesRouter from './routes/files';
 import accountantRouter from './routes/accountant';
 import adminRouter from './routes/admin';
 import extRouter from './routes/ext';
@@ -60,9 +60,6 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ── Static uploads ────────────────────────────────────────────────────────────
-app.use('/uploads', express.static(path.resolve(env.UPLOADS_DIR)));
-
 // ── Auth rate limit ───────────────────────────────────────────────────────────
 // Configurable via AUTH_RATE_LIMIT_MAX. Default 20 (production-safe).
 // Set to 200 in .env for dev/LAN environments to prevent operator lockout during testing.
@@ -77,6 +74,7 @@ app.use('/api/v1/expenses', expensesRouter);
 app.use('/api/v1/expenses/:expenseId/receipts', receiptsRouter);
 app.use('/api/v1/expenses/:expenseId/messages', messagesRouter);
 app.use('/api/v1/captures', capturesRouter);
+app.use('/api/v1/files', filesRouter); // authenticated receipt/capture streaming (no public /uploads)
 app.use('/api/v1/accountant', accountantRouter);
 app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/ext', extRouter);             // app-to-app API (Bearer API key auth)

@@ -258,10 +258,13 @@ export function ExpenseNew() {
       setStep('done');
     } catch (err: any) {
       const code = err?.response?.data?.error?.code;
+      const message = err?.response?.data?.error?.message;
       setError(
         code === 'INCOMPLETE_DRAFT'
           ? 'Merchant and amount are required before submitting.'
-          : 'Could not submit the expense. Please check the fields and try again.',
+          : code === 'PERIOD_CLOSED' && message
+            ? message
+            : 'Could not submit the expense. Please check the fields and try again.',
       );
     } finally {
       setSubmitting(false);

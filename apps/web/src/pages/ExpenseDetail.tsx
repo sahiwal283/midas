@@ -341,7 +341,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
       const apiError = (err as { response?: { data?: { error?: { code?: string; message?: string } } } })
         ?.response?.data?.error;
       setError(
-        apiError?.code === 'NOT_EDITABLE' && apiError.message
+        (apiError?.code === 'NOT_EDITABLE' || apiError?.code === 'PERIOD_CLOSED') && apiError.message
           ? apiError.message
           : 'Could not save changes. Please try again.',
       );
@@ -675,6 +675,12 @@ export function ExpenseDetail() {
               </button>
             </div>
           )}
+          {deleteMutation.isError && (
+            <p className="max-w-xs text-right text-xs font-medium text-red-600">
+              {(deleteMutation.error as { response?: { data?: { error?: { message?: string } } } })
+                ?.response?.data?.error?.message ?? 'Could not delete this expense.'}
+            </p>
+          )}
         </div>
       </div>
 
@@ -875,6 +881,12 @@ export function ExpenseDetail() {
               >
                 {submitMutation.isPending ? 'Submitting…' : 'Submit for Review'}
               </button>
+              {submitMutation.isError && (
+                <p className="mt-2 text-xs font-medium text-red-600">
+                  {(submitMutation.error as { response?: { data?: { error?: { message?: string } } } })
+                    ?.response?.data?.error?.message ?? 'Could not submit this expense.'}
+                </p>
+              )}
               <p className="mt-2 text-xs text-gray-400">Once submitted, your accountant will review this expense.</p>
             </div>
           )}

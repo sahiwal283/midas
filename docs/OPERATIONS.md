@@ -536,3 +536,35 @@ pct exec 3120 -- docker compose -f /opt/midas/docker-compose.yml run --rm migrat
 - This rule applies to all surfaces: web app, browser extension popup, admin pages, accountant pages, user pages.
 
 **Footer text:** "Built by your haute tech team" (no heart symbol or decorative unicode).
+
+---
+
+## Production security checklist
+
+Verified in code (server.ts / config/env.ts) and required before any shared or production deployment:
+
+- **Uploads are auth-only.** Receipt and capture files are served exclusively through
+  `GET /api/v1/files/receipts/:receiptId` and `GET /api/v1/files/captures/:captureId`
+  (session cookie auth; owner or accountant/admin — developer passes). The public
+  `express.static('/uploads')` mount has been removed; no unauthenticated file access exists.
+- **`COOKIE_SECURE=true` in production.** The JWT session cookie must be Secure (requires HTTPS
+  at the proxy). Keep `false` only for local HTTP dev.
+- **`JWT_SECRET` at least 32 characters,** unique per environment. Enforced at boot by env
+  validation (the API refuses to start otherwise).
+- **Helmet is enabled** and the auth login route is rate-limited (`AUTH_RATE_LIMIT_MAX`,
+  default 20 attempts / 15 min / IP — production-safe; only raise it for dev/LAN).
+- **CORS is an allowlist:** the configured `CORS_ORIGIN` plus browser-extension schemes
+  (`chrome-extension://`, `moz-extension://`, which still require a valid session cookie).
+  Do not widen it.
+- **SMTP secrets stay server-side.** `SMTP_HOST/PORT/USER/PASS/FROM` live only in the API
+  container's `.env` — never in web build args, client code, or the repo.
+- **Invite links are single-use and expire after 7 days** (`invite_token` +
+  `invite_expires_at`; the token is cleared on acceptance).
+- **Rotate or deactivate seeded users before pilot.** All `*@midas.local` seed accounts —
+  especially `partner@midas.local` and `developer@midas.local` (developer passes every role
+  gate) — must have their passwords rotated or the accounts deactivated before connecting to
+  a shared environment.
+- **Closed periods lock accounting months.** Once a month is closed
+  (accountant dashboard → Closed Periods), expenses dated in it cannot be edited, deleted,
+  submitted, reviewed, or have reimbursement changed; admin force-delete is the audited
+  override and reopening a period is admin-only and audited.

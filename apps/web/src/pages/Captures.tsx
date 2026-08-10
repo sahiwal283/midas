@@ -114,7 +114,7 @@ function CaptureCard({ capture, onDiscard }: { capture: Capture; onDiscard?: () 
       {/* Image */}
       <div className="relative bg-gray-50 h-44 overflow-hidden">
         <img
-          src={`/uploads/${capture.imagePath}`}
+          src={`/api/v1/files/captures/${capture.id}`}
           alt="Capture"
           className="h-full w-full object-cover object-top"
         />
