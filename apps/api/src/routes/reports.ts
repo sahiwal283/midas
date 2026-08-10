@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { and, count, eq, gte, inArray, isNull, lte, ne, not, or, sql, sum } from 'drizzle-orm';
 import { db } from '../db/index';
-import { budgets, expenses, expenseCategories, paymentMethods, users, transactions } from '../db/schema';
+import { budgets, expenses, paymentMethods, users, transactions } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, createError } from '../middleware/error';
 import { granularityFor, periodKey, fillPeriods } from '../lib/reportBuckets';
+import { rollUpByTopAncestor, descendantIds } from '../lib/categoryTree';
 import { normalizeMerchant } from '../lib/merchants';
 
 const router = Router();
@@ -51,9 +52,20 @@ router.get('/summary', asyncHandler(async (req, res) => {
   const byDate = await db.select({ date: expenses.date, spend: sum(expenses.amount), n: count() })
     .from(expenses).where(scope).groupBy(expenses.date);
 
-  const byCategory = await db.select({ name: expenseCategories.name, spend: sum(expenses.amount), n: count() })
-    .from(expenses).leftJoin(expenseCategories, eq(expenses.categoryId, expenseCategories.id))
-    .where(scope).groupBy(expenseCategories.name);
+  // Category spend rolls up to top-level ancestors so the chart stays readable
+  // with a deep tree; raw per-category rows are kept for budget attribution.
+  const allCats = await db.query.expenseCategories.findMany({
+    columns: { id: true, parentId: true, isActive: true, name: true },
+  });
+  const catNameOf = (id: string) => allCats.find((c) => c.id === id)?.name ?? 'Unknown';
+
+  const byCategoryRaw = await db.select({ categoryId: expenses.categoryId, spend: sum(expenses.amount), n: count() })
+    .from(expenses).where(scope).groupBy(expenses.categoryId);
+  const byCategory = rollUpByTopAncestor(
+    allCats,
+    byCategoryRaw.map((r) => ({ categoryId: r.categoryId, spend: num(r.spend), n: Number(r.n) })),
+    catNameOf,
+  );
 
   const byEntity = await db.select({ name: expenses.zohoEntity, spend: sum(expenses.amount), n: count() })
     .from(expenses).where(scope).groupBy(expenses.zohoEntity);
@@ -179,14 +191,16 @@ router.get('/summary', asyncHandler(async (req, res) => {
     };
   });
 
-  // For category budgets, attribute spend from byCategory only when a single company filter is set.
+  // For category budgets, attribute spend only when a single company filter is set.
+  // A budget on a parent category counts spend from the whole subtree.
   if (entity) {
-    const catSpend = new Map(byCategory.map((r) => [r.name ?? 'Uncategorized', num(r.spend)]));
     for (const row of budgetVsSpend) {
-      if (row.categoryName) {
-        row.spend = catSpend.get(row.categoryName) ?? 0;
-        row.remaining = row.budget - row.spend;
-      }
+      if (!row.categoryId) continue;
+      const ids = new Set(descendantIds(allCats, row.categoryId));
+      row.spend = byCategoryRaw
+        .filter((r) => r.categoryId && ids.has(r.categoryId))
+        .reduce((s, r) => s + num(r.spend), 0);
+      row.remaining = row.budget - row.spend;
     }
   }
 
