@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.0-alpha (2026-08-10)
+
+### Purchase orders + Integration Health
+- **POs skip accountant review**: submitting a purchase order approves it and pushes it to Zoho immediately (the purchasing employee is the authority). Zoho-disabled companies (Summitt Labs) just approve. Push failures appear on the accountant PO page for retry.
+- **Integration Health** is admin/developer-only and moved out of the accountant section.
+
 ## 0.28.0-alpha (2026-08-10)
 
 ### Navigation consolidation
