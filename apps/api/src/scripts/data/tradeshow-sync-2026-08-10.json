@@ -1,0 +1,225 @@
+{
+  "users": [
+    {
+      "email": "admin@company.com",
+      "name": "Admin",
+      "role": "developer"
+    },
+    {
+      "email": "nabeelvira@gmail.com",
+      "name": "Nabeel Vira",
+      "role": "developer"
+    },
+    {
+      "email": "tech@cooliohcandy.com",
+      "name": "Sahil Khatri",
+      "role": "developer"
+    },
+    {
+      "email": "admin@cooliohcandy.com",
+      "name": "Seri Vira",
+      "role": "salesperson"
+    },
+    {
+      "email": "rita@cooliohcandy.com",
+      "name": "Rita Dubb",
+      "role": "coordinator"
+    },
+    {
+      "email": "salesguru@summittlabs.com",
+      "name": "BRETT  POMMERENCK",
+      "role": "salesperson"
+    },
+    {
+      "email": "accounting@nirvanakulture.com",
+      "name": "Digi",
+      "role": "admin"
+    },
+    {
+      "email": "sales@nirvanakulture.com",
+      "name": "Shruti Patel",
+      "role": "salesperson"
+    },
+    {
+      "email": "sameer@summittlabs.com",
+      "name": "Sameer",
+      "role": "admin"
+    },
+    {
+      "email": "zeeshanv@gmail.com",
+      "name": "Zeeshan Vira",
+      "role": "admin"
+    },
+    {
+      "email": "doubledspecialtyfoodservices@gmail.com",
+      "name": "Darla Davis",
+      "role": "salesperson"
+    }
+  ],
+  "categoryOptions": [
+    {
+      "name": "Booth / Marketing / Tools",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000000091172",
+        "boomin_brands": "4849689000000626585",
+        "nirvana_kulture": "2212769000000944939"
+      }
+    },
+    {
+      "name": "Travel - Flight",
+      "zohoExpenseAccountIds": null
+    },
+    {
+      "name": "Accommodation - Hotel",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000001346011",
+        "boomin_brands": "4849689000007752142",
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Transportation - Uber / Lyft / Others",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000001791016",
+        "boomin_brands": "4849689000019141038",
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Parking Fees",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000003852222",
+        "boomin_brands": "4849689000018729146",
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Rental - Car / U-haul",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000003010318",
+        "boomin_brands": null,
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Meal and Entertainment",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000000000448",
+        "boomin_brands": "4849689000000000448",
+        "nirvana_kulture": "2212769000136982098"
+      }
+    },
+    {
+      "name": "Gas / Fuel",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000000091854",
+        "boomin_brands": "4849689000000626741",
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Show Allowances - Per Diem",
+      "zohoExpenseAccountIds": null
+    },
+    {
+      "name": "Model",
+      "zohoExpenseAccountIds": {
+        "haute_brands": null,
+        "boomin_brands": "4849689000006361135",
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Shipping Charges",
+      "zohoExpenseAccountIds": null
+    },
+    {
+      "name": "Other",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000000000460",
+        "boomin_brands": "4849689000000000460",
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Stationaries",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "5254962000000000442",
+        "boomin_brands": "4849689000000000442",
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Storage charges",
+      "zohoExpenseAccountIds": {
+        "haute_brands": "Haute: 5254962000000000460",
+        "boomin_brands": "Boomin: 4849689000000000442",
+        "nirvana_kulture": null
+      }
+    },
+    {
+      "name": "Travel Expenses",
+      "zohoExpenseAccountIds": {
+        "haute_brands": null,
+        "boomin_brands": null,
+        "nirvana_kulture": "2212769000136863494"
+      }
+    }
+  ],
+  "expenses": [
+    {
+      "sourceRefId": "b663598e-d28e-4e85-922d-790d78c3c4e8",
+      "userEmail": "sales@nirvanakulture.com",
+      "externalUserId": "58736b1f-67aa-4178-82b5-324e7b988d20",
+      "categoryName": "Travel - Flight",
+      "merchant": "Southwest Airlines",
+      "amount": "305.80",
+      "date": "2026-07-31",
+      "description": "Brenda flight ",
+      "cardUsed": "Nirvana PNC (...4171)",
+      "paymentMethodLastFour": "4171",
+      "paymentMethodLabel": "Nirvana PNC",
+      "status": "approved",
+      "zohoEntity": "Nirvana Kulture",
+      "location": "Las Vegas\r\nCO",
+      "eventId": "02745bfe-0903-419f-af68-4c2a9bba2954",
+      "eventName": "NACs 2026",
+      "submittedAt": "2026-07-31T19:59:28.897Z",
+      "createdAt": "2026-07-31T19:59:28.897Z",
+      "receipt": {
+        "filename": "1785527968893-990509128.jpeg",
+        "storagePath": "1786399388422-1785527968893-990509128.jpeg",
+        "mimeType": "image/jpeg",
+        "sizeBytes": 233300,
+        "sha256": "5aba762e4153c0ee8ee996aa6ca6ec21c88f907397ae64cf35d5d993da48e1c1"
+      }
+    },
+    {
+      "sourceRefId": "270052c5-c829-46ae-be09-5a6810aeda2e",
+      "userEmail": "nabeelvira@gmail.com",
+      "externalUserId": "14a8b40f-561d-4103-9588-d42e9fed0e43",
+      "categoryName": "Accommodation - Hotel",
+      "merchant": "SAHARA Las Vegas, Las Vegas",
+      "amount": "454.12",
+      "date": "2026-06-24",
+      "description": "BRETT  POMMERENCK - hotel",
+      "cardUsed": "Brett Summitt Card  (...1039)",
+      "paymentMethodLastFour": "1039",
+      "paymentMethodLabel": "Brett Summitt Card",
+      "status": "pending",
+      "zohoEntity": "Summitt Labs",
+      "location": null,
+      "eventId": "3a179e5b-8d2a-4f60-92e9-335ea57324bc",
+      "eventName": "Champs Summer LV 2026",
+      "submittedAt": "2026-07-31T20:31:29.004Z",
+      "createdAt": "2026-07-31T20:31:29.004Z",
+      "receipt": {
+        "filename": "receipt-1785529872424-917981024.pdf",
+        "storagePath": "1786399388422-receipt-1785529872424-917981024.pdf",
+        "mimeType": "application/pdf",
+        "sizeBytes": 642745,
+        "sha256": "b497c8740c9b14acd02ee800b881c86be0eabe6541e7829c4e6ea3ac824b83a2"
+      }
+    }
+  ]
+}
