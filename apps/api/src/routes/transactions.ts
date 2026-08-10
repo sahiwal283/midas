@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index';
 import {
+  companies,
   purchaseOrders,
   receipts,
   transactions,
@@ -391,6 +392,45 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
   }
   if (existing.type === 'purchase_order' && (!existing.lineItems || existing.lineItems.length === 0)) {
     throw createError('Add at least one line item before submitting', 409, 'MISSING_LINE_ITEMS');
+  }
+
+  // Purchase orders skip accountant review entirely: the purchasing employee
+  // is the authority. Submit = approve + push to Zoho immediately (unless the
+  // company has Zoho disabled — then it just becomes approved).
+  if (existing.type === 'purchase_order') {
+    const company = existing.zohoEntity
+      ? await db.query.companies.findFirst({ where: eq(companies.name, existing.zohoEntity) })
+      : undefined;
+    const zohoOn = company?.zohoEnabled !== false && !!existing.zohoEntity;
+
+    const [approved] = await db.update(transactions)
+      .set({
+        status: 'approved',
+        integrationStatus: zohoOn ? 'pending' : existing.integrationStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(transactions.id, existing.id))
+      .returning();
+
+    await auditLog({
+      entityType: 'transaction',
+      entityId: existing.id,
+      userId: req.user!.id,
+      action: 'auto_approved',
+      before: { status: 'draft' },
+      after: { status: 'approved' },
+      metadata: { reason: 'purchase orders skip review', zohoPush: zohoOn },
+    });
+
+    if (zohoOn) {
+      const outcome = await pushPurchaseOrderToZoho(existing.id, req.user!.id);
+      const fresh = await db.query.transactions.findFirst({ where: eq(transactions.id, existing.id) });
+      res.json({ transaction: fresh ?? approved, autoPushed: outcome.ok });
+      return;
+    }
+
+    res.json({ transaction: approved, autoPushed: false });
+    return;
   }
 
   const [updated] = await db.update(transactions)

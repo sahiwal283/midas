@@ -97,15 +97,17 @@ export function Sidebar() {
                 <BarChart3 className="h-4 w-4" />
                 Reports
               </NavLink>
-              <NavLink to="/integration-health" className={linkClass}>
-                <Activity className="h-4 w-4" />
-                Integration Health
-              </NavLink>
             </div>
           </>
         )}
 
         <SectionLabel>{isAdmin ? 'Admin' : 'Account'}</SectionLabel>
+        {isAdmin && (
+          <NavLink to="/integration-health" className={linkClass}>
+            <Activity className="h-4 w-4" />
+            Integration Health
+          </NavLink>
+        )}
         <NavLink to="/admin" className={linkClass}>
           <Settings className="h-4 w-4" />
           Settings

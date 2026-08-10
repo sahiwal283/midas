@@ -38,8 +38,10 @@ export function MobileNav() {
                 <SheetLink to="/accountant/purchase-orders" icon={<FileSpreadsheet className="h-4 w-4" />} label="Purchase Orders" onNavigate={() => setMoreOpen(false)} />
                 <SheetLink to="/accountant?reimbursementStatus=pending" icon={<Banknote className="h-4 w-4" />} label="Reimbursements" onNavigate={() => setMoreOpen(false)} />
                 <SheetLink to="/reports" icon={<BarChart3 className="h-4 w-4" />} label="Reports" onNavigate={() => setMoreOpen(false)} />
-                <SheetLink to="/integration-health" icon={<Activity className="h-4 w-4" />} label="Integration Health" onNavigate={() => setMoreOpen(false)} />
               </>
+            )}
+            {(role === 'admin' || isDeveloper) && (
+              <SheetLink to="/integration-health" icon={<Activity className="h-4 w-4" />} label="Integration Health" onNavigate={() => setMoreOpen(false)} />
             )}
             <SheetLink to="/admin" icon={<Settings className="h-4 w-4" />} label="Settings" onNavigate={() => setMoreOpen(false)} />
             <button

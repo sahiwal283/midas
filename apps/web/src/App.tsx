@@ -99,7 +99,7 @@ export default function App() {
               <Route
                 path="/integration-health"
                 element={
-                  <ProtectedRoute roles={['accountant', 'admin', 'developer']}>
+                  <ProtectedRoute roles={['admin']}>
                     <IntegrationHealth />
                   </ProtectedRoute>
                 }
