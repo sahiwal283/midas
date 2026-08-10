@@ -1,5 +1,11 @@
 # Midas Browser Extension — Design
 
+> **2026-08-10:** the "Save Capture" flow and the Captures page were removed — the
+> extension is expense-only now (the quick form made save-for-later redundant).
+> The captures API/table remain server-side for existing data. References to
+> Save Capture below are historical.
+
+
 Reworked 2026-08-10 (see `docs/superpowers/specs/2026-08-10-extension-rework-design.md`).
 The extension has **two workflows**, and both now flow through a **drag-to-crop** step:
 

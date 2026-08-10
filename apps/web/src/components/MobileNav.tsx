@@ -21,7 +21,7 @@ export function MobileNav() {
   const isPrivileged = role === 'accountant' || role === 'admin' || isDeveloper;
   const isAdmin = role === 'admin' || isDeveloper;
   const isPartner = role === 'partner' || isDeveloper;
-  const hasMore = true; // Captures + logout live here for everyone
+  const hasMore = true; // extension link + logout live here for everyone
 
   return (
     <>
@@ -32,7 +32,7 @@ export function MobileNav() {
             className="absolute bottom-16 left-3 right-3 rounded-2xl border border-gray-200 bg-white p-2 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <SheetLink to="/captures" icon={<CaptureIcon className="h-4 w-4" />} label="Captures" onNavigate={() => setMoreOpen(false)} />
+            <SheetLink to="/get-extension" icon={<CaptureIcon className="h-4 w-4" />} label="Get the Extension" onNavigate={() => setMoreOpen(false)} />
             {isPartner && (
               <SheetLink to="/partner-expenses" icon={<Briefcase className="h-4 w-4" />} label="Partner Expenses" onNavigate={() => setMoreOpen(false)} />
             )}

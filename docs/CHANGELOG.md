@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.18.0-alpha (2026-08-10)
+
+### Simplification
+- **Removed the Captures page and the extension's "Save Capture" flow** — the extension is expense-only (the 30-second quick form made save-for-later redundant). The captures API and data remain server-side; the extension zip was rebuilt.
+
 ## 0.17.0-alpha (2026-08-10)
 
 ### Browser extension rework

@@ -49,10 +49,6 @@ export function Sidebar() {
           <ReceiptText className="h-4 w-4" />
           My Expenses
         </NavLink>
-        <NavLink to="/captures" className={linkClass}>
-          <Camera className="h-4 w-4" />
-          Captures
-        </NavLink>
         <NavLink to="/get-extension" className={linkClass}>
           <Puzzle className="h-4 w-4" />
           Get the Extension

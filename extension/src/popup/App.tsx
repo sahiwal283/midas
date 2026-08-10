@@ -15,11 +15,9 @@ import { api, ApiError } from './api';
 type Screen =
   | { id: 'home' }
   | { id: 'starting' }
-  | { id: 'capture_preview'; capture: CaptureResult }
   | { id: 'expense_prepare'; label: string }
   | { id: 'expense_form' }
   | { id: 'submitting'; label: string }
-  | { id: 'capture_success' }
   | { id: 'expense_done'; outcome: 'auto_pushed' | 'approved' | 'pending'; expenseId: string }
   | { id: 'error'; message: string; isAuth: boolean; retry: (() => void) | null };
 
@@ -72,20 +70,16 @@ export function PopupApp() {
       if (!pending) return;
       void chrome.storage.session.remove(PENDING_CAPTURE_KEY);
       setCapture(pending.capture);
-      if (pending.intent === 'capture') {
-        setScreen({ id: 'capture_preview', capture: pending.capture });
-      } else {
-        void runExpensePrepare(pending.capture);
-      }
+      void runExpensePrepare(pending.capture);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Capture start (both flows) ──────────────────────────────────────────────
+  // ── Capture start ───────────────────────────────────────────────────────────
 
-  async function startCapture(intent: 'capture' | 'expense') {
+  async function startCapture() {
     setScreen({ id: 'starting' });
-    const res = await sendMessage<{ ok?: boolean; error?: string }>({ type: 'START_CAPTURE', intent });
+    const res = await sendMessage<{ ok?: boolean; error?: string }>({ type: 'START_CAPTURE', intent: 'expense' });
     if (res?.error) {
       setScreen({ id: 'error', message: res.error, isAuth: false, retry: () => setScreen({ id: 'home' }) });
       return;
@@ -93,26 +87,6 @@ export function PopupApp() {
     // The crop overlay is now up on the page; this popup closes and reopens
     // (service worker) once the user confirms or skips the crop.
     window.close();
-  }
-
-  // ── Save Capture flow ───────────────────────────────────────────────────────
-
-  async function saveCapture(c: CaptureResult) {
-    setScreen({ id: 'submitting', label: 'Saving capture…' });
-    const res = await sendMessage<{ type: string; error?: string; isAuth?: boolean }>({
-      type: 'SAVE_CAPTURE',
-      result: c,
-    });
-    if (res?.type === 'SAVE_CAPTURE_SUCCESS') {
-      setScreen({ id: 'capture_success' });
-    } else {
-      setScreen({
-        id: 'error',
-        message: res?.error ?? 'Save failed',
-        isAuth: !!res?.isAuth,
-        retry: () => setScreen({ id: 'capture_preview', capture: c }),
-      });
-    }
   }
 
   // ── Quick expense pipeline ──────────────────────────────────────────────────
@@ -206,22 +180,9 @@ export function PopupApp() {
 
   return (
     <Shell midasWebUrl={midasWebUrl}>
-      {screen.id === 'home' && (
-        <HomeScreen
-          onCapture={() => startCapture('capture')}
-          onExpense={() => startCapture('expense')}
-        />
-      )}
+      {screen.id === 'home' && <HomeScreen onExpense={() => startCapture()} />}
 
       {screen.id === 'starting' && <Spinner label="Capturing page…" />}
-
-      {screen.id === 'capture_preview' && (
-        <CapturePreviewScreen
-          capture={screen.capture}
-          onSave={() => saveCapture(screen.capture)}
-          onCancel={() => setScreen({ id: 'home' })}
-        />
-      )}
 
       {screen.id === 'expense_prepare' && <Spinner label={screen.label} />}
 
@@ -239,16 +200,6 @@ export function PopupApp() {
       )}
 
       {screen.id === 'submitting' && <Spinner label={screen.label} />}
-
-      {screen.id === 'capture_success' && (
-        <SuccessScreen
-          title="Capture saved"
-          body="It's waiting in your Captures page. Link it to an expense whenever you're ready."
-          midasPath="/captures"
-          midasWebUrl={midasWebUrl}
-          onAnother={() => setScreen({ id: 'home' })}
-        />
-      )}
 
       {screen.id === 'expense_done' && (
         <SuccessScreen
@@ -286,16 +237,10 @@ export function PopupApp() {
 
 // ── Screens ───────────────────────────────────────────────────────────────────
 
-function HomeScreen({ onCapture, onExpense }: { onCapture: () => void; onExpense: () => void }) {
+function HomeScreen({ onExpense }: { onExpense: () => void }) {
   return (
     <div style={{ padding: '4px 0' }}>
       <p style={styles.hint}>Snapshot this page, then drag to crop the receipt.</p>
-
-      <ActionCard
-        title="Save Capture"
-        description="Crop a screenshot of this page and save it to your Midas Captures for later."
-        onClick={onCapture}
-      />
 
       <ActionCard
         title="New Expense"
@@ -303,22 +248,6 @@ function HomeScreen({ onCapture, onExpense }: { onCapture: () => void; onExpense
         onClick={onExpense}
         primary
       />
-    </div>
-  );
-}
-
-function CapturePreviewScreen({ capture, onSave, onCancel }: { capture: CaptureResult; onSave: () => void; onCancel: () => void }) {
-  return (
-    <div>
-      <img src={capture.imageDataUrl} alt="Preview" style={styles.preview} />
-      <p style={styles.pageInfo}>{capture.pageTitle || capture.pageUrl}</p>
-      {capture.selectedText && (
-        <p style={{ ...styles.pageInfo, fontStyle: 'italic' }}>"{capture.selectedText.slice(0, 120)}"</p>
-      )}
-      <div style={styles.row}>
-        <Btn onClick={onSave} primary flex>Save Capture</Btn>
-        <Btn onClick={onCancel}>Cancel</Btn>
-      </div>
     </div>
   );
 }

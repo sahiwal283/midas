@@ -12,7 +12,6 @@ import { ExpenseNew } from './pages/ExpenseNew';
 import { ExpenseDetail } from './pages/ExpenseDetail';
 import { AccountantQueue } from './pages/AccountantQueue';
 import { AccountantReview } from './pages/AccountantReview';
-import { Captures } from './pages/Captures';
 import { GetExtension } from './pages/GetExtension';
 import { ToUpload } from './pages/ToUpload';
 import { Admin } from './pages/Admin';
@@ -46,7 +45,6 @@ export default function App() {
               <Route path="/expenses" element={<ExpenseList />} />
               <Route path="/expenses/new" element={<ExpenseNew />} />
               <Route path="/expenses/:id" element={<ExpenseDetail />} />
-              <Route path="/captures" element={<Captures />} />
               <Route path="/get-extension" element={<GetExtension />} />
               <Route path="/to-upload" element={<ToUpload />} />
 

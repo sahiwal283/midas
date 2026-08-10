@@ -35,8 +35,8 @@ export function GetExtension() {
         />
         <FeatureCard
           icon={<Camera className="h-5 w-5 text-brand-600" />}
-          title="Save for later"
-          body="Not ready to file? Save a capture and link it to an expense anytime."
+          title="Drag-to-crop"
+          body="Drag a rectangle around the receipt — only the receipt is saved, sharp and clean."
         />
       </div>
 
