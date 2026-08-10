@@ -1,6 +1,6 @@
 {
   "name": "@midas/web",
-  "version": "0.16.1-alpha",
+  "version": "0.17.0-alpha",
   "private": true,
   "scripts": {
     "dev": "vite",

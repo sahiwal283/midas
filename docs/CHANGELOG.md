@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.0-alpha (2026-08-10)
+
+### Browser extension rework
+- **Drag-to-crop capture**: snapshot the tab, drag a rectangle around the receipt (Esc / "Use full tab" to skip); crisp device-pixel cropping.
+- **Quick expense form on the wizard pipeline**: draft → cropped receipt upload → OCR prefill → payment method / Company / category / notes → submit. Server-side auto-push applies — complete daily expenses approve and sync from the popup.
+- **In-app distribution**: new `/get-extension` page (linked from Captures and the sidebar) with the downloadable zip and step-by-step Chrome/Edge install instructions. Fixed the extension build (previously emitted unloadable paths); manifest 0.3.0.
+- Desktop capture app (Electron) recorded as a deferred future project.
+
 ## 0.16.1-alpha (2026-08-10)
 
 ### Fixed
