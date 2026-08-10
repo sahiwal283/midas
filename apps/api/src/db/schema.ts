@@ -1,6 +1,7 @@
 import {
   pgTable, pgEnum, uuid, text, timestamp, boolean,
   numeric, date, jsonb, integer, char, index, uniqueIndex,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -71,6 +72,8 @@ export const expenseCategories = pgTable('expense_categories', {
   description: text('description'),
   /** Zoho Books expense (COA) account_id for create_books. */
   zohoAccountId: text('zoho_account_id'),
+  /** Tree: null = top-level. Arbitrary depth; cycles rejected at the API layer. */
+  parentId: uuid('parent_id').references((): AnyPgColumn => expenseCategories.id, { onDelete: 'set null' }),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
