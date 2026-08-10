@@ -18,21 +18,8 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-function issueSessionCookie(res: Response, user: { id: string; email: string; role: string }) {
-  const token = jwt.sign(
-    { sub: user.id, email: user.email, role: user.role },
-    env.JWT_SECRET,
-    { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] },
-  );
-
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: env.COOKIE_SECURE,
-    sameSite: 'lax',
-    domain: env.COOKIE_DOMAIN,
-    maxAge: 8 * 60 * 60 * 1000, // 8h
-  });
-}
+// Sliding 30-day sessions — shared with OIDC and the auth middleware refresh.
+import { issueSessionCookie } from '../lib/session';
 
 router.post('/login', asyncHandler(async (req, res) => {
   if (env.AUTH_MODE === 'authentik' && !env.ALLOW_LOCAL_BREAK_GLASS) {

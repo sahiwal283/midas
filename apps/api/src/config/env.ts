@@ -5,7 +5,8 @@ const schema = z.object({
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  JWT_EXPIRES_IN: z.string().default('8h'),
+  // Sliding sessions: tokens live 30 days; any use after 24h re-issues.
+  JWT_EXPIRES_IN: z.string().default('30d'),
   COOKIE_SECURE: z.string().transform((v) => v === 'true').default('false'),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),

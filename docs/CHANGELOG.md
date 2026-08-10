@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.19.0-alpha (2026-08-10)
+
+### Sessions
+- **Sliding 30-day sessions** (was a hard 8-hour cutoff): any use after 24h silently re-issues a fresh 30-day cookie, so active users — web and extension — stay signed in; only 30 days of inactivity logs you out. Applies to local login, SSO, and invites.
+
 ## 0.18.0-alpha (2026-08-10)
 
 ### Simplification

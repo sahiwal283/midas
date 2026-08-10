@@ -6,6 +6,7 @@ import { users, ssoLinks } from '../db/schema';
 import { env } from '../config/env';
 import { asyncHandler } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { issueSessionCookie } from '../lib/session';
 import {
   loadDiscovery,
   buildAuthorizeUrl,
@@ -204,20 +205,8 @@ router.get('/oidc/callback', asyncHandler(async (req, res) => {
     metadata: { provider: 'authentik', sub: claims.sub, role: user.role, mappedGroupRole: role, wasCreated, wasLinkedByEmail },
   });
 
-  // Issue same JWT shape as local login
-  const token = jwt.sign(
-    { sub: user.id, email: user.email, role: user.role },
-    env.JWT_SECRET,
-    { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] },
-  );
-
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: env.COOKIE_SECURE,
-    sameSite: 'lax',
-    domain: env.COOKIE_DOMAIN,
-    maxAge: 8 * 60 * 60 * 1000,
-  });
+  // Same sliding 30-day session cookie as local login.
+  issueSessionCookie(res, { id: user.id, email: user.email, role: user.role });
 
   console.log('[oidc:session-created]', { userId: user.id, role: user.role, redirectTo: `${webBase}/dashboard` });
   res.redirect(`${webBase}/dashboard`);
