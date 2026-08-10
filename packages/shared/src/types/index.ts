@@ -134,6 +134,8 @@ export interface ExpenseCategory {
   id: string;
   name: string;
   description: string | null;
+  /** Tree: null = top-level. Arbitrary depth. */
+  parentId: string | null;
   isActive: boolean;
 }
 
