@@ -16,7 +16,7 @@ COPY apps/api/package.json ./apps/api/package.json
 WORKDIR /app/apps/api
 RUN cd ../.. && npm install --workspace=apps/api
 COPY apps/api/ .
-CMD ["sh", "-c", "npm run db:push && npm run db:seed && npm run dev"]
+CMD ["sh", "-c", "npx tsx src/db/runSqlMigrations.ts && npm run db:seed && npm run dev"]
 
 # ── build stage ───────────────────────────────────────────────────────────────
 FROM base AS build

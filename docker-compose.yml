@@ -5,6 +5,9 @@ services:
       dockerfile: apps/api/Dockerfile
       target: dev
     restart: unless-stopped
+    # SQL migrations replace db:push at boot: drizzle-kit push cannot introspect
+    # the budgets expression index (0015), and the runner is idempotent.
+    command: sh -c "npx tsx src/db/runSqlMigrations.ts && npm run db:seed && npm run dev"
     env_file: .env
     environment:
       PORT: "4000"
