@@ -17,6 +17,7 @@ import { storage } from '../lib/storage';
 import { canDeleteUser, canChangeRole, hasOwnedData, type OwnedCounts } from '../lib/userDelete';
 import { issueInvite } from '../lib/invites';
 import { parseAuditFilters } from '../lib/auditFilters';
+import { wouldCreateCycle } from '../lib/categoryTree';
 
 const router = Router();
 router.use(authenticate);
@@ -538,6 +539,7 @@ router.post('/categories', accounting, asyncHandler(async (req, res) => {
   const body = z.object({
     name: z.string().min(1),
     description: z.string().optional(),
+    parentId: z.string().uuid().nullable().optional(),
   }).parse(req.body);
 
   const [cat] = await db.insert(expenseCategories).values(body).returning();
@@ -549,7 +551,15 @@ router.patch('/categories/:id', accounting, asyncHandler(async (req, res) => {
     name: z.string().min(1).optional(),
     description: z.string().optional(),
     isActive: z.boolean().optional(),
+    parentId: z.string().uuid().nullable().optional(),
   }).parse(req.body);
+
+  if (body.parentId !== undefined) {
+    const all = await db.query.expenseCategories.findMany();
+    if (wouldCreateCycle(all, req.params.id, body.parentId)) {
+      throw createError('That parent would create a cycle in the category tree', 400, 'CATEGORY_CYCLE');
+    }
+  }
 
   const [updated] = await db.update(expenseCategories)
     .set(body)

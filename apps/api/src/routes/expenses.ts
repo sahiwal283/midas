@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, and, or, desc, ilike, gte, lte, count, sql } from 'drizzle-orm';
+import { eq, and, or, desc, ilike, gte, lte, count, sql, inArray } from 'drizzle-orm';
 import { db } from '../db/index';
 import { expenses, expenseCategories, paymentMethods, companies } from '../db/schema';
 import { authenticate } from '../middleware/auth';
@@ -18,6 +18,7 @@ import { isLikelyDuplicate } from '../lib/duplicates';
 import { isAutoPushEligible } from '../lib/autoApprove';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { syncExpenseToTransaction, removeSyncedTransaction } from '../lib/syncExpenseTransaction';
+import { effectivelyActiveIds, descendantIds } from '../lib/categoryTree';
 import { assertActiveCompany } from '../lib/companies';
 
 const router = Router();
@@ -53,7 +54,11 @@ router.get('/', asyncHandler(async (req, res) => {
   const conditions = [];
   if (!isPrivileged) conditions.push(eq(expenses.userId, req.user!.id));
   if (status) conditions.push(eq(expenses.status, status as typeof expenses.status.enumValues[number]));
-  if (categoryId) conditions.push(eq(expenses.categoryId, categoryId));
+  if (categoryId) {
+    // A parent category matches itself and all descendants.
+    const allCats = await db.query.expenseCategories.findMany({ columns: { id: true, parentId: true, isActive: true } });
+    conditions.push(inArray(expenses.categoryId, descendantIds(allCats, categoryId)));
+  }
   if (search?.trim()) {
     conditions.push(or(
       ilike(expenses.merchant, `%${search.trim()}%`),
@@ -489,13 +494,14 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// Categories (read-only for all users)
+// Categories (read-only for all users). Only effectively-active nodes —
+// a category is hidden when it OR any ancestor is inactive.
 router.get('/categories/list', asyncHandler(async (_req, res) => {
-  const cats = await db.query.expenseCategories.findMany({
-    where: eq(expenseCategories.isActive, true),
+  const all = await db.query.expenseCategories.findMany({
     orderBy: (c, { asc }) => [asc(c.name)],
   });
-  res.json({ categories: cats });
+  const activeIds = effectivelyActiveIds(all);
+  res.json({ categories: all.filter((c) => activeIds.has(c.id)) });
 }));
 
 export default router;

@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
@@ -9,6 +9,7 @@ import { MyAccountSection } from './settings/MyAccountSection';
 import { PaymentMethodsSection } from './settings/PaymentMethodsSection';
 import { BudgetsSection } from './settings/BudgetsSection';
 import type { User } from '../types';
+import { flattenTree, descendantIdSet, type CategoryTreeNode } from '../lib/categoryTree';
 
 type Section = 'account' | 'companies' | 'users' | 'categories' | 'payment-methods' | 'budgets' | 'connections' | 'audit';
 
@@ -970,33 +971,66 @@ function UserProfileEditor({ user, allUsers, onClose, onError }: {
 
 // ── Categories ───────────────────────────────────────────────────────────────
 
+interface AdminCategory extends CategoryTreeNode {
+  description: string | null;
+  isActive: boolean;
+}
+
 function CategoriesTab() {
   const qc = useQueryClient();
   const [name, setName] = useState('');
+  const [newParent, setNewParent] = useState('');
   const [error, setError] = useState('');
-  const { data: categories = [], isLoading } = useQuery({
+  const { data: categories = [], isLoading } = useQuery<AdminCategory[]>({
     queryKey: ['admin-categories'],
     queryFn: () => client.get('/admin/categories').then((r) => r.data.categories),
   });
 
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['admin-categories'] });
+    qc.invalidateQueries({ queryKey: ['expense-categories'] });
+  };
   const addMutation = useMutation({
-    mutationFn: () => client.post('/admin/categories', { name }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-categories'] }); setName(''); setError(''); },
+    mutationFn: () => client.post('/admin/categories', { name, parentId: newParent || null }),
+    onSuccess: () => { invalidate(); setName(''); setError(''); },
     onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not add category'),
   });
+  const patchMutation = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; name?: string; isActive?: boolean; parentId?: string | null }) =>
+      client.patch(`/admin/categories/${id}`, body),
+    onSuccess: () => { invalidate(); setError(''); },
+    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not update category'),
+  });
+
+  const ordered = useMemo(() => flattenTree(categories), [categories]);
+  // Valid parents for a node: everything except itself and its own descendants.
+  const validParents = (id: string) => {
+    const blocked = descendantIdSet(categories, id);
+    return categories.filter((c) => !blocked.has(c.id));
+  };
 
   if (isLoading) return <div className="text-sm text-gray-400">Loading…</div>;
 
   return (
     <div className="space-y-4">
       <ErrorPanel message={error} onDismiss={() => setError('')} />
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="New category name"
           className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
         />
+        <select
+          value={newParent}
+          onChange={(e) => setNewParent(e.target.value)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+        >
+          <option value="">— top level —</option>
+          {ordered.map(({ cat, depth }) => (
+            <option key={cat.id} value={cat.id}>{' '.repeat(depth * 3)}{cat.name}</option>
+          ))}
+        </select>
         <button
           onClick={() => addMutation.mutate()}
           disabled={!name.trim()}
@@ -1006,18 +1040,40 @@ function CategoriesTab() {
         </button>
       </div>
       <div className="rounded-xl border border-gray-200 bg-white">
-        {categories.map((c: any) => (
-          <div key={c.id} className="flex items-center justify-between border-b border-gray-100 px-5 py-3 last:border-0">
-            <div>
-              <p className="font-medium text-gray-900">{c.name}</p>
-              {c.description && <p className="text-xs text-gray-400">{c.description}</p>}
+        {ordered.map(({ cat, depth }) => (
+          <div key={cat.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-3 last:border-0">
+            <div style={{ paddingLeft: depth * 20 }}>
+              <p className="font-medium text-gray-900">
+                {depth > 0 && <span className="text-gray-300">└ </span>}{cat.name}
+              </p>
+              {cat.description && <p className="text-xs text-gray-400">{cat.description}</p>}
             </div>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-              {c.isActive ? 'Active' : 'Hidden'}
-            </span>
+            <div className="flex items-center gap-2">
+              <select
+                value={cat.parentId ?? ''}
+                onChange={(e) => patchMutation.mutate({ id: cat.id, parentId: e.target.value || null })}
+                className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 focus:border-brand-500 focus:outline-none"
+                title="Parent category"
+              >
+                <option value="">— top level —</option>
+                {validParents(cat.id).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => patchMutation.mutate({ id: cat.id, isActive: !cat.isActive })}
+                className={`rounded-full px-2.5 py-0.5 text-xs ${cat.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+                title={cat.isActive ? 'Click to hide (hides whole subtree from pickers)' : 'Click to activate'}
+              >
+                {cat.isActive ? 'Active' : 'Hidden'}
+              </button>
+            </div>
           </div>
         ))}
       </div>
+      <p className="text-xs text-gray-400">
+        Hiding a category hides its whole subtree from pickers. Existing expenses keep their category either way.
+      </p>
     </div>
   );
 }
