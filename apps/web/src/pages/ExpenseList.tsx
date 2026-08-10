@@ -8,6 +8,7 @@ import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
+import { flattenTree, descendantIdSet } from '../lib/categoryTree';
 
 const PAGE_SIZE = 10;
 
@@ -95,6 +96,11 @@ export function ExpenseList() {
     queryKey: ['expenses'],
     queryFn: () => expenseApi.list(),
   });
+  const { data: allCategories = [] } = useQuery({
+    queryKey: ['expense-categories'],
+    queryFn: () => expenseApi.categories(),
+    staleTime: 60_000,
+  });
 
   const [tab, setTab] = useState<StatusTab>('all');
   const [query, setQuery] = useState('');
@@ -117,15 +123,21 @@ export function ExpenseList() {
     return [...keys].sort((a, b) => b.localeCompare(a));
   }, [expenses]);
 
-  const categoryOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const e of expenses) {
-      if (e.category?.id) map.set(e.category.id, e.category.name);
-    }
-    return [...map.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [expenses]);
+  // The full active tree, indented — parents with no direct expenses must still be
+  // selectable so they can roll up their children.
+  const categoryOptions = useMemo(
+    () => flattenTree(allCategories).map(({ cat, depth }) => ({
+      id: cat.id,
+      name: `${' '.repeat(depth * 3)}${depth > 0 ? '└ ' : ''}${cat.name}`,
+    })),
+    [allCategories],
+  );
+
+  // Filtering by a parent category includes every descendant.
+  const categoryIdSet = useMemo(
+    () => (categoryId ? descendantIdSet(allCategories, categoryId) : null),
+    [categoryId, allCategories],
+  );
 
   const tabCounts = useMemo(() => {
     const counts: Record<StatusTab, number> = {
@@ -162,7 +174,7 @@ export function ExpenseList() {
     return expenses.filter((e) => {
       if (!matchesStatusTab(e, tab)) return false;
       if (month && monthKey(e.date) !== month) return false;
-      if (categoryId && e.categoryId !== categoryId) return false;
+      if (categoryIdSet && (!e.categoryId || !categoryIdSet.has(e.categoryId))) return false;
       if (sourceApp && e.sourceApp !== sourceApp) return false;
       if (reimbFilter && e.reimbursementStatus !== reimbFilter) return false;
       if (q) {
@@ -171,7 +183,7 @@ export function ExpenseList() {
       }
       return true;
     });
-  }, [expenses, tab, month, categoryId, sourceApp, reimbFilter, query]);
+  }, [expenses, tab, month, categoryIdSet, sourceApp, reimbFilter, query]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
