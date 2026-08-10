@@ -4,6 +4,7 @@ import { expenses } from '../db/schema';
 import { auditLog } from './audit';
 import { zoho, ZohoServiceError, type ZohoPushResult } from './zoho';
 import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
+import { resolveCategoryEntityAccountId } from './categoryZohoAccounts';
 import { classifyZohoError } from './zohoErrors';
 import { syncExpenseToTransaction } from './syncExpenseTransaction';
 
@@ -50,7 +51,8 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
     return { ok: false, status: 409, code: 'MISSING_PAYMENT_METHOD', message: 'Payment method must be set before pushing to Zoho' };
   }
 
-  const payload = buildZohoServicePayload(expense);
+  const categoryEntityAccountId = await resolveCategoryEntityAccountId(expense.categoryId, expense.zohoEntity);
+  const payload = buildZohoServicePayload({ ...expense, categoryEntityAccountId });
   if (!payload.account_id) {
     return {
       ok: false, status: 409, code: 'MISSING_ZOHO_EXPENSE_ACCOUNT',
