@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, CheckCircle2, Sparkles } from 'lucide-react';
 import { expenseApi, type DuplicateMatch } from '../api/expenses';
 import { companyApi } from '../api/companies';
+import { CategoryPicker } from '../components/CategoryPicker';
+import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
 import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
 import type { Receipt } from '../types';
@@ -49,8 +51,7 @@ export function ExpenseNew() {
     currency: 'USD',
     paymentMethodId: '',
     company: '',
-    zohoExpenseAccountId: '',
-    zohoExpenseAccountName: '',
+    categoryId: '',
     description: '',
   });
 
@@ -86,17 +87,11 @@ export function ExpenseNew() {
     });
   }, [user, paymentMethods, paymentMethodsFetched]);
 
-  const selectedCompany = companies.find((c) => c.name === form.company);
-  const zohoOn = selectedCompany ? selectedCompany.zohoEnabled : true;
-
-  const { data: accountData, isFetching: accountsLoading } = useQuery({
-    queryKey: ['zoho-expense-accounts', form.company],
-    queryFn: () => expenseApi.zohoExpenseAccounts(form.company),
-    enabled: !!form.company && zohoOn,
+  const { data: categories = [] } = useQuery({
+    queryKey: ['expense-categories'],
+    queryFn: () => expenseApi.categories(),
     staleTime: 60_000,
-    retry: 1,
   });
-  const expenseAccounts = accountData?.accounts ?? [];
 
   // ?mode=scan (mobile camera button) jumps straight into the camera.
   useEffect(() => {
@@ -120,21 +115,17 @@ export function ExpenseNew() {
   }
 
   function setCompany(name: string) {
-    setForm((f) => ({ ...f, company: name, zohoExpenseAccountId: '', zohoExpenseAccountName: '' }));
+    // Category is company-independent — never cleared when the company changes.
+    setForm((f) => ({ ...f, company: name }));
   }
 
   function setPaymentMethod(pmId: string) {
     const pm = paymentMethods.find((p) => p.id === pmId);
-    setForm((f) => {
-      const nextCompany = f.company || pm?.defaultZohoEntity || '';
-      const changed = nextCompany !== f.company;
-      return {
-        ...f,
-        paymentMethodId: pmId,
-        company: nextCompany,
-        ...(changed ? { zohoExpenseAccountId: '', zohoExpenseAccountName: '' } : {}),
-      };
-    });
+    setForm((f) => ({
+      ...f,
+      paymentMethodId: pmId,
+      company: f.company || pm?.defaultZohoEntity || '',
+    }));
   }
 
   function applyOcr(r: Receipt) {
@@ -161,24 +152,23 @@ export function ExpenseNew() {
     }));
   }
 
-  // Preselect the COA account matching the OCR category suggestion once the
-  // company's account list loads — never overriding a non-empty user pick.
-  // Re-applies if the user switches company (which clears the selection).
+  // Preselect the Midas category matching the OCR suggestion — never overriding
+  // a non-empty user pick. Deepest (most specific) name match wins.
   useEffect(() => {
-    if (!ocrCategorySuggestion || form.zohoExpenseAccountId) return;
-    const accounts = accountData?.accounts ?? [];
+    if (!ocrCategorySuggestion || form.categoryId) return;
     const sugg = ocrCategorySuggestion.trim().toLowerCase();
-    if (!sugg || accounts.length === 0) return;
-    const match = accounts.find((a) => {
-      const name = a.accountName.toLowerCase();
+    if (!sugg || categories.length === 0) return;
+    const matches = categories.filter((c) => {
+      const name = c.name.toLowerCase();
       return name.includes(sugg) || sugg.includes(name);
     });
-    if (!match) return;
-    setForm((f) => (f.zohoExpenseAccountId
-      ? f
-      : { ...f, zohoExpenseAccountId: match.accountId, zohoExpenseAccountName: match.accountName }));
+    if (matches.length === 0) return;
+    const deepest = matches.reduce((a, b) => (
+      pathFromRoot(categories, b.id).length > pathFromRoot(categories, a.id).length ? b : a
+    ));
+    setForm((f) => (f.categoryId ? f : { ...f, categoryId: deepest.id }));
     setCategoryAutoSuggested(true);
-  }, [ocrCategorySuggestion, accountData, form.zohoExpenseAccountId]);
+  }, [ocrCategorySuggestion, categories, form.categoryId]);
 
   /** Photo/upload entry: create empty draft, upload receipt, let OCR prefill. */
   async function startWithReceipt(file: File) {
@@ -257,8 +247,7 @@ export function ExpenseNew() {
         currency: form.currency,
         paymentMethodId: form.paymentMethodId || undefined,
         zohoEntity: form.company || undefined,
-        zohoExpenseAccountId: (zohoOn && form.zohoExpenseAccountId) || undefined,
-        zohoExpenseAccountName: (zohoOn && form.zohoExpenseAccountName) || undefined,
+        categoryId: form.categoryId || undefined,
         description: form.description || undefined,
       };
 
@@ -321,7 +310,7 @@ export function ExpenseNew() {
                 setOcrCategorySuggestion(null);
                 setCategoryAutoSuggested(false);
                 setResult(null);
-                setForm((f) => ({ ...f, merchant: '', amount: '', description: '', zohoExpenseAccountId: '', zohoExpenseAccountName: '' }));
+                setForm((f) => ({ ...f, merchant: '', amount: '', description: '', categoryId: '' }));
               }}
               className="rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-semibold text-cream hover:bg-brand-600"
             >
@@ -547,28 +536,16 @@ export function ExpenseNew() {
             )}
           </Field>
 
-          {form.company && zohoOn && (
-            <Field label="Expense category">
-              <select
-                value={form.zohoExpenseAccountId}
-                onChange={(e) => {
-                  const acct = expenseAccounts.find((a) => a.accountId === e.target.value);
-                  setCategoryAutoSuggested(false);
-                  setForm((f) => ({ ...f, zohoExpenseAccountId: e.target.value, zohoExpenseAccountName: acct?.accountName ?? '' }));
-                }}
-                disabled={accountsLoading}
-                className={inputCls}
-              >
-                <option value="">{accountsLoading ? 'Loading categories…' : '— Select category —'}</option>
-                {expenseAccounts.map((a) => (
-                  <option key={a.accountId} value={a.accountId}>{a.accountName}</option>
-                ))}
-              </select>
-              {categoryAutoSuggested && !!form.zohoExpenseAccountId && (
-                <p className="mt-1 text-xs text-charcoal/40">Suggested from the receipt — change if wrong.</p>
-              )}
-            </Field>
-          )}
+          <Field label="Category">
+            <CategoryPicker
+              categories={categories}
+              value={form.categoryId}
+              onChange={(id) => { setCategoryAutoSuggested(false); set('categoryId', id); }}
+            />
+            {categoryAutoSuggested && !!form.categoryId && (
+              <p className="mt-1 text-xs text-charcoal/40">Suggested from the receipt — change if wrong.</p>
+            )}
+          </Field>
 
           <Field label="Notes (optional)">
             <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={2} placeholder="Anything the accountant should know" className={`${inputCls} resize-none`} />
