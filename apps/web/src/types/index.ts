@@ -10,4 +10,5 @@ export type {
   Capture, CaptureSource, CaptureStatus,
   ZohoReadinessResult, ZohoReadinessCheck, ZohoMappedPayload,
   AuditLogEntry,
+  Notification, NotificationType,
 } from '@midas/shared';

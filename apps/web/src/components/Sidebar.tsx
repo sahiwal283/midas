@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
 import { MIDAS_VERSION } from '@midas/shared';
 import { MidasLogo } from './MidasLogo';
+import { NotificationBell } from './NotificationBell';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -110,13 +111,16 @@ export function Sidebar() {
             <p className="truncate text-sm font-medium text-gray-900">{user?.name}</p>
             <p className="truncate text-xs text-gray-500 capitalize">{user?.role}</p>
           </div>
-          <button
-            onClick={logout}
-            className="ml-2 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-            title="Logout"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+          <div className="ml-2 flex items-center gap-1">
+            <NotificationBell align="left" direction="up" />
+            <button
+              onClick={logout}
+              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     </aside>

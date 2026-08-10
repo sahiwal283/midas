@@ -22,6 +22,7 @@ import partnerExpensesRouter from './routes/partnerExpenses';
 import reportsRouter from './routes/reports';
 import companiesRouter from './routes/companies';
 import metaRouter from './routes/meta';
+import notificationsRouter from './routes/notifications';
 import oidcAuthRouter from './routes/oidcAuth';
 import zohoRouter from './routes/zoho';
 import zohoServiceRouter from './routes/zohoService';
@@ -87,6 +88,7 @@ app.use('/api/v1/companies', companiesRouter);
 app.use('/api/v1/expenses', zohoRouter);
 app.use('/api/v1/zoho', zohoServiceRouter);
 app.use('/api/v1/meta', metaRouter);
+app.use('/api/v1/notifications', notificationsRouter);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {

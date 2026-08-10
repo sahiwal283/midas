@@ -291,6 +291,24 @@ export const partnerExpenses = pgTable('partner_expenses', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// ── Notifications ─────────────────────────────────────────────────────────────
+// In-app notification feed. Email delivery is best-effort (emailed_at on success).
+
+export const notifications = pgTable('notifications', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  /** 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' */
+  type: text('type').notNull(),
+  title: text('title').notNull(),
+  body: text('body'),
+  expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+  readAt: timestamp('read_at'),
+  emailedAt: timestamp('emailed_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  index('notifications_user_id_idx').on(t.userId),
+]);
+
 // ── Relations ─────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -335,4 +353,9 @@ export const capturesRelations = relations(captures, ({ one }) => ({
 
 export const partnerExpensesRelations = relations(partnerExpenses, ({ one }) => ({
   user: one(users, { fields: [partnerExpenses.userId], references: [users.id] }),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, { fields: [notifications.userId], references: [users.id] }),
+  expense: one(expenses, { fields: [notifications.expenseId], references: [expenses.id] }),
 }));

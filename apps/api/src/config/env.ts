@@ -44,6 +44,14 @@ const schema = z.object({
   // Deprecated alias — use ZOHO_SERVICE_BASE_URL for new deployments.
   ZOHO_SERVICE_URL: z.string().optional(),
   STORAGE_MODE: z.enum(['local', 's3']).default('local'),
+  // ── Email notifications ────────────────────────────────────────────────────
+  // 'off' logs would-be sends; 'smtp' delivers via nodemailer using SMTP_* below.
+  EMAIL_MODE: z.enum(['off', 'smtp']).default('off'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
   // Optional integrations
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   // Auth rate limiting — max login attempts per 15-minute window per IP.

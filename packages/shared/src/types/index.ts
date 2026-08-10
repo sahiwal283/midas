@@ -347,3 +347,19 @@ export interface AuditLogEntry {
   actorName: string | null;
   actorRole: string | null;
 }
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid';
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  expenseId: string | null;
+  readAt: string | null;
+  emailedAt: string | null;
+  createdAt: string;
+}

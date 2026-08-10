@@ -10,6 +10,7 @@ import { pushExpenseToZoho } from '../lib/zohoPush';
 import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
+import { notifyUser } from '../lib/notify';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -218,6 +219,15 @@ router.post('/expenses/bulk-review', asyncHandler(async (req, res) => {
       metadata: { bulk: true },
     });
     approved.push(id);
+
+    // Notify the owner — never the acting accountant about their own expense.
+    if (expense.userId !== req.user!.id) {
+      await notifyUser(expense.userId, 'approved', {
+        expenseId: id,
+        merchant: expense.merchant,
+        amount: expense.amount,
+      });
+    }
   }
 
   res.json({ approved, skipped });
@@ -336,6 +346,19 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
       : 'note' in parsed && parsed.note ? { note: parsed.note } : undefined,
   });
 
+  // Notify the owner — never the actor about their own action.
+  if (expense.userId !== req.user!.id) {
+    const notifType = action === 'approve' ? 'approved'
+      : action === 'reject' ? 'rejected'
+      : 'action_required';
+    await notifyUser(expense.userId, notifType, {
+      expenseId: expense.id,
+      merchant: expense.merchant,
+      amount: expense.amount,
+      ...(action === 'reject' && parsed.note ? { note: parsed.note } : {}),
+    });
+  }
+
   res.json({ expense: updated });
 }));
 
@@ -411,6 +434,15 @@ router.patch('/expenses/:id/reimbursement', asyncHandler(async (req, res) => {
     before,
     after: { reimbursementStatus: status },
   });
+
+  // Owner is told when their reimbursement lands — never the acting accountant.
+  if (status === 'paid' && expense.reimbursementStatus !== 'paid' && expense.userId !== req.user!.id) {
+    await notifyUser(expense.userId, 'reimbursement_paid', {
+      expenseId: expense.id,
+      merchant: expense.merchant,
+      amount: expense.amount,
+    });
+  }
 
   res.json({ expense: updated });
 }));
