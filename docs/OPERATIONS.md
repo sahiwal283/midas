@@ -568,3 +568,23 @@ Verified in code (server.ts / config/env.ts) and required before any shared or p
   (accountant dashboard → Closed Periods), expenses dated in it cannot be edited, deleted,
   submitted, reviewed, or have reimbursement changed; admin force-delete is the audited
   override and reopening a period is admin-only and audited.
+
+## User registration (Authentik-driven)
+
+Registration is fully automatic — there is no manual Midas account creation for
+SSO users:
+
+1. **Grant access in Authentik**: add the person to one of the Midas groups
+   (admin / accountant / user mapping via `AUTHENTIK_GROUP_*`).
+2. **They sign in** with the SSO button on the Midas login page.
+3. On first sign-in Midas **auto-creates their account**
+   (`AUTHENTIK_AUTO_CREATE_USERS=true` in prod): email + display name from the
+   Authentik profile, initial role from their group, SSO-only (no local
+   password), and the SSO link is stored for future logins.
+4. After creation, **Midas owns the role** — promote to partner/developer or
+   change roles in Settings → People; Authentik groups only gate app access.
+5. Someone signing in with no approved group is denied (`denied_no_group`) and
+   no account is created.
+
+Non-SSO users (rare) are onboarded via Settings → People → Invite User
+(one-time 7-day link where they set a password).
