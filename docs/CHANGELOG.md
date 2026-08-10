@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.1-alpha (2026-08-10)
+
+### Extension onboarding
+- The Get Extension page is gone; desktop users who don't have the extension see a dismissible setup modal instead (X to dismiss; downloading suppresses it; an installed extension auto-suppresses it via a page marker). Re-open anytime from Settings → My Account → Browser extension.
+
 ## 0.27.0-alpha (2026-08-10)
 
 ### Transactions, Purchase Orders, Budgets (landed from parallel session)
