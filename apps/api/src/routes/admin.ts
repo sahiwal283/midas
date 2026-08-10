@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
 import {
-  users, expenseCategories, appConnections, ssoLinks,
+  users, expenseCategories, categoryZohoAccounts, appConnections, ssoLinks,
   expenses, expenseMessages, captures, partnerExpenses, companies,
   paymentMethods, auditLogs,
 } from '../db/schema';
@@ -567,6 +567,80 @@ router.patch('/categories/:id', accounting, asyncHandler(async (req, res) => {
     .returning();
 
   res.json({ category: updated });
+}));
+
+// ── Chart of Accounts (category → Zoho COA account, per company) ───────────
+// Zoho account ids differ per sister company, so mappings are keyed by
+// (category, company). Categories without their own mapping inherit from the
+// nearest mapped ancestor at push time (see lib/categoryZohoAccounts.ts).
+
+router.get('/category-zoho-accounts', accounting, asyncHandler(async (req, res) => {
+  const companyName = typeof req.query.companyName === 'string' ? req.query.companyName.trim() : '';
+  if (!companyName) throw createError('companyName is required', 400, 'MISSING_COMPANY');
+
+  const mappings = await db.select({
+    categoryId: categoryZohoAccounts.categoryId,
+    companyName: categoryZohoAccounts.companyName,
+    zohoAccountId: categoryZohoAccounts.zohoAccountId,
+  }).from(categoryZohoAccounts).where(eq(categoryZohoAccounts.companyName, companyName));
+
+  res.json({ mappings });
+}));
+
+router.put('/category-zoho-accounts', accounting, asyncHandler(async (req, res) => {
+  const body = z.object({
+    categoryId: z.string().uuid(),
+    companyName: z.string().min(1),
+    zohoAccountId: z.string().min(1),
+  }).parse(req.body);
+
+  const category = await db.query.expenseCategories.findFirst({
+    where: eq(expenseCategories.id, body.categoryId),
+  });
+  if (!category) throw notFound('Category not found');
+  const company = await db.query.companies.findFirst({ where: eq(companies.name, body.companyName) });
+  if (!company) throw notFound('Company not found');
+
+  const [mapping] = await db.insert(categoryZohoAccounts)
+    .values(body)
+    .onConflictDoUpdate({
+      target: [categoryZohoAccounts.categoryId, categoryZohoAccounts.companyName],
+      set: { zohoAccountId: body.zohoAccountId },
+    })
+    .returning();
+
+  await auditLog({
+    entityType: 'category_zoho_account',
+    entityId: mapping.id,
+    userId: req.user!.id,
+    action: 'admin.coa.mapped',
+    after: mapping,
+    metadata: { categoryName: category.name },
+  });
+  res.json({ mapping });
+}));
+
+router.delete('/category-zoho-accounts', accounting, asyncHandler(async (req, res) => {
+  const categoryId = typeof req.query.categoryId === 'string' ? req.query.categoryId : '';
+  const companyName = typeof req.query.companyName === 'string' ? req.query.companyName.trim() : '';
+  if (!categoryId || !companyName) throw createError('categoryId and companyName are required', 400, 'MISSING_PARAMS');
+
+  const [removed] = await db.delete(categoryZohoAccounts)
+    .where(and(
+      eq(categoryZohoAccounts.categoryId, categoryId),
+      eq(categoryZohoAccounts.companyName, companyName),
+    ))
+    .returning();
+  if (!removed) throw notFound('Mapping not found');
+
+  await auditLog({
+    entityType: 'category_zoho_account',
+    entityId: removed.id,
+    userId: req.user!.id,
+    action: 'admin.coa.unmapped',
+    before: removed,
+  });
+  res.json({ ok: true });
 }));
 
 // ── App Connections (app-to-app API keys) ──────────────────────────────────
