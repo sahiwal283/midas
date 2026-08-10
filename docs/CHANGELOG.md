@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.0-alpha (2026-08-10)
+
+### Role-scoped Settings
+- Payment Methods folded into Settings (Expenses group); standalone page removed (old URL redirects).
+- Settings is now visible to every role, scoped: admin/developer see everything; accountants see Expenses (Categories + Payment Methods, now editable by accountants); employees/partners see My Account only.
+- New **My Account**: edit your name, change your password (SSO-only accounts see an Authentik note instead). Server gates aligned per route.
+
 ## 0.19.0-alpha (2026-08-10)
 
 ### Sessions
