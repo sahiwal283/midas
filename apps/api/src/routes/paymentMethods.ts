@@ -49,8 +49,8 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json({ paymentMethods: rows });
 }));
 
-// Create — admin only
-router.post('/', requireRole('admin'), asyncHandler(async (req, res) => {
+// Create — accountant/admin
+router.post('/', requireRole('accountant', 'admin'), asyncHandler(async (req, res) => {
   const body = createSchema.parse(req.body);
 
   const [pm] = await db.insert(paymentMethods).values({
@@ -76,8 +76,8 @@ router.post('/', requireRole('admin'), asyncHandler(async (req, res) => {
   res.status(201).json({ paymentMethod: pm });
 }));
 
-// Update — admin only
-router.patch('/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+// Update — accountant/admin
+router.patch('/:id', requireRole('accountant', 'admin'), asyncHandler(async (req, res) => {
   const pm = await db.query.paymentMethods.findFirst({
     where: eq(paymentMethods.id, req.params.id),
   });

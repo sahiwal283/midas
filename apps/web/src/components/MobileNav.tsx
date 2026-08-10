@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, Camera, X, ClipboardList, BarChart3,
-  Briefcase, CreditCard, Settings, LogOut, Camera as CaptureIcon,
+  Briefcase, Settings, LogOut, Camera as CaptureIcon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -19,7 +19,6 @@ export function MobileNav() {
   const role = user?.role;
   const isDeveloper = role === 'developer';
   const isPrivileged = role === 'accountant' || role === 'admin' || isDeveloper;
-  const isAdmin = role === 'admin' || isDeveloper;
   const isPartner = role === 'partner' || isDeveloper;
   const hasMore = true; // extension link + logout live here for everyone
 
@@ -42,12 +41,7 @@ export function MobileNav() {
                 <SheetLink to="/reports" icon={<BarChart3 className="h-4 w-4" />} label="Reports" onNavigate={() => setMoreOpen(false)} />
               </>
             )}
-            {isAdmin && (
-              <>
-                <SheetLink to="/payment-methods" icon={<CreditCard className="h-4 w-4" />} label="Payment Methods" onNavigate={() => setMoreOpen(false)} />
-                <SheetLink to="/admin" icon={<Settings className="h-4 w-4" />} label="Admin Settings" onNavigate={() => setMoreOpen(false)} />
-              </>
-            )}
+            <SheetLink to="/admin" icon={<Settings className="h-4 w-4" />} label="Settings" onNavigate={() => setMoreOpen(false)} />
             <button
               onClick={() => { setMoreOpen(false); logout(); }}
               className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50"

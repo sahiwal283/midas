@@ -64,13 +64,98 @@ router.post('/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
+// Shared shape for GET /me and PATCH /me. hasPassword is a boolean-only signal
+// (the hash never leaves the API) so the UI can detect SSO-only accounts.
+const ME_COLUMNS = {
+  id: true, email: true, name: true, role: true,
+  department: true, costCenter: true,
+  defaultZohoEntity: true, defaultPaymentMethodId: true,
+  passwordHash: true,
+} as const;
+
+function meShape(user: { passwordHash: string | null } & Record<string, unknown>) {
+  const { passwordHash, ...rest } = user;
+  return { ...rest, hasPassword: passwordHash !== null };
+}
+
 router.get('/me', authenticate, asyncHandler(async (req, res) => {
   // req.user only carries id/email/name/role — fetch the wizard defaults too.
   const user = await db.query.users.findFirst({
     where: eq(users.id, req.user!.id),
-    columns: { id: true, email: true, name: true, role: true, defaultZohoEntity: true, defaultPaymentMethodId: true },
+    columns: ME_COLUMNS,
   });
-  res.json({ user: user ?? req.user });
+  res.json({ user: user ? meShape(user) : req.user });
+}));
+
+const patchMeSchema = z.object({
+  name: z.string().min(1).max(100),
+});
+
+router.patch('/me', authenticate, asyncHandler(async (req, res) => {
+  const { name } = patchMeSchema.parse(req.body);
+
+  const target = await db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
+  if (!target) throw createError('User not found', 404, 'NOT_FOUND');
+
+  await db.update(users)
+    .set({ name, updatedAt: new Date() })
+    .where(eq(users.id, target.id));
+
+  await auditLog({
+    entityType: 'user',
+    entityId: target.id,
+    userId: target.id,
+    action: 'user.profile_updated',
+    before: { name: target.name },
+    after: { name },
+  });
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, target.id),
+    columns: ME_COLUMNS,
+  });
+  res.json({ user: user ? meShape(user) : req.user });
+}));
+
+// ── Self-service password change ─────────────────────────────────────────────
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+router.post('/change-password', authenticate, asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+
+  const user = await db.query.users.findFirst({ where: eq(users.id, req.user!.id) });
+  if (!user) throw createError('User not found', 404, 'NOT_FOUND');
+
+  if (!user.passwordHash) {
+    throw createError('Your account signs in with SSO — password is managed in Authentik.', 409, 'NO_PASSWORD');
+  }
+
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!valid) {
+    throw createError('Current password is incorrect', 403, 'INVALID_PASSWORD');
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await db.update(users)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.id, user.id));
+
+  await auditLog({
+    entityType: 'user',
+    entityId: user.id,
+    userId: user.id,
+    action: 'user.password_changed',
+    metadata: { email: user.email },
+  });
+
+  // Re-issue the session so the cookie's issue time reflects the change.
+  issueSessionCookie(res, user);
+
+  res.json({ ok: true });
 }));
 
 // ── Invitation acceptance (public — the invitee has no session yet) ──────────

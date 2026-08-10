@@ -19,7 +19,12 @@ import { issueInvite } from '../lib/invites';
 import { parseAuditFilters } from '../lib/auditFilters';
 
 const router = Router();
-router.use(authenticate, requireRole('admin'));
+router.use(authenticate);
+
+// Route-level gates. Categories are shared with accountants; everything else
+// stays admin-only. Developer passes every gate automatically (see roleAllowed).
+const adminOnly = requireRole('admin');
+const accounting = requireRole('accountant', 'admin');
 
 async function countActiveAdmins(): Promise<number> {
   const [row] = await db.select({ n: count() }).from(users)
@@ -36,14 +41,14 @@ const companySchema = z.object({
   sortOrder: z.number().int().min(0).optional(),
 });
 
-router.get('/companies', asyncHandler(async (_req, res) => {
+router.get('/companies', adminOnly, asyncHandler(async (_req, res) => {
   const rows = await db.query.companies.findMany({
     orderBy: (c, { asc }) => [asc(c.sortOrder), asc(c.name)],
   });
   res.json({ companies: rows });
 }));
 
-router.post('/companies', asyncHandler(async (req, res) => {
+router.post('/companies', adminOnly, asyncHandler(async (req, res) => {
   const body = companySchema.parse(req.body);
   const existing = await db.query.companies.findFirst({ where: eq(companies.name, body.name) });
   if (existing) throw createError('Company name already exists', 409, 'CONFLICT');
@@ -59,7 +64,7 @@ router.post('/companies', asyncHandler(async (req, res) => {
   res.status(201).json({ company });
 }));
 
-router.patch('/companies/:id', asyncHandler(async (req, res) => {
+router.patch('/companies/:id', adminOnly, asyncHandler(async (req, res) => {
   const body = companySchema.partial().parse(req.body);
   const target = await db.query.companies.findFirst({ where: eq(companies.id, req.params.id) });
   if (!target) throw notFound('Company not found');
@@ -82,7 +87,7 @@ router.patch('/companies/:id', asyncHandler(async (req, res) => {
 
 // ── Users ──────────────────────────────────────────────────────────────────
 
-router.get('/users', asyncHandler(async (_req, res) => {
+router.get('/users', adminOnly, asyncHandler(async (_req, res) => {
   const rows = await db.query.users.findMany({
     // Never return the hash or the raw invite token (the invite URL is shown
     // once at issue time; leaking the token here would let any admin session
@@ -112,7 +117,7 @@ const createUserSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
-router.post('/users', asyncHandler(async (req, res) => {
+router.post('/users', adminOnly, asyncHandler(async (req, res) => {
   const { name, email, role, password } = createUserSchema.parse(req.body);
 
   const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
@@ -195,7 +200,7 @@ async function validateProfileRefs(body: { managerId?: string | null; defaultPay
   }
 }
 
-router.patch('/users/:id', asyncHandler(async (req, res) => {
+router.patch('/users/:id', adminOnly, asyncHandler(async (req, res) => {
   const body = patchUserSchema.parse(req.body);
 
   const target = await db.query.users.findFirst({ where: eq(users.id, req.params.id) });
@@ -256,7 +261,7 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
 // Hard delete. Default: only succeeds when the user owns no data (409 HAS_DATA
 // with counts otherwise). ?purge=true also removes everything they own, unless
 // any of their expenses is synced to Zoho (409 ZOHO_LINKED).
-router.delete('/users/:id', asyncHandler(async (req, res) => {
+router.delete('/users/:id', adminOnly, asyncHandler(async (req, res) => {
   const purge = req.query.purge === 'true';
 
   const target = await db.query.users.findFirst({ where: eq(users.id, req.params.id) });
@@ -328,7 +333,7 @@ router.delete('/users/:id', asyncHandler(async (req, res) => {
   res.json({ ok: true, purged: purge });
 }));
 
-router.post('/users/:id/reset-password', asyncHandler(async (req, res) => {
+router.post('/users/:id/reset-password', adminOnly, asyncHandler(async (req, res) => {
   const target = await db.query.users.findFirst({ where: eq(users.id, req.params.id) });
   if (!target) throw notFound('User not found');
 
@@ -369,7 +374,7 @@ const inviteUserSchema = profileFieldsSchema.extend({
   role: z.enum(['user', 'accountant', 'admin', 'partner', 'developer']),
 });
 
-router.post('/users/invite', asyncHandler(async (req, res) => {
+router.post('/users/invite', adminOnly, asyncHandler(async (req, res) => {
   const body = inviteUserSchema.parse(req.body);
 
   const existing = await db.query.users.findFirst({ where: eq(users.email, body.email) });
@@ -394,7 +399,7 @@ router.post('/users/invite', asyncHandler(async (req, res) => {
   res.status(201).json({ user, inviteUrl: inviteUrlFor(token) });
 }));
 
-router.post('/users/:id/invite/resend', asyncHandler(async (req, res) => {
+router.post('/users/:id/invite/resend', adminOnly, asyncHandler(async (req, res) => {
   const target = await db.query.users.findFirst({ where: eq(users.id, req.params.id) });
   if (!target) throw notFound('User not found');
 
@@ -432,7 +437,7 @@ const bulkUsersSchema = z.object({
   action: z.enum(['deactivate', 'reactivate']),
 });
 
-router.post('/users/bulk', asyncHandler(async (req, res) => {
+router.post('/users/bulk', adminOnly, asyncHandler(async (req, res) => {
   const { ids, action } = bulkUsersSchema.parse(req.body);
   const wantActive = action === 'reactivate';
 
@@ -479,7 +484,7 @@ router.post('/users/bulk', asyncHandler(async (req, res) => {
 
 // ── Audit log ──────────────────────────────────────────────────────────────
 
-router.get('/audit', asyncHandler(async (req, res) => {
+router.get('/audit', adminOnly, asyncHandler(async (req, res) => {
   const f = parseAuditFilters(req.query as Record<string, string | undefined>);
 
   const conds = [];
@@ -522,14 +527,14 @@ router.get('/audit', asyncHandler(async (req, res) => {
 
 // ── Categories ─────────────────────────────────────────────────────────────
 
-router.get('/categories', asyncHandler(async (_req, res) => {
+router.get('/categories', accounting, asyncHandler(async (_req, res) => {
   const cats = await db.query.expenseCategories.findMany({
     orderBy: (c, { asc }) => [asc(c.name)],
   });
   res.json({ categories: cats });
 }));
 
-router.post('/categories', asyncHandler(async (req, res) => {
+router.post('/categories', accounting, asyncHandler(async (req, res) => {
   const body = z.object({
     name: z.string().min(1),
     description: z.string().optional(),
@@ -539,7 +544,7 @@ router.post('/categories', asyncHandler(async (req, res) => {
   res.status(201).json({ category: cat });
 }));
 
-router.patch('/categories/:id', asyncHandler(async (req, res) => {
+router.patch('/categories/:id', accounting, asyncHandler(async (req, res) => {
   const body = z.object({
     name: z.string().min(1).optional(),
     description: z.string().optional(),
@@ -556,7 +561,7 @@ router.patch('/categories/:id', asyncHandler(async (req, res) => {
 
 // ── App Connections (app-to-app API keys) ──────────────────────────────────
 
-router.get('/connections', asyncHandler(async (_req, res) => {
+router.get('/connections', adminOnly, asyncHandler(async (_req, res) => {
   const conns = await db.query.appConnections.findMany({
     columns: { apiKeyHash: false },
     orderBy: (c, { asc }) => [asc(c.appName)],
@@ -564,7 +569,7 @@ router.get('/connections', asyncHandler(async (_req, res) => {
   res.json({ connections: conns });
 }));
 
-router.post('/connections', asyncHandler(async (req, res) => {
+router.post('/connections', adminOnly, asyncHandler(async (req, res) => {
   const { appName, permissions } = z.object({
     appName: z.string().min(1),
     permissions: z.array(z.string()).default([]),
@@ -582,7 +587,7 @@ router.post('/connections', asyncHandler(async (req, res) => {
   res.status(201).json({ connection: conn, apiKey });
 }));
 
-router.patch('/connections/:id', asyncHandler(async (req, res) => {
+router.patch('/connections/:id', adminOnly, asyncHandler(async (req, res) => {
   const body = z.object({
     isActive: z.boolean().optional(),
     permissions: z.array(z.string()).optional(),

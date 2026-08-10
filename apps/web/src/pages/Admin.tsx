@@ -1,14 +1,15 @@
 import { useState, Fragment } from 'react';
-import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { companyApi } from '../api/companies';
 import { paymentMethodsApi } from '../api/expenses';
+import { MyAccountSection } from './settings/MyAccountSection';
+import { PaymentMethodsSection } from './settings/PaymentMethodsSection';
 import type { User } from '../types';
 
-type Section = 'companies' | 'users' | 'categories' | 'connections' | 'audit';
+type Section = 'account' | 'companies' | 'users' | 'categories' | 'payment-methods' | 'connections' | 'audit';
 
 interface AdminUser extends User {
   hasPassword: boolean;
@@ -16,13 +17,39 @@ interface AdminUser extends User {
   inviteExpiresAt?: string | null;
 }
 
-const NAV_GROUPS: { label: string; items: { id: Section; label: string }[] }[] = [
-  { label: 'Company', items: [{ id: 'companies', label: 'Companies' }] },
-  { label: 'People', items: [{ id: 'users', label: 'Users' }] },
-  { label: 'Expenses', items: [{ id: 'categories', label: 'Categories' }] },
-  { label: 'Integrations', items: [{ id: 'connections', label: 'Connections' }] },
-  { label: 'Security', items: [{ id: 'audit', label: 'Audit Log' }] },
-];
+type NavGroup = { label: string; items: { id: Section; label: string }[] };
+
+const ACCOUNT_GROUP: NavGroup = { label: 'Account', items: [{ id: 'account', label: 'My Account' }] };
+const EXPENSES_GROUP: NavGroup = {
+  label: 'Expenses',
+  items: [
+    { id: 'categories', label: 'Categories' },
+    { id: 'payment-methods', label: 'Payment Methods' },
+  ],
+};
+
+/** Role-scoped settings nav: everyone gets My Account; accountants add the
+ *  Expenses group; admins (and developers) see everything. */
+function navGroupsForRole(role: string | undefined): NavGroup[] {
+  if (role === 'admin' || role === 'developer') {
+    return [
+      ACCOUNT_GROUP,
+      { label: 'Company', items: [{ id: 'companies', label: 'Companies' }] },
+      { label: 'People', items: [{ id: 'users', label: 'Users' }] },
+      EXPENSES_GROUP,
+      { label: 'Integrations', items: [{ id: 'connections', label: 'Connections' }] },
+      { label: 'Security', items: [{ id: 'audit', label: 'Audit Log' }] },
+    ];
+  }
+  if (role === 'accountant') return [ACCOUNT_GROUP, EXPENSES_GROUP];
+  return [ACCOUNT_GROUP];
+}
+
+function defaultSectionForRole(role: string | undefined): Section {
+  if (role === 'admin' || role === 'developer') return 'users';
+  if (role === 'accountant') return 'categories';
+  return 'account';
+}
 
 const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none';
 
@@ -39,17 +66,22 @@ function ErrorPanel({ message, onDismiss }: { message: string; onDismiss: () => 
 }
 
 export function Admin() {
-  const [section, setSection] = useState<Section>('users');
+  const { user } = useAuth();
+  const [section, setSection] = useState<Section>(() => defaultSectionForRole(user?.role));
+
+  const navGroups = navGroupsForRole(user?.role);
+  const allowedSections = new Set(navGroups.flatMap((g) => g.items.map((i) => i.id)));
+  const activeSection = allowedSections.has(section) ? section : defaultSectionForRole(user?.role);
 
   return (
     <div className="p-8">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">Admin Settings</h1>
+      <h1 className="mb-6 text-2xl font-bold text-gray-900">Settings</h1>
 
       <div className="flex flex-col gap-8 lg:flex-row">
         {/* Grouped section nav */}
         <nav className="w-full shrink-0 lg:w-52">
           <div className="space-y-5 rounded-xl border border-gray-200 bg-white p-4">
-            {NAV_GROUPS.map((group) => (
+            {navGroups.map((group) => (
               <div key={group.label}>
                 <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
                   {group.label}
@@ -60,7 +92,7 @@ export function Admin() {
                       key={item.id}
                       onClick={() => setSection(item.id)}
                       className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm font-medium transition-colors ${
-                        section === item.id
+                        activeSection === item.id
                           ? 'bg-brand-50 text-brand-700'
                           : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                       }`}
@@ -68,14 +100,6 @@ export function Admin() {
                       {item.label}
                     </button>
                   ))}
-                  {group.label === 'Expenses' && (
-                    <Link
-                      to="/payment-methods"
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                    >
-                      Payment Methods <span aria-hidden>↗</span>
-                    </Link>
-                  )}
                 </div>
               </div>
             ))}
@@ -83,11 +107,13 @@ export function Admin() {
         </nav>
 
         <div className="min-w-0 flex-1">
-          {section === 'users' && <UsersTab />}
-          {section === 'companies' && <CompaniesTab />}
-          {section === 'categories' && <CategoriesTab />}
-          {section === 'connections' && <ConnectionsTab />}
-          {section === 'audit' && <AuditTab />}
+          {activeSection === 'account' && <MyAccountSection />}
+          {activeSection === 'users' && <UsersTab />}
+          {activeSection === 'companies' && <CompaniesTab />}
+          {activeSection === 'categories' && <CategoriesTab />}
+          {activeSection === 'payment-methods' && <PaymentMethodsSection />}
+          {activeSection === 'connections' && <ConnectionsTab />}
+          {activeSection === 'audit' && <AuditTab />}
         </div>
       </div>
     </div>

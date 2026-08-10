@@ -15,7 +15,6 @@ import { AccountantReview } from './pages/AccountantReview';
 import { GetExtension } from './pages/GetExtension';
 import { ToUpload } from './pages/ToUpload';
 import { Admin } from './pages/Admin';
-import { PaymentMethods } from './pages/PaymentMethods';
 import { PartnerExpenses } from './pages/PartnerExpenses';
 import { Reports } from './pages/Reports';
 
@@ -83,22 +82,10 @@ export default function App() {
                 }
               />
 
-              <Route
-                path="/admin"
-                element={
-                  <ProtectedRoute roles={['admin']}>
-                    <Admin />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/payment-methods"
-                element={
-                  <ProtectedRoute roles={['admin']}>
-                    <PaymentMethods />
-                  </ProtectedRoute>
-                }
-              />
+              {/* Settings is role-scoped inside the page — any authenticated user. */}
+              <Route path="/admin" element={<Admin />} />
+              {/* Payment Methods now lives inside Settings — keep old links alive. */}
+              <Route path="/payment-methods" element={<Navigate to="/admin" replace />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

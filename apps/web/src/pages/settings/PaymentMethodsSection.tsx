@@ -1,10 +1,11 @@
 import { useState, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, CreditCard } from 'lucide-react';
-import { paymentMethodsApi } from '../api/expenses';
-import { ConfirmModal } from '../components/ConfirmModal';
-import client from '../api/client';
-import type { PaymentMethod, User } from '../types';
+import { paymentMethodsApi } from '../../api/expenses';
+import { ConfirmModal } from '../../components/ConfirmModal';
+import { useAuth } from '../../contexts/AuthContext';
+import client from '../../api/client';
+import type { PaymentMethod, User } from '../../types';
 
 const BRAND_LABELS: Record<string, string> = {
   visa: 'Visa',
@@ -18,8 +19,13 @@ const BRAND_LABELS: Record<string, string> = {
 
 const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
 
-export function PaymentMethods() {
+export function PaymentMethodsSection() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  // The users list (for the Assignment control) comes from the admin-only
+  // /admin/users endpoint — accountants manage cards without per-user lists.
+  const isAdmin = user?.role === 'admin' || user?.role === 'developer';
+
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<PaymentMethod | null>(null);
@@ -39,12 +45,12 @@ export function PaymentMethods() {
     queryFn: () => paymentMethodsApi.list(),
   });
 
-  // Admin-only page — the users list feeds the Assignment control.
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ['admin-users'],
     queryFn: () => client.get('/admin/users').then((r) => r.data.users),
+    enabled: isAdmin,
   });
-  const userName = (id: string | null) => users.find((u) => u.id === id)?.name ?? 'Unknown user';
+  const userName = (id: string | null) => users.find((u) => u.id === id)?.name ?? 'a specific user';
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: ['payment-methods-admin'] });
@@ -91,17 +97,14 @@ export function PaymentMethods() {
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Payment Methods</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Manage company cards and payment methods. Employees select these when submitting expenses.
-          </p>
-        </div>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          Manage company cards and payment methods. Employees select these when submitting expenses.
+        </p>
         <button
           onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+          className="flex shrink-0 items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
         >
           <Plus className="h-4 w-4" />
           Add Method
@@ -109,7 +112,7 @@ export function PaymentMethods() {
       </div>
 
       {error && (
-        <div className="mb-4 flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <span>{error}</span>
           <button onClick={() => setError('')} className="shrink-0 text-xs text-red-500 underline hover:text-red-700">
             Dismiss
@@ -119,7 +122,7 @@ export function PaymentMethods() {
 
       {/* Add form */}
       {showForm && (
-        <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50 p-5">
+        <div className="rounded-xl border border-brand-200 bg-brand-50 p-5">
           <h2 className="mb-4 text-sm font-semibold text-gray-700">New Payment Method</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -212,7 +215,7 @@ export function PaymentMethods() {
       )}
 
       {/* Methods list */}
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         {isLoading ? (
           <div className="px-6 py-12 text-center text-sm text-gray-400">Loading…</div>
         ) : methods.length === 0 ? (
@@ -295,6 +298,7 @@ export function PaymentMethods() {
                         <PaymentMethodEditor
                           pm={pm}
                           users={users}
+                          canAssign={isAdmin}
                           onClose={() => setEditingId(null)}
                           onSaved={() => { invalidate(); setEditingId(null); setError(''); }}
                           onError={setError}
@@ -327,9 +331,10 @@ export function PaymentMethods() {
   );
 }
 
-function PaymentMethodEditor({ pm, users, onClose, onSaved, onError }: {
+function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }: {
   pm: PaymentMethod;
   users: User[];
+  canAssign: boolean;
   onClose: () => void;
   onSaved: () => void;
   onError: (msg: string) => void;
@@ -353,8 +358,12 @@ function PaymentMethodEditor({ pm, users, onClose, onSaved, onError }: {
       zohoAccountName: form.zohoAccountName || undefined,
       defaultZohoEntity: form.defaultZohoEntity || null,
       requiresReimbursement: form.requiresReimbursement,
-      isCompanyWide: form.assignment === 'company',
-      assignedUserId: form.assignment === 'assigned' && form.assignedUserId ? form.assignedUserId : null,
+      ...(canAssign
+        ? {
+            isCompanyWide: form.assignment === 'company',
+            assignedUserId: form.assignment === 'assigned' && form.assignedUserId ? form.assignedUserId : null,
+          }
+        : {}),
     }),
     onSuccess: onSaved,
     onError: (err: any) => onError(err?.response?.data?.error?.message ?? 'Could not update payment method'),
@@ -364,7 +373,7 @@ function PaymentMethodEditor({ pm, users, onClose, onSaved, onError }: {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  const assignedMissing = form.assignment === 'assigned' && !form.assignedUserId;
+  const assignedMissing = canAssign && form.assignment === 'assigned' && !form.assignedUserId;
 
   return (
     <div className="space-y-4">
@@ -423,47 +432,53 @@ function PaymentMethodEditor({ pm, users, onClose, onSaved, onError }: {
         </div>
       </div>
 
-      {/* Assignment control */}
-      <div className="rounded-lg border border-gray-200 bg-white p-3">
-        <p className="mb-2 text-xs font-medium text-gray-700">Assignment</p>
-        <div className="flex flex-wrap items-center gap-5">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="radio"
-              name={`assignment-${pm.id}`}
-              checked={form.assignment === 'company'}
-              onChange={() => set('assignment', 'company')}
-              className="border-gray-300"
-            />
-            Company-wide (everyone sees it)
-          </label>
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="radio"
-              name={`assignment-${pm.id}`}
-              checked={form.assignment === 'assigned'}
-              onChange={() => set('assignment', 'assigned')}
-              className="border-gray-300"
-            />
-            Assigned to
-          </label>
-          {form.assignment === 'assigned' && (
-            <select
-              value={form.assignedUserId}
-              onChange={(e) => set('assignedUserId', e.target.value)}
-              className="w-56 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none"
-            >
-              <option value="">— Select user —</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
+      {/* Assignment control — needs the admin-only users list */}
+      {canAssign ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-3">
+          <p className="mb-2 text-xs font-medium text-gray-700">Assignment</p>
+          <div className="flex flex-wrap items-center gap-5">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name={`assignment-${pm.id}`}
+                checked={form.assignment === 'company'}
+                onChange={() => set('assignment', 'company')}
+                className="border-gray-300"
+              />
+              Company-wide (everyone sees it)
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name={`assignment-${pm.id}`}
+                checked={form.assignment === 'assigned'}
+                onChange={() => set('assignment', 'assigned')}
+                className="border-gray-300"
+              />
+              Assigned to
+            </label>
+            {form.assignment === 'assigned' && (
+              <select
+                value={form.assignedUserId}
+                onChange={(e) => set('assignedUserId', e.target.value)}
+                className="w-56 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none"
+              >
+                <option value="">— Select user —</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          {assignedMissing && (
+            <p className="mt-2 text-xs text-amber-600">Pick the user this card is assigned to.</p>
           )}
         </div>
-        {assignedMissing && (
-          <p className="mt-2 text-xs text-amber-600">Pick the user this card is assigned to.</p>
-        )}
-      </div>
+      ) : (
+        <p className="text-xs text-gray-500">
+          Assignment: {pm.isCompanyWide ? 'company-wide.' : 'assigned to a specific user.'} Only admins can change card assignment.
+        </p>
+      )}
 
       <div className="flex gap-2">
         <button

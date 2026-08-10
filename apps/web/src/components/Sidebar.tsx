@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, Briefcase, BarChart3, Puzzle } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, ClipboardList, Settings, LogOut, Briefcase, BarChart3, Puzzle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
@@ -19,7 +19,6 @@ export function Sidebar() {
   // Developer is an all-access role: it sees every nav section.
   const isDeveloper = user?.role === 'developer';
   const isPrivileged = user?.role === 'accountant' || user?.role === 'admin' || isDeveloper;
-  const isAdmin = user?.role === 'admin' || isDeveloper;
   const isPartner = user?.role === 'partner' || isDeveloper;
 
   const { data: meta } = useQuery({
@@ -53,6 +52,10 @@ export function Sidebar() {
           <Puzzle className="h-4 w-4" />
           Get the Extension
         </NavLink>
+        <NavLink to="/admin" className={linkClass}>
+          <Settings className="h-4 w-4" />
+          Settings
+        </NavLink>
 
         {isPartner && (
           <>
@@ -76,21 +79,6 @@ export function Sidebar() {
             <NavLink to="/reports" className={linkClass}>
               <BarChart3 className="h-4 w-4" />
               Reports
-            </NavLink>
-          </>
-        )}
-
-        {isAdmin && (
-          <>
-            <div className="my-2 border-t border-gray-100" />
-            <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Admin</p>
-            <NavLink to="/payment-methods" className={linkClass}>
-              <CreditCard className="h-4 w-4" />
-              Payment Methods
-            </NavLink>
-            <NavLink to="/admin" className={linkClass}>
-              <Settings className="h-4 w-4" />
-              Settings
             </NavLink>
           </>
         )}
