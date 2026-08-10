@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0-alpha (2026-08-10)
+
+### Notifications
+- **In-app notifications** with a bell + unread badge (desktop sidebar and mobile header): action required (accountant request), approved, rejected, reimbursement paid. Tap → the expense; mark-all-read; 60s polling.
+- **Email delivery, env-gated**: `EMAIL_MODE=smtp` + SMTP_* vars enables emails with deep links; default `off` logs only. New `nodemailer` dependency (migration 0012 adds the `notifications` table).
+- Actors are never notified about their own actions; auto-approved daily expenses don't notify.
+
 ## 0.14.0-alpha (2026-08-07)
 
 ### Reimbursements
