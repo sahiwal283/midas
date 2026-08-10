@@ -112,7 +112,12 @@ pipeline.
   unauthenticated /uploads exposure) for production.
 - Production security pass.
 - Merchant/vendor normalization (Amazon/AMAZON.COM/AMZN → one vendor).
-- Browser extension rework (major).
+- ~~Browser extension rework (major).~~ **Done 2026-08-10** — drag-to-crop
+  capture, quick-expense form on the wizard pipeline (server-side auto-push),
+  in-app distribution via `/get-extension`
+  (`docs/superpowers/specs/2026-08-10-extension-rework-design.md`).
+- Desktop capture app (Electron) — deferred future project: capture anything on
+  screen (not just browser tabs) and feed the same expense pipeline.
 - Accountant "close period" (explicitly not P0): closed periods lock edits;
   corrections become adjustment events.
 - Cross-cutting UX polish, folded into each sub-project as touched: loading

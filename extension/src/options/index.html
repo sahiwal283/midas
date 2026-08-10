@@ -29,7 +29,7 @@
 
     <label for="midasApiUrl">API URL</label>
     <input id="midasApiUrl" type="url" placeholder="http://localhost:4000" />
-    <p class="hint">The Midas backend API URL. In Docker dev, this is typically port 4000.</p>
+    <p class="hint">The Midas API origin, without any /api path — the extension appends /api/v1 itself. Docker dev: http://localhost:4000. Production (API behind the same domain): https://midas.booute.duckdns.org</p>
 
     <button onclick="save()">Save Settings</button>
     <p id="status"></p>

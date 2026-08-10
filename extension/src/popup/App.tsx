@@ -1,37 +1,48 @@
-import { useState, useEffect } from 'react';
-import type { CaptureResult, ExtensionCategory } from '../shared/types';
+import { useState, useEffect, useRef } from 'react';
+import type {
+  CaptureResult,
+  PendingCapture,
+  PaymentMethodOption,
+  CompanyOption,
+  ExpenseAccountOption,
+} from '../shared/types';
+import { PENDING_CAPTURE_KEY } from '../shared/types';
 import { getConfig } from '../shared/config';
+import { api, ApiError } from './api';
 
 // ── State machine ─────────────────────────────────────────────────────────────
 
 type Screen =
   | { id: 'home' }
-  | { id: 'taking_screenshot'; intent: 'capture' | 'expense' }
+  | { id: 'starting' }
   | { id: 'capture_preview'; capture: CaptureResult }
-  | { id: 'expense_form'; capture: CaptureResult }
+  | { id: 'expense_prepare'; label: string }
+  | { id: 'expense_form' }
   | { id: 'submitting'; label: string }
   | { id: 'capture_success' }
-  | { id: 'expense_success'; midasUrl: string; expenseId: string }
-  | { id: 'error'; message: string; isAuth: boolean; prev: Screen['id'] };
+  | { id: 'expense_done'; outcome: 'auto_pushed' | 'approved' | 'pending'; expenseId: string }
+  | { id: 'error'; message: string; isAuth: boolean; retry: (() => void) | null };
 
 interface ExpenseForm {
   merchant: string;
   amount: string;
   date: string;
-  currency: string;
-  categoryId: string;
+  paymentMethodId: string;
+  company: string;
+  zohoExpenseAccountId: string;
+  zohoExpenseAccountName: string;
   description: string;
-  reimbursementRequired: boolean;
 }
 
 const DEFAULT_FORM: ExpenseForm = {
   merchant: '',
   amount: '',
   date: new Date().toISOString().slice(0, 10),
-  currency: 'USD',
-  categoryId: '',
+  paymentMethodId: '',
+  company: '',
+  zohoExpenseAccountId: '',
+  zohoExpenseAccountName: '',
   description: '',
-  reimbursementRequired: false,
 };
 
 // ── Root component ────────────────────────────────────────────────────────────
@@ -40,68 +51,154 @@ export function PopupApp() {
   const [screen, setScreen] = useState<Screen>({ id: 'home' });
   const [midasWebUrl, setMidasWebUrl] = useState('http://localhost:5173');
 
+  // Quick-expense pipeline state (survives across screens within this popup).
+  const [capture, setCapture] = useState<CaptureResult | null>(null);
+  const [form, setForm] = useState<ExpenseForm>(DEFAULT_FORM);
+  const [ocrMissing, setOcrMissing] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [formError, setFormError] = useState('');
+  const draftIdRef = useRef<string | null>(null);
+  const receiptUploadedRef = useRef(false);
+
   useEffect(() => {
     getConfig().then((c) => setMidasWebUrl(c.midasUrl));
+    void chrome.action.setBadgeText({ text: '' });
+
+    // The service worker parks the finished (cropped) capture in
+    // storage.session while the popup is closed — resume the flow from it.
+    chrome.storage.session.get(PENDING_CAPTURE_KEY).then((stored) => {
+      const pending = stored[PENDING_CAPTURE_KEY] as PendingCapture | undefined;
+      if (!pending) return;
+      void chrome.storage.session.remove(PENDING_CAPTURE_KEY);
+      setCapture(pending.capture);
+      if (pending.intent === 'capture') {
+        setScreen({ id: 'capture_preview', capture: pending.capture });
+      } else {
+        void runExpensePrepare(pending.capture);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function takeScreenshot(intent: 'capture' | 'expense') {
-    setScreen({ id: 'taking_screenshot', intent });
+  // ── Capture start (both flows) ──────────────────────────────────────────────
 
-    const res = await sendMessage<{ dataUrl?: string; error?: string }>({ type: 'TAKE_SCREENSHOT' });
-
-    if (res.error || !res.dataUrl) {
-      setScreen({ id: 'error', message: res.error ?? 'Screenshot failed', isAuth: false, prev: 'home' });
+  async function startCapture(intent: 'capture' | 'expense') {
+    setScreen({ id: 'starting' });
+    const res = await sendMessage<{ ok?: boolean; error?: string }>({ type: 'START_CAPTURE', intent });
+    if (res?.error) {
+      setScreen({ id: 'error', message: res.error, isAuth: false, retry: () => setScreen({ id: 'home' }) });
       return;
     }
-
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const capture: CaptureResult = {
-      imageDataUrl: res.dataUrl,
-      pageUrl: tab.url ?? '',
-      pageTitle: tab.title ?? '',
-      selectedText: await getSelectedText(),
-    };
-
-    if (intent === 'capture') {
-      setScreen({ id: 'capture_preview', capture });
-    } else {
-      setScreen({ id: 'expense_form', capture });
-    }
+    // The crop overlay is now up on the page; this popup closes and reopens
+    // (service worker) once the user confirms or skips the crop.
+    window.close();
   }
 
-  async function saveCapture(capture: CaptureResult) {
+  // ── Save Capture flow ───────────────────────────────────────────────────────
+
+  async function saveCapture(c: CaptureResult) {
     setScreen({ id: 'submitting', label: 'Saving capture…' });
     const res = await sendMessage<{ type: string; error?: string; isAuth?: boolean }>({
       type: 'SAVE_CAPTURE',
-      result: capture,
+      result: c,
     });
-    if (res.type === 'SAVE_CAPTURE_SUCCESS') {
+    if (res?.type === 'SAVE_CAPTURE_SUCCESS') {
       setScreen({ id: 'capture_success' });
     } else {
-      setScreen({ id: 'error', message: res.error ?? 'Save failed', isAuth: !!res.isAuth, prev: 'capture_preview' });
+      setScreen({
+        id: 'error',
+        message: res?.error ?? 'Save failed',
+        isAuth: !!res?.isAuth,
+        retry: () => setScreen({ id: 'capture_preview', capture: c }),
+      });
     }
   }
 
-  async function submitExpense(capture: CaptureResult, form: ExpenseForm) {
+  // ── Quick expense pipeline ──────────────────────────────────────────────────
+
+  /** Draft + receipt upload + reference data, with per-step resume on retry. */
+  async function runExpensePrepare(c: CaptureResult) {
+    try {
+      let draftId = draftIdRef.current;
+      if (!draftId) {
+        setScreen({ id: 'expense_prepare', label: 'Creating draft…' });
+        const draft = await api.createDraft();
+        draftId = draft.id;
+        draftIdRef.current = draftId;
+      }
+
+      if (!receiptUploadedRef.current) {
+        setScreen({ id: 'expense_prepare', label: 'Reading receipt…' });
+        const receipt = await api.uploadReceipt(draftId, c.imageDataUrl);
+        receiptUploadedRef.current = true;
+        const fields = receipt.ocrData?.fields;
+        if (fields && (fields.merchant?.value || fields.amount?.value != null || fields.date?.value)) {
+          setForm((f) => ({
+            ...f,
+            merchant: fields.merchant?.value ?? f.merchant,
+            amount: fields.amount?.value != null ? String(fields.amount.value) : f.amount,
+            date: fields.date?.value ?? f.date,
+          }));
+          setOcrMissing(false);
+        } else {
+          setOcrMissing(true);
+        }
+      }
+
+      // Reference data is best-effort: a failure hides the affected select
+      // rather than blocking the form.
+      const [pms, cos] = await Promise.all([
+        api.paymentMethods().catch(() => [] as PaymentMethodOption[]),
+        api.companies().catch(() => [] as CompanyOption[]),
+      ]);
+      setPaymentMethods(pms);
+      setCompanies(cos);
+      setScreen({ id: 'expense_form' });
+    } catch (err) {
+      const isAuth = err instanceof ApiError && err.isAuth;
+      setScreen({
+        id: 'error',
+        message: err instanceof Error ? err.message : 'Could not prepare the expense',
+        isAuth,
+        retry: () => void runExpensePrepare(c),
+      });
+    }
+  }
+
+  async function submitExpense() {
+    const id = draftIdRef.current;
+    if (!id) return;
+    setFormError('');
     setScreen({ id: 'submitting', label: 'Submitting expense…' });
-    const res = await sendMessage<{ type: string; result?: { expenseId: string; midasUrl: string }; error?: string; isAuth?: boolean }>({
-      type: 'SUBMIT_EXPENSE',
-      payload: {
-        capture,
-        merchant: form.merchant,
+    try {
+      const selectedCompany = companies.find((co) => co.name === form.company);
+      const zohoOn = selectedCompany ? selectedCompany.zohoEnabled : false;
+      await api.updateExpense(id, {
+        merchant: form.merchant.trim(),
         amount: Number(form.amount),
         date: form.date,
-        currency: form.currency,
-        categoryId: form.categoryId || undefined,
-        description: form.description || undefined,
-        reimbursementRequired: form.reimbursementRequired,
-      },
-    });
-
-    if (res.type === 'SUBMIT_EXPENSE_SUCCESS' && res.result) {
-      setScreen({ id: 'expense_success', midasUrl: res.result.midasUrl, expenseId: res.result.expenseId });
-    } else {
-      setScreen({ id: 'error', message: res.error ?? 'Submission failed', isAuth: !!res.isAuth, prev: 'expense_form' });
+        paymentMethodId: form.paymentMethodId || undefined,
+        zohoEntity: form.company || undefined,
+        zohoExpenseAccountId: (zohoOn && form.zohoExpenseAccountId) || undefined,
+        zohoExpenseAccountName: (zohoOn && form.zohoExpenseAccountName) || undefined,
+        description: form.description.trim() || undefined,
+      });
+      const submitted = await api.submitExpense(id);
+      const outcome = submitted.autoPushed
+        ? 'auto_pushed'
+        : submitted.expense.status === 'approved'
+          ? 'approved'
+          : 'pending';
+      setScreen({ id: 'expense_done', outcome, expenseId: id });
+    } catch (err) {
+      if (err instanceof ApiError && err.isAuth) {
+        setScreen({ id: 'error', message: err.message, isAuth: true, retry: () => setScreen({ id: 'expense_form' }) });
+        return;
+      }
+      // Keep the filled form; show the error inline with a retry affordance.
+      setFormError(err instanceof Error ? err.message : 'Submission failed');
+      setScreen({ id: 'expense_form' });
     }
   }
 
@@ -111,14 +208,12 @@ export function PopupApp() {
     <Shell midasWebUrl={midasWebUrl}>
       {screen.id === 'home' && (
         <HomeScreen
-          onCapture={() => takeScreenshot('capture')}
-          onExpense={() => takeScreenshot('expense')}
+          onCapture={() => startCapture('capture')}
+          onExpense={() => startCapture('expense')}
         />
       )}
 
-      {screen.id === 'taking_screenshot' && (
-        <Spinner label={screen.intent === 'capture' ? 'Capturing page…' : 'Preparing expense…'} />
-      )}
+      {screen.id === 'starting' && <Spinner label="Capturing page…" />}
 
       {screen.id === 'capture_preview' && (
         <CapturePreviewScreen
@@ -128,11 +223,18 @@ export function PopupApp() {
         />
       )}
 
-      {screen.id === 'expense_form' && (
+      {screen.id === 'expense_prepare' && <Spinner label={screen.label} />}
+
+      {screen.id === 'expense_form' && capture && (
         <ExpenseFormScreen
-          capture={screen.capture}
-          onSubmit={(form) => submitExpense(screen.capture, form)}
-          onBack={() => setScreen({ id: 'home' })}
+          capture={capture}
+          form={form}
+          setForm={setForm}
+          ocrMissing={ocrMissing}
+          paymentMethods={paymentMethods}
+          companies={companies}
+          error={formError}
+          onSubmit={submitExpense}
         />
       )}
 
@@ -148,10 +250,22 @@ export function PopupApp() {
         />
       )}
 
-      {screen.id === 'expense_success' && (
+      {screen.id === 'expense_done' && (
         <SuccessScreen
-          title="Expense submitted"
-          body="It's now in the accountant review queue. You'll be notified of any updates."
+          title={
+            screen.outcome === 'auto_pushed'
+              ? 'Approved — sent to accounting'
+              : screen.outcome === 'approved'
+                ? 'Approved'
+                : 'Submitted for review'
+          }
+          body={
+            screen.outcome === 'pending'
+              ? "It's now in the accountant review queue. You'll be notified of any updates."
+              : screen.outcome === 'auto_pushed'
+                ? 'Your expense was complete, so it was approved and pushed to accounting automatically.'
+                : 'Your expense was approved automatically.'
+          }
           midasPath={`/expenses/${screen.expenseId}`}
           midasWebUrl={midasWebUrl}
           onAnother={() => setScreen({ id: 'home' })}
@@ -163,7 +277,7 @@ export function PopupApp() {
           message={screen.message}
           isAuth={screen.isAuth}
           midasWebUrl={midasWebUrl}
-          onRetry={() => setScreen({ id: 'home' })}
+          onRetry={screen.retry ?? (() => setScreen({ id: 'home' }))}
         />
       )}
     </Shell>
@@ -175,17 +289,17 @@ export function PopupApp() {
 function HomeScreen({ onCapture, onExpense }: { onCapture: () => void; onExpense: () => void }) {
   return (
     <div style={{ padding: '4px 0' }}>
-      <p style={styles.hint}>What do you want to do with this page?</p>
+      <p style={styles.hint}>Snapshot this page, then drag to crop the receipt.</p>
 
       <ActionCard
         title="Save Capture"
-        description="Screenshot this page and save it to your Midas Captures for later review."
+        description="Crop a screenshot of this page and save it to your Midas Captures for later."
         onClick={onCapture}
       />
 
       <ActionCard
-        title="Submit Expense"
-        description="Screenshot this receipt and submit it as a new expense for accountant review."
+        title="New Expense"
+        description="Crop the receipt and file an expense — OCR pre-fills the details for you."
         onClick={onExpense}
         primary
       />
@@ -211,43 +325,118 @@ function CapturePreviewScreen({ capture, onSave, onCancel }: { capture: CaptureR
 
 function ExpenseFormScreen({
   capture,
+  form,
+  setForm,
+  ocrMissing,
+  paymentMethods,
+  companies,
+  error,
   onSubmit,
-  onBack,
 }: {
   capture: CaptureResult;
-  onSubmit: (form: ExpenseForm) => void;
-  onBack: () => void;
+  form: ExpenseForm;
+  setForm: React.Dispatch<React.SetStateAction<ExpenseForm>>;
+  ocrMissing: boolean;
+  paymentMethods: PaymentMethodOption[];
+  companies: CompanyOption[];
+  error: string;
+  onSubmit: () => void;
 }) {
-  const [form, setForm] = useState<ExpenseForm>({
-    ...DEFAULT_FORM,
-    // Try to pre-fill merchant from page title (best-effort)
-    merchant: guessmerchantFromTitle(capture.pageTitle),
-  });
-  const [categories, setCategories] = useState<ExtensionCategory[]>([]);
+  const [accounts, setAccounts] = useState<ExpenseAccountOption[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsFailed, setAccountsFailed] = useState(false);
 
+  const selectedCompany = companies.find((c) => c.name === form.company);
+  const zohoOn = !!selectedCompany?.zohoEnabled;
+
+  // Zoho expense categories, only for zoho-enabled companies. A load failure
+  // degrades gracefully: the select is simply hidden.
   useEffect(() => {
-    sendMessage<{ categories: ExtensionCategory[] }>({ type: 'GET_CATEGORIES' })
-      .then((res) => setCategories(res.categories ?? []))
-      .catch(() => setCategories([]));
-  }, []);
+    if (!form.company || !zohoOn) {
+      setAccounts([]);
+      setAccountsFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setAccountsLoading(true);
+    setAccountsFailed(false);
+    api.expenseAccounts(form.company)
+      .then((rows) => {
+        if (!cancelled) setAccounts(rows);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAccounts([]);
+          setAccountsFailed(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAccountsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.company, zohoOn]);
 
   function set<K extends keyof ExpenseForm>(k: K, v: ExpenseForm[K]) {
     setForm((f) => ({ ...f, [k]: v }));
   }
 
+  function setPaymentMethod(pmId: string) {
+    const pm = paymentMethods.find((p) => p.id === pmId);
+    setForm((f) => {
+      // Auto-select the card's default company — only when it matches a real
+      // company and the user hasn't picked one already.
+      const matches = pm?.defaultZohoEntity && companies.some((c) => c.name === pm.defaultZohoEntity);
+      const nextCompany = f.company || (matches ? pm!.defaultZohoEntity! : '');
+      const changed = nextCompany !== f.company;
+      return {
+        ...f,
+        paymentMethodId: pmId,
+        company: nextCompany,
+        ...(changed ? { zohoExpenseAccountId: '', zohoExpenseAccountName: '' } : {}),
+      };
+    });
+  }
+
+  function setCompany(name: string) {
+    setForm((f) => ({ ...f, company: name, zohoExpenseAccountId: '', zohoExpenseAccountName: '' }));
+  }
+
+  function setAccount(accountId: string) {
+    const account = accounts.find((a) => a.accountId === accountId);
+    setForm((f) => ({
+      ...f,
+      zohoExpenseAccountId: accountId,
+      zohoExpenseAccountName: account?.accountName ?? '',
+    }));
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.merchant || !form.amount || !form.date) return;
-    onSubmit(form);
+    if (!form.merchant.trim() || !form.amount || Number(form.amount) <= 0) return;
+    onSubmit();
   }
 
   return (
     <div>
-      {/* Thumbnail */}
-      <img src={capture.imageDataUrl} alt="Receipt preview" style={{ ...styles.preview, height: 80, objectFit: 'cover' }} />
+      {/* Cropped receipt thumbnail */}
+      <img src={capture.imageDataUrl} alt="Receipt preview" style={{ ...styles.preview, maxHeight: 110, objectFit: 'contain', background: '#f9fafb' }} />
       <p style={styles.pageInfo}>{capture.pageTitle || capture.pageUrl}</p>
 
-      <form onSubmit={handleSubmit} style={{ marginTop: 10 }}>
+      {ocrMissing && (
+        <p style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', borderRadius: 6, padding: '6px 8px', marginBottom: 8, lineHeight: 1.4 }}>
+          We couldn't read the receipt automatically — fill in the details below.
+        </p>
+      )}
+
+      {error && (
+        <p style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', borderRadius: 6, padding: '6px 8px', marginBottom: 8, lineHeight: 1.4 }}>
+          {error} — check the fields and try again.
+        </p>
+      )}
+
+      <form onSubmit={handleSubmit} style={{ marginTop: 6 }}>
         <Field label="Merchant *">
           <input
             required
@@ -259,7 +448,7 @@ function ExpenseFormScreen({
         </Field>
 
         <div style={styles.row}>
-          <Field label="Amount *" style={{ flex: 1 }}>
+          <Field label="Amount (USD) *" style={{ flex: 1 }}>
             <input
               required
               type="number"
@@ -271,40 +460,53 @@ function ExpenseFormScreen({
               style={styles.input}
             />
           </Field>
-          <Field label="Currency" style={{ width: 72 }}>
-            <select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={styles.input}>
-              <option>USD</option>
-              <option>EUR</option>
-              <option>GBP</option>
-              <option>CAD</option>
-              <option>MXN</option>
-            </select>
+          <Field label="Date *" style={{ flex: 1 }}>
+            <input
+              required
+              type="date"
+              value={form.date}
+              onChange={(e) => set('date', e.target.value)}
+              style={styles.input}
+            />
           </Field>
         </div>
 
-        <Field label="Date *">
-          <input
-            required
-            type="date"
-            value={form.date}
-            onChange={(e) => set('date', e.target.value)}
-            style={styles.input}
-          />
-        </Field>
-
-        {categories.length > 0 ? (
-          <Field label="Category">
-            <select value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)} style={styles.input}>
-              <option value="">— Select category (optional) —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+        {paymentMethods.length > 0 && (
+          <Field label="Payment method">
+            <select value={form.paymentMethodId} onChange={(e) => setPaymentMethod(e.target.value)} style={styles.input}>
+              <option value="">— Select card (optional) —</option>
+              {paymentMethods.map((pm) => (
+                <option key={pm.id} value={pm.id}>
+                  {pm.label}{pm.lastFour ? ` ····${pm.lastFour}` : ''}
+                </option>
               ))}
             </select>
           </Field>
-        ) : (
-          <p style={{ fontSize: 11, color: '#9ca3af', marginBottom: 10, lineHeight: 1.4 }}>
-            No categories loaded — accountant will assign one during review.
-          </p>
+        )}
+
+        {companies.length > 0 && (
+          <Field label="Company">
+            <select value={form.company} onChange={(e) => setCompany(e.target.value)} style={styles.input}>
+              <option value="">— Select company (optional) —</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        {zohoOn && accountsLoading && (
+          <p style={{ fontSize: 11, color: '#9ca3af', marginBottom: 10 }}>Loading expense categories…</p>
+        )}
+        {zohoOn && !accountsLoading && !accountsFailed && accounts.length > 0 && (
+          <Field label="Expense category">
+            <select value={form.zohoExpenseAccountId} onChange={(e) => setAccount(e.target.value)} style={styles.input}>
+              <option value="">— Select category (optional) —</option>
+              {accounts.map((a) => (
+                <option key={a.accountId} value={a.accountId}>{a.accountName}</option>
+              ))}
+            </select>
+          </Field>
         )}
 
         <Field label="Notes">
@@ -316,24 +518,13 @@ function ExpenseFormScreen({
           />
         </Field>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', marginBottom: 14, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={form.reimbursementRequired}
-            onChange={(e) => set('reimbursementRequired', e.target.checked)}
-            style={{ width: 14, height: 14 }}
-          />
-          Reimbursement required
-        </label>
-
-        <div style={styles.row}>
-          <Btn type="submit" primary flex disabled={!form.merchant || !form.amount}>Submit Expense</Btn>
-          <Btn type="button" onClick={onBack}>Back</Btn>
-        </div>
+        <Btn type="submit" primary flex disabled={!form.merchant.trim() || !form.amount || Number(form.amount) <= 0}>
+          Submit Expense
+        </Btn>
       </form>
 
       <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 10, lineHeight: 1.4 }}>
-        Expense goes to the accountant review queue — not approved automatically.
+        Complete expenses may be approved and sent to accounting automatically; anything else goes to accountant review.
       </p>
     </div>
   );
@@ -363,7 +554,7 @@ function SuccessScreen({
       <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 16, lineHeight: 1.5 }}>{body}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <Btn onClick={openMidas} primary>Open in Midas</Btn>
-        <Btn onClick={onAnother}>Do another</Btn>
+        <Btn onClick={onAnother}>Done</Btn>
       </div>
     </div>
   );
@@ -409,7 +600,7 @@ function Spinner({ label }: { label: string }) {
 
 // ── Layout primitives ─────────────────────────────────────────────────────────
 
-function Shell({ children, midasWebUrl }: { children: React.ReactNode; midasWebUrl: string }) {
+function Shell({ children, midasWebUrl: _midasWebUrl }: { children: React.ReactNode; midasWebUrl: string }) {
   return (
     <div style={{ padding: 14, fontFamily: 'system-ui, -apple-system, sans-serif', minHeight: 120 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, borderBottom: '1px solid #f3f4f6', paddingBottom: 10 }}>
@@ -507,35 +698,12 @@ function sendMessage<T>(message: object): Promise<T> {
   });
 }
 
-async function getSelectedText(): Promise<string | undefined> {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab.id) return undefined;
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => window.getSelection()?.toString() ?? '',
-    });
-    return results?.[0]?.result?.trim() || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function guessmerchantFromTitle(title: string): string {
-  if (!title) return '';
-  // Strip common suffixes like " - Order Confirmation", " | Receipt", etc.
-  return title
-    .replace(/\s*[-|–—]\s*(Order Confirmation|Receipt|Invoice|Checkout|Payment|Thank You|Confirmation).*$/i, '')
-    .trim()
-    .slice(0, 60);
-}
-
 // ── Inline styles ─────────────────────────────────────────────────────────────
 
 const styles = {
   hint: { fontSize: 12, color: '#9ca3af', marginBottom: 10 } as React.CSSProperties,
   preview: { width: '100%', borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 6, display: 'block' } as React.CSSProperties,
   pageInfo: { fontSize: 11, color: '#9ca3af', marginBottom: 6, wordBreak: 'break-all', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' } as React.CSSProperties,
-  row: { display: 'flex', gap: 8, alignItems: 'center' } as React.CSSProperties,
+  row: { display: 'flex', gap: 8, alignItems: 'flex-start' } as React.CSSProperties,
   input: { width: '100%', border: '1px solid #d1d5db', borderRadius: 7, padding: '6px 9px', fontSize: 13, outline: 'none', boxSizing: 'border-box' } as React.CSSProperties,
 };

@@ -1,80 +1,94 @@
 # Midas Browser Extension — Design
 
-## Overview
+Reworked 2026-08-10 (see `docs/superpowers/specs/2026-08-10-extension-rework-design.md`).
+The extension has **two workflows**, and both now flow through a **drag-to-crop** step:
 
-The Midas browser extension has **two distinct workflows**. They differ in what they create in Midas and what happens next.
-
-| | Save Capture | Submit Expense |
+| | Save Capture | New Expense |
 |---|---|---|
-| What user does | One click | Click + fill form |
-| What gets created | `captures` row (status: `draft`) | `expenses` + `receipts` + `captures` rows |
-| Expense status | — | `pending` (enters accountant queue) |
-| Accountant review | Not triggered | Required |
-| Zoho sync | Never | Never (accountant does this after approval) |
-| Auto-approve | Never | Never |
-| Where it appears | Captures page | My Expenses + Accountant queue |
+| What user does | Click → crop → confirm | Click → crop → quick form |
+| What gets created | `captures` row (status: `draft`) | Draft expense + receipt via the standard wizard pipeline |
+| Expense status after submit | — | Decided by the **server**: `approved` (auto-push eligible) or `pending` |
+| Zoho sync | Never | Server-side auto-push may approve + push immediately (same rules as the web wizard) |
+| Where it appears | Captures page | My Expenses (+ Accountant queue when pending) |
+
+> The old invariant "the extension never approves / never calls Zoho" is
+> superseded: the extension still never *decides* anything — it drives the same
+> `POST /expenses/:id/submit` endpoint as the web wizard, and the **server**
+> applies the daily auto-push rules (complete staff-entered expenses for
+> Zoho-enabled companies are approved and pushed automatically; everything else
+> goes to the accountant queue).
+
+---
+
+## Capture + drag-to-crop flow
+
+Both popup actions start the same way:
+
+1. Popup sends `START_CAPTURE { intent }` to the service worker and closes.
+2. The service worker snapshots the visible tab (`chrome.tabs.captureVisibleTab`,
+   PNG, **physical pixels**), grabs any selected text, and parks the screenshot
+   in `chrome.storage.session` (`inflightCapture`).
+3. It messages the content script (`BEGIN_CROP`), which shows an overlay:
+   the page dims, the user drags a selection rectangle (crisp gold border +
+   live `W × H` dimensions label). **Mouse-up or Enter confirms** the crop;
+   **Esc or the floating "Use full tab" button** skips it. The screenshot was
+   taken *before* the overlay appeared, so the dimming never shows in the image.
+4. The content script reports the CSS-pixel rect (`CROP_DONE`); the worker
+   crops on an `OffscreenCanvas`, mapping CSS pixels → physical pixels by the
+   real bitmap-to-viewport ratio (i.e. `devicePixelRatio`, derived from the
+   actual image so zoomed pages stay accurate).
+5. The result is stored as `pendingCapture` in `chrome.storage.session` and the
+   popup is reopened (`chrome.action.openPopup()`, Chrome 127+; on older Chrome
+   a badge appears and the next popup open resumes the flow).
+
+On restricted pages (chrome://, Web Store, PDF viewer) where no content script
+can run, the crop step is skipped and the full-tab image is used.
 
 ---
 
 ## Workflow 1: Save Capture
 
-**Use case:** You see a receipt, invoice, or order confirmation online. You're not ready to submit an expense yet — you just want to save the evidence.
+Passive evidence collection — no expense created.
 
-**Flow:**
-1. User clicks extension icon → popup opens
-2. Clicks **"Save Capture"**
-3. Extension takes a screenshot of the visible tab
-4. Preview is shown with page title, URL, and any selected text
-5. User clicks **"Save Capture"** to confirm
-6. Background service worker `POST /api/v1/captures` with `imageDataUrl`, `pageUrl`, `pageTitle`, `selectedText`
-7. API creates a `captures` row with `status='draft'` and `source='extension'`
-8. Popup shows success; "Open in Midas" button links to `/captures`
-
-**Result in Midas:** Appears in Captures page → Unlinked tab. User can later link it to an expense manually from the Captures or ExpenseDetail pages, or discard it.
+1. Popup → **Save Capture** → crop flow above.
+2. Popup reopens with the cropped preview; user confirms.
+3. Service worker `POST /api/v1/captures` with `imageDataUrl`, `pageUrl`,
+   `pageTitle`, `selectedText` → `captures` row (`status='draft'`,
+   `source='extension'`).
+4. Appears on the Captures page → Unlinked tab; link or discard later.
 
 ---
 
-## Workflow 2: Submit Expense
+## Workflow 2: New Expense (wizard pipeline)
 
-**Use case:** You have a receipt open right now and want to submit an expense for accountant review immediately.
+The popup drives the **same session-cookie endpoints as the web wizard** —
+`POST /api/v1/extension/expenses` is no longer called (the API route remains
+for backward compatibility only).
 
-**Flow:**
-1. User clicks extension icon → popup opens
-2. Clicks **"Submit Expense"**
-3. Extension takes a screenshot
-4. Expense form appears with:
-   - Merchant (pre-filled from page title, editable)
-   - Amount *
-   - Date * (defaults to today)
-   - Currency (USD/EUR/GBP/CAD/MXN)
-   - Notes/description
-   - Reimbursement required (checkbox)
-5. User fills form and clicks **"Submit Expense"**
-6. Background service worker `POST /api/v1/extension/expenses` with screenshot + form data
-7. API atomically creates:
-   - `expenses` row: `status='pending'`, `source_app='browser_extension'`, `source_ref_id=pageUrl`
-   - `receipts` row linked to expense, OCR triggered in background
-   - `captures` row: `status='linked'`, linked to the expense
-   - `audit_logs` row: `action='expense_created_from_extension'`
-8. Popup shows success with expense ID and **"Open in Midas"** button → deep links to `/expenses/:id`
+1. Popup → **New Expense** → crop flow above.
+2. Popup reopens and runs the pipeline (each step has a retry affordance):
+   - `POST /expenses { draft: true }` → draft id.
+   - `POST /expenses/:id/receipts` (multipart `file`, the cropped PNG) —
+     synchronous OCR; `receipt.ocrData.fields` prefills merchant / amount /
+     date. If OCR yields nothing, the fields are empty and editable with a
+     small note.
+   - Reference data (best-effort; failures hide the affected select):
+     `GET /payment-methods`, `GET /companies`.
+3. Compact form: merchant, amount, date (all editable), payment method,
+   **Company** (auto-set from the selected card's `defaultZohoEntity` when it
+   matches a company), Zoho **expense category**
+   (`GET /zoho/expense-accounts?zohoEntity=…` — only shown when the selected
+   company is `zohoEnabled`; loading state; a load failure hides the select),
+   notes.
+4. `PATCH /expenses/:id` with the final fields, then `POST /expenses/:id/submit`.
+5. Outcome screen mirrors the server's decision:
+   - **"Approved — sent to accounting"** — `autoPushed: true`.
+   - **"Approved"** — approved without push.
+   - **"Submitted for review"** — `status: 'pending'`, accountant queue.
+   Each links to `{midasUrl}/expenses/{id}`.
 
-**Result in Midas:**
-- Expense is immediately in accountant's review queue (`pending`)
-- User sees it in My Expenses
-- Accountant reviews, can approve/reject/request info via normal workflow
-- OCR result attached to receipt automatically when done
-- Zoho push happens only after accountant explicitly triggers it
-
----
-
-## What the extension NEVER does
-
-- Approves expenses
-- Pushes to Zoho
-- Sets zohoEntity or zohoExpenseId
-- Creates expenses with `status='approved'` or `status='draft'` (always `'pending'`)
-- Bypasses audit logging
-- Stores auth tokens — uses the browser session cookie
+Auth errors at any step show "Not logged in to Midas" with a login link —
+the extension uses the browser's Midas session cookie, never its own tokens.
 
 ---
 
@@ -82,22 +96,74 @@ The Midas browser extension has **two distinct workflows**. They differ in what 
 
 ```
 Extension (Manifest V3)
-├── popup/App.tsx         React UI — two-action home, form, success/error screens
-├── background/           Service worker — all API calls go through here
-│   └── service-worker.ts TAKE_SCREENSHOT | SAVE_CAPTURE | SUBMIT_EXPENSE handlers
-├── content/capture.ts    Injected on all pages — responds to capture commands
-├── options/index.html    Settings page — configure midasUrl + midasApiUrl
+├── popup/App.tsx         React UI — home, crop-resume, quick-expense form, outcomes
+├── popup/api.ts          Credentialed fetch client for the wizard pipeline
+├── background/           Service worker — capture orchestration + Save Capture POST
+│   └── service-worker.ts START_CAPTURE | CROP_DONE | SAVE_CAPTURE handlers
+├── content/capture.ts    Drag-to-crop overlay (shadow DOM, injected on demand too)
+├── options/index.html    Settings — midasUrl + midasApiUrl
 └── shared/
-    ├── types.ts          Message types, payload interfaces
+    ├── types.ts          Message types, pending-capture contract, API shapes
     └── config.ts         chrome.storage.sync wrapper
 
 API endpoints used:
-  POST /api/v1/captures              ← Save Capture workflow
-  POST /api/v1/extension/expenses    ← Submit Expense workflow (new endpoint)
+  POST  /api/v1/captures                       ← Save Capture
+  POST  /api/v1/expenses { draft: true }       ← New Expense pipeline
+  POST  /api/v1/expenses/:id/receipts          ← cropped PNG, sync OCR
+  GET   /api/v1/payment-methods
+  GET   /api/v1/companies
+  GET   /api/v1/zoho/expense-accounts?zohoEntity=…
+  PATCH /api/v1/expenses/:id
+  POST  /api/v1/expenses/:id/submit            ← server decides approve/push/pending
 
-Auth: browser session cookie (httpOnly) — extension uses credentials:'include'
-CORS: API allows chrome-extension:// and moz-extension:// origins
+Auth: browser session cookie (httpOnly) — credentials:'include' everywhere.
+CORS: API allows chrome-extension:// and moz-extension:// origins.
+State handoff: chrome.storage.session ('inflightCapture' during crop,
+'pendingCapture' between popup sessions).
 ```
+
+### Messaging (MV3)
+
+The popup necessarily closes when the user clicks the page to crop, so the flow
+cannot be popup-driven end-to-end. The service worker owns the state machine:
+
+```
+popup ── START_CAPTURE ──▶ worker ── captureVisibleTab
+                             │  store inflightCapture (storage.session)
+                             ├── BEGIN_CROP ──▶ content overlay
+                             ◀── CROP_DONE (rect | null) ──┘
+                             │  crop (OffscreenCanvas)
+                             │  store pendingCapture, clear inflight
+                             └── action.openPopup() ──▶ popup resumes
+```
+
+---
+
+## Options page
+
+Two fields (`extension/src/options/index.html`):
+
+| Field | Meaning | Local dev | Production |
+|-------|---------|-----------|------------|
+| **Web UI URL** (`midasUrl`) | Address of the Midas web app; used for "Open in Midas" links | `http://localhost:5173` | `https://midas.booute.duckdns.org` |
+| **API URL** (`midasApiUrl`) | API **origin only** — the extension appends `/api/v1/…` itself | `http://localhost:4000` | `https://midas.booute.duckdns.org` |
+
+In production both values are the same domain because nginx proxies `/api/` to
+the API container. Do **not** include an `/api` suffix in the API URL.
+
+---
+
+## Distribution
+
+- `npm run package` (in `extension/`) builds `dist/` — including copying
+  `manifest.json` and `icons/` — and zips it to
+  `apps/web/public/midas-extension.zip`, a **committed artifact** served by the
+  web app at `/midas-extension.zip`.
+- The web app's **`/get-extension`** page (any authenticated user; linked from
+  the Captures header and the sidebar under Captures) has the download button
+  and numbered Chrome/Edge install steps, including the options values above
+  and the "log into Midas in this browser first" step.
+- Firefox is not supported yet; Chrome Web Store publishing is out of scope.
 
 ---
 
@@ -106,141 +172,30 @@ CORS: API allows chrome-extension:// and moz-extension:// origins
 ```bash
 cd extension
 npm install
-npm run build       # outputs to extension/dist/
+npm run build       # dist/ — loadable via chrome://extensions → Load unpacked
+npm run package     # build + zip → apps/web/public/midas-extension.zip
 ```
 
-### Load in Chrome (dev)
-1. Open `chrome://extensions`
-2. Enable "Developer mode" (top right toggle)
-3. Click "Load unpacked"
-4. Select `extension/dist/`
-
-### Load in Firefox (dev)
-1. Open `about:debugging#/runtime/this-firefox`
-2. Click "Load Temporary Add-on"
-3. Select `extension/dist/manifest.json`
-Firefox note: manifest.json uses `background.service_worker` which requires Firefox 121+. Older Firefox needs `background.scripts` instead — toggle with `npm run build:firefox`.
-
----
-
-## Testing Locally (Step by Step)
-
-### Prerequisites
-- Docker running: `docker compose up --build`
-- Midas web app at http://localhost:5173
-- Midas API at http://localhost:4000
-- Extension loaded in Chrome (see above)
-
-### Setup
-1. Open http://localhost:5173 and log in as `user@midas.local` / `user123`
-2. Open extension options: right-click extension icon → "Options" (or click ⚙️ in popup)
-3. Set:
-   - Web UI URL: `http://localhost:5173`
-   - API URL: `http://localhost:4000`
-4. Click "Save Settings"
-
-### Test: Save Capture
-1. Navigate to any webpage (e.g. an Amazon order confirmation)
-2. Click the Midas extension icon
-3. Click **"Save Capture"**
-4. Review the screenshot preview
-5. Click **"Save Capture"** to confirm
-6. Expected: success screen + "Open in Midas" button
-7. Verify: open http://localhost:5173/captures — capture appears in "Unlinked" tab
-
-### Test: Submit Expense
-1. Navigate to any webpage with a price visible
-2. Select some text on the page (e.g. the price "£42.99") before clicking the extension
-3. Click the Midas extension icon
-4. Click **"Submit Expense"**
-5. Fill in: merchant, amount, date. Check "Reimbursement required" if needed
-6. Click **"Submit Expense"**
-7. Expected: success screen with expense ID and "Open in Midas" button
-8. Verify:
-   - http://localhost:5173/expenses — expense appears with status "Pending Review"
-   - Expense detail shows "📷 Browser extension" badge and source URL
-   - http://localhost:5173/captures — capture appears in "Linked to expense" tab
-   - http://localhost:4000/api/v1/accountant/queue — expense in accountant queue
-   - Audit log: action = `expense_created_from_extension`
-
-### Test: Auth error
-1. Log out of Midas in the browser
-2. Click the extension, try Save Capture or Submit Expense
-3. Expected: error screen "Not logged in to Midas" with "Log in to Midas" button
-
----
-
-## Capture Schema Note
-
-`captures.selected_text` was added in the revised schema. If running with an existing database, run `npm run db:push -w apps/api` to sync the new column.
-
-`expenses.source_type` was added in the hardening pass. Run `npm run db:push -w apps/api` to sync.
+Local testing: set Options to `http://localhost:5173` / `http://localhost:4000`,
+log in at `http://localhost:5173`, then exercise both flows. Verify:
+crop overlay appears and the cropped image (not the full tab, not the dim
+overlay) lands in the popup; New Expense shows OCR-prefilled fields; the
+outcome screen matches the server decision (check My Expenses / queue).
 
 ---
 
 ## Extension Permissions
 
-The `manifest.json` requests the following permissions. Each is necessary:
+| Permission | Why needed |
+|------------|-----------|
+| `activeTab` | Temporary access to the active tab on popup click |
+| `tabs` | `chrome.tabs.captureVisibleTab` from the service worker |
+| `scripting` | Selected-text read + on-demand content-script injection for the crop overlay |
+| `storage` | `chrome.storage.sync` (settings) + `chrome.storage.session` (capture handoff) |
+| `<all_urls>` (host) | User-configurable Midas host; credentialed background fetches need an explicit host permission |
 
-| Permission | Why needed | Could it be removed? |
-|------------|-----------|----------------------|
-| `activeTab` | Grants temporary access to the currently active tab when the user opens the popup | No — needed for scripting executeScript (selected text extraction) |
-| `tabs` | Required by `chrome.tabs.captureVisibleTab` in the **background service worker** — `activeTab` alone is per-gesture and doesn't persist to the service worker context | No |
-| `scripting` | `chrome.scripting.executeScript` to read `window.getSelection()` for selected text | No |
-| `storage` | `chrome.storage.sync` for persisting `midasUrl` / `midasApiUrl` settings | No |
-| `<all_urls>` (host permission) | The Midas API URL is user-configurable (defaults to `localhost:4000`), so the extension cannot know the host at build time. Credentialed fetch from a background service worker requires an explicit host permission — `activeTab` does not cover background requests. | Could be replaced with a user-granted `optional_host_permissions` flow in a future version |
-
-**`tabs` vs `activeTab`**: `activeTab` is granted on explicit user gesture (clicking the popup icon) and applies to the popup context. The background service worker, however, persists beyond the gesture. `chrome.tabs.captureVisibleTab` called from the service worker requires the `tabs` permission (or `activeTab` at the time of the gesture, but that window has closed). We call captureVisibleTab from the service worker to keep the popup thin and stateless.
-
-**Reducing `<all_urls>`**: A future improvement would declare `optional_host_permissions: ["*://*/*"]` and prompt the user to grant access to their specific Midas domain. This reduces the apparent permission footprint in the Chrome Web Store listing.
-
----
-
-## Screenshot Upload Strategy
-
-### Current approach (MVP)
-Screenshots are encoded as base64 data URLs in the JSON body. The API decodes them server-side. The JSON body limit is set to 20 MB to accommodate large screenshots.
-
-### Limitations
-- A 1920×1080 PNG screenshot can reach 2–8 MB uncompressed. Base64 encoding adds ~33% overhead.
-- Large payloads increase memory pressure on both the service worker and the API process.
-- The 15 MB buffer size check in the API rejects excessively large images before storage.
-
-### Future improvement: multipart or presigned URL upload
-When the extension is used at scale, replace the base64 approach with:
-
-**Option A — multipart/form-data**: The service worker converts the data URL to a `Blob` and sends it as a `FormData` field alongside the JSON metadata fields. The API uses `multer` (already a dependency) to receive the file. No base64 encoding overhead; suitable for most deployments.
-
-**Option B — presigned S3 URL**: Extension first calls `POST /api/v1/extension/upload-token` to get a short-lived presigned URL, uploads the PNG directly to S3 from the service worker, then sends only the S3 key in the expense submission body. Zero data passes through the API process.
-
-Option A is simpler and preferred unless storage is S3 (`STORAGE_MODE=s3`) and direct-upload latency matters.
-
----
-
-## Accountant Queue: Extension-Submitted Expenses
-
-The queue endpoint (`GET /api/v1/accountant/queue`) now includes a computed `flags` array on each expense:
-
-| Flag | Meaning |
-|------|---------|
-| `from_extension` | Expense was submitted via the browser extension (`sourceApp === 'browser_extension'`) |
-| `needs_category` | No category is assigned (`categoryId === null`) |
-
-Accountants should prioritise expenses with `needs_category` during review. The web UI can surface these as visual badges on queue cards. No schema change was required — flags are derived at query time.
-
----
-
-## Audit Trail
-
-Extension-submitted expenses produce three audit log entries:
-
-| Action | entityType | Notes |
-|--------|-----------|-------|
-| `expense_created_from_extension` | `expense` | Metadata: `pageUrl`, `pageTitle`, `hasSelectedText`, `captureId`, `receiptId` |
-| `receipt_attached_from_extension` | `receipt` | Metadata: `expenseId` |
-| `capture_linked_to_expense` | `capture` | Metadata: `expenseId`, `hasSelectedText` |
-
-**Base64 data is never stored in audit metadata.** Only stable identifiers and boolean flags.
+`<all_urls>` could become `optional_host_permissions` in a future version to
+shrink the permission footprint.
 
 ---
 
@@ -248,10 +203,8 @@ Extension-submitted expenses produce three audit log entries:
 
 | Feature | Notes |
 |---------|-------|
-| Full-page capture | `chrome.tabs.captureVisibleTab` only captures visible area. Full-page requires injecting a content script to stitch segments — complex, not needed for MVP |
-| Selected-area capture | Requires content script overlay UI — deferred |
-| Firefox-specific manifest variant | `npm run build:firefox` script exists but the manifest variant is not yet wired in `vite.config.ts` |
-| Extension icon assets | Placeholder paths in manifest — create 16/32/48/128px PNG icons in `extension/icons/` |
-| Payment method / card field | Design documented in `docs/PAYMENT_METHODS_DESIGN.md`. Schema migration and API routes are scoped separately |
-| `<all_urls>` → `optional_host_permissions` | Would reduce Chrome Web Store permission footprint. Requires a UX flow to prompt the user for access to their specific Midas domain |
-| Multipart screenshot upload | Base64 JSON works for MVP. See "Screenshot Upload Strategy" above for migration path when scale requires it |
+| Desktop capture app (Electron) | Future project — capture anything on screen, not just browser tabs |
+| Firefox support | Manifest variant exists (`build:firefox`) but is unwired and untested |
+| Chrome Web Store publishing | Distribution is via `/get-extension` for now |
+| Full-page (scrolling) capture | Visible area + crop covers the receipt use case |
+| `<all_urls>` → `optional_host_permissions` | Permission-footprint reduction |

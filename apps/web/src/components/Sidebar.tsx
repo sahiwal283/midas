@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, Briefcase, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, ReceiptText, Camera, ClipboardList, Settings, LogOut, CreditCard, Briefcase, BarChart3, Puzzle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
@@ -52,6 +52,10 @@ export function Sidebar() {
         <NavLink to="/captures" className={linkClass}>
           <Camera className="h-4 w-4" />
           Captures
+        </NavLink>
+        <NavLink to="/get-extension" className={linkClass}>
+          <Puzzle className="h-4 w-4" />
+          Get the Extension
         </NavLink>
 
         {isPartner && (

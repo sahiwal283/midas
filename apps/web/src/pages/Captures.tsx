@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Camera, ExternalLink, X, ReceiptText } from 'lucide-react';
+import { Camera, ExternalLink, X, ReceiptText, Puzzle } from 'lucide-react';
 import client from '../api/client';
 import type { Capture } from '../types';
 
@@ -39,13 +39,20 @@ export function Captures() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-start justify-between">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Captures</h1>
           <p className="mt-1 text-sm text-gray-500">
             Screenshots from the Midas browser extension. Unlinked captures are waiting to be turned into expenses.
           </p>
         </div>
+        <Link
+          to="/get-extension"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100"
+        >
+          <Puzzle className="h-3.5 w-3.5" />
+          Get the extension
+        </Link>
       </div>
 
       {/* Extension install hint */}
@@ -53,9 +60,9 @@ export function Captures() {
         <div className="flex items-start gap-3">
           <Camera className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" />
           <div className="text-sm text-brand-800">
-            <strong>Browser Extension:</strong> Install from <code className="rounded bg-brand-100 px-1">extension/</code> and load unpacked in Chrome. Two actions available:{' '}
-            <strong>Save Capture</strong> (passive screenshot) and{' '}
-            <strong>Submit Expense</strong> (screenshot + form → accountant queue).
+            <strong>Browser Extension:</strong> capture receipts from any webpage — crop them with a drag,
+            then <strong>Save Capture</strong> for later or file a <strong>New Expense</strong> with
+            OCR-prefilled details. <Link to="/get-extension" className="font-semibold underline hover:text-brand-900">Download &amp; install instructions</Link>.
           </div>
         </div>
       </div>

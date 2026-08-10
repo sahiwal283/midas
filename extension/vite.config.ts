@@ -5,8 +5,11 @@ import { resolve } from 'path';
 // Builds the extension into dist/ as a flat structure that Chrome/Firefox can load
 export default defineConfig({
   plugins: [react()],
+  // Root at src/ so popup/index.html and options/index.html land at
+  // dist/popup/… and dist/options/… exactly where manifest.json points.
+  root: 'src',
   build: {
-    outDir: 'dist',
+    outDir: '../dist',
     emptyOutDir: true,
     rollupOptions: {
       input: {
