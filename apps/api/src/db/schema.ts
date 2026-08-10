@@ -124,6 +124,20 @@ export const budgets = pgTable('budgets', {
   index('budgets_company_idx').on(t.companyName),
 ]);
 
+// ── Per-company Zoho COA account per category ─────────────────────────────────
+// Trade Show parity: each category maps to a different Zoho Books expense
+// account per sister company (expenses.zoho_entity stores the company NAME).
+
+export const categoryZohoAccounts = pgTable('category_zoho_accounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  categoryId: uuid('category_id').references(() => expenseCategories.id, { onDelete: 'cascade' }).notNull(),
+  companyName: text('company_name').references(() => companies.name, { onDelete: 'restrict', onUpdate: 'cascade' }).notNull(),
+  zohoAccountId: text('zoho_account_id').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('category_zoho_accounts_cat_company_idx').on(t.categoryId, t.companyName),
+]);
+
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
 export const expenses = pgTable('expenses', {

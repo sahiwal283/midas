@@ -46,6 +46,8 @@ export interface PayloadExpense {
   zohoEntity: string | null;
   zohoExpenseAccountId?: string | null;
   zohoExpenseAccountName?: string | null;
+  /** category_zoho_accounts lookup for (category, zoho_entity) — resolved by caller. */
+  categoryEntityAccountId?: string | null;
   reimbursementStatus: string;
   userId: string | null;
   sourceApp?: string | null;
@@ -74,9 +76,10 @@ export function resolvePaidThroughAccountId(zohoAccountName: string | null | und
 }
 
 export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePayload {
-  // Prefer live per-expense Zoho COA pick; fall back to static category map (Trade Show).
+  // Resolution order: live per-expense COA pick → per-entity category map → legacy single-column map.
   const accountId =
     expense.zohoExpenseAccountId?.trim()
+    || expense.categoryEntityAccountId?.trim()
     || expense.category?.zohoAccountId?.trim()
     || null;
   const paidThrough = resolvePaidThroughAccountId(expense.paymentMethod?.zohoAccountName);
