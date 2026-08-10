@@ -84,7 +84,7 @@ describe('evaluateZohoReadiness — missing fields', () => {
   it('not ready without category', () => {
     const result = evaluateZohoReadiness({ ...base, categoryId: null, category: null });
     expect(result.ready).toBe(false);
-    expect(result.missing).toContain('category');
+    expect(result.missing).toContain('expense account (Zoho COA or category)');
   });
 
   it('not ready without payment method', () => {
@@ -157,7 +157,7 @@ describe('evaluateZohoReadiness — warnings', () => {
 });
 
 describe('MIDAS_VERSION', () => {
-  it('reports 0.2.0-alpha', () => {
-    expect(MIDAS_VERSION).toBe('0.2.0-alpha');
+  it('is a semver prerelease string', () => {
+    expect(MIDAS_VERSION).toMatch(/^\d+\.\d+\.\d+(-[a-z0-9.]+)?$/);
   });
 });

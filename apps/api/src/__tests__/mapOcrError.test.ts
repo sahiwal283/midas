@@ -5,7 +5,7 @@ import {
   OcrPipelineError,
   OcrServiceUnavailableError,
   OcrTimeoutError,
-} from '../lib/ocr';
+} from '@midas/ocr-client';
 import { mapOcrError } from '../lib/mapOcrError';
 
 describe('mapOcrError', () => {

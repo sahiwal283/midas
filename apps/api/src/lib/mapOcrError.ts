@@ -6,7 +6,7 @@ import {
   OcrPipelineError,
   OcrServiceUnavailableError,
   OcrTimeoutError,
-} from './ocr';
+} from '@midas/ocr-client';
 
 export type MappedOcrHttpError = {
   statusCode: number;

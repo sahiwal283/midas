@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.1-alpha (2026-08-10)
+
+### Fixed
+- Test suite fully green (307/307): `mapOcrError` no longer imports env-coupled modules in tests; stale readiness/version assertions updated.
+
 ## 0.16.0-alpha (2026-08-10)
 
 ### Platform hardening
