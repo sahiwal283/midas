@@ -4,6 +4,7 @@ import { ChevronRight, ChevronDown, AlertCircle } from 'lucide-react';
 import client from '../../api/client';
 import { companyApi } from '../../api/companies';
 import { expenseApi } from '../../api/expenses';
+import { SearchableSelect, type SearchableOption } from '../../components/SearchableSelect';
 import { useCollapsibleTree } from '../../lib/useCollapsibleTree';
 import { pathFromRoot } from '../../lib/categoryTree';
 import type { ExpenseCategory } from '../../types';
@@ -20,8 +21,6 @@ interface ZohoAccount {
   accountCode: string | null;
   accountType: string;
 }
-
-const selectCls = 'w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs focus:border-brand-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400';
 
 /**
  * Links each Midas expense category to an account from one company's live Zoho
@@ -94,6 +93,37 @@ export function ChartOfAccountsSection() {
   const { rows, toggle, expandAll, collapseAll } = useCollapsibleTree(categories);
   const accountName = (id: string) => accounts.find((a) => a.accountId === id)?.accountName ?? id;
 
+  /** Account ids already claimed by some OTHER category for this company. */
+  const claimedElsewhere = useMemo(() => {
+    const byAccount = new Map<string, string>();
+    for (const m of mappings) byAccount.set(m.zohoAccountId, m.categoryId);
+    return byAccount;
+  }, [mappings]);
+
+  /**
+   * One account maps to one category per company, so accounts already used
+   * elsewhere are hidden. The row's own mapping always stays selectable — as
+   * does a saved id Zoho no longer returns, so it never silently disappears.
+   */
+  const optionsFor = (categoryId: string, mapped: string): SearchableOption[] => {
+    const opts: SearchableOption[] = accounts
+      .filter((a) => {
+        const owner = claimedElsewhere.get(a.accountId);
+        return !owner || owner === categoryId;
+      })
+      .map((a) => ({
+        value: a.accountId,
+        label: a.accountName,
+        hint: a.accountCode ?? undefined,
+      }));
+    if (mapped && !opts.some((o) => o.value === mapped)) {
+      opts.unshift({ value: mapped, label: mapped, hint: 'not in current Zoho list' });
+    }
+    return opts;
+  };
+
+  const claimedCount = claimedElsewhere.size;
+
   /** Nearest mapped ancestor (excluding the category itself) — what it inherits. */
   const inheritedFrom = (categoryId: string): { name: string; accountId: string } | null => {
     const chain = pathFromRoot(categories, categoryId).slice(0, -1).reverse();
@@ -146,7 +176,9 @@ export function ChartOfAccountsSection() {
           ))}
         </select>
         <span className="text-xs text-gray-400">
-          {accountsLoading ? 'Loading Zoho accounts…' : `${accounts.length} Zoho accounts · ${mappedCount} mapped`}
+          {accountsLoading
+            ? 'Loading Zoho accounts…'
+            : `${accounts.length} Zoho accounts · ${mappedCount} mapped · ${Math.max(0, accounts.length - claimedCount)} still available`}
         </span>
         <div className="ml-auto flex items-center gap-3 text-xs">
           <button onClick={expandAll} className="text-brand-600 underline hover:text-brand-700">Expand all</button>
@@ -192,28 +224,16 @@ export function ChartOfAccountsSection() {
               </div>
 
               <div className="w-72">
-                <select
+                <SearchableSelect
+                  options={optionsFor(cat.id, mapped)}
                   value={mapped}
                   disabled={accountsFailed || accountsLoading}
-                  onChange={(e) => {
-                    if (e.target.value) setMutation.mutate({ categoryId: cat.id, zohoAccountId: e.target.value });
+                  placeholder={inherited ? `Inherited from ${inherited.name}` : 'Search accounts…'}
+                  onChange={(accountId) => {
+                    if (accountId) setMutation.mutate({ categoryId: cat.id, zohoAccountId: accountId });
                     else if (mapped) clearMutation.mutate(cat.id);
                   }}
-                  className={selectCls}
-                >
-                  <option value="">
-                    {inherited ? `Inherited from ${inherited.name}` : '— not mapped —'}
-                  </option>
-                  {accounts.map((a) => (
-                    <option key={a.accountId} value={a.accountId}>
-                      {a.accountName}{a.accountCode ? ` (${a.accountCode})` : ''}
-                    </option>
-                  ))}
-                  {/* Keep a saved id selectable even if Zoho no longer lists it. */}
-                  {mapped && !accounts.some((a) => a.accountId === mapped) && (
-                    <option value={mapped}>{mapped} (not in current Zoho list)</option>
-                  )}
-                </select>
+                />
               </div>
 
               <div className="flex w-40 items-center justify-end gap-2">
