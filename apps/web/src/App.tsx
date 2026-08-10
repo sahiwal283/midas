@@ -12,7 +12,6 @@ import { ExpenseNew } from './pages/ExpenseNew';
 import { ExpenseDetail } from './pages/ExpenseDetail';
 import { AccountantQueue } from './pages/AccountantQueue';
 import { AccountantReview } from './pages/AccountantReview';
-import { GetExtension } from './pages/GetExtension';
 import { ToUpload } from './pages/ToUpload';
 import { Admin } from './pages/Admin';
 import { PartnerExpenses } from './pages/PartnerExpenses';
@@ -52,7 +51,8 @@ export default function App() {
               <Route path="/transactions/:id" element={<PurchaseOrderDetail />} />
               <Route path="/expenses/new" element={<ExpenseNew />} />
               <Route path="/expenses/:id" element={<ExpenseDetail />} />
-              <Route path="/get-extension" element={<GetExtension />} />
+              {/* Setup now lives in a first-run modal — keep old bookmarks alive. */}
+              <Route path="/get-extension" element={<Navigate to="/dashboard" replace />} />
               <Route path="/to-upload" element={<ToUpload />} />
 
               <Route

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { accountApi } from '../../api/account';
 import { useAuth } from '../../contexts/AuthContext';
+import { reopenExtensionSetup } from '../../components/ExtensionSetupModal';
 
 const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none';
 
@@ -187,6 +188,20 @@ export function MyAccountSection() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Browser extension card — desktop only, like the setup modal itself. */}
+      <div className="hidden rounded-xl border border-gray-200 bg-white p-5 lg:block">
+        <h2 className="mb-1 text-sm font-semibold text-gray-700">Browser extension</h2>
+        <p className="mb-3 text-xs text-gray-500">
+          Capture receipts from any webpage with the Midas Capture extension for Chrome and Edge.
+        </p>
+        <button
+          onClick={reopenExtensionSetup}
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Show setup instructions
+        </button>
       </div>
     </div>
   );

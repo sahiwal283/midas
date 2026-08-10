@@ -3,6 +3,7 @@ import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
 import { UploadRetryBanner } from './UploadRetryBanner';
 import { NotificationBell } from './NotificationBell';
+import { ExtensionSetupModal } from './ExtensionSetupModal';
 
 export function Layout() {
   return (
@@ -18,6 +19,7 @@ export function Layout() {
         <Outlet />
       </main>
       <MobileNav />
+      <ExtensionSetupModal />
     </div>
   );
 }

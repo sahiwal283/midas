@@ -17,6 +17,7 @@ export default defineConfig({
         options: resolve(__dirname, 'src/options/index.html'),
         background: resolve(__dirname, 'src/background/service-worker.ts'),
         content: resolve(__dirname, 'src/content/capture.ts'),
+        presence: resolve(__dirname, 'src/content/presence.ts'),
       },
       output: {
         entryFileNames: '[name]/[name].js',

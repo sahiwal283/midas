@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, ClipboardList, Settings, LogOut, Briefcase,
-  BarChart3, Puzzle, Activity, FileSpreadsheet, PlusCircle, Upload, Banknote,
+  BarChart3, Activity, FileSpreadsheet, PlusCircle, Upload, Banknote,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
@@ -68,10 +68,6 @@ export function Sidebar() {
           <NavLink to="/to-upload" className={linkClass}>
             <Upload className="h-4 w-4" />
             To Upload
-          </NavLink>
-          <NavLink to="/get-extension" className={linkClass}>
-            <Puzzle className="h-4 w-4" />
-            Get Extension
           </NavLink>
         </div>
 

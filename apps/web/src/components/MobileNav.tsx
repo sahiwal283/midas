@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, Camera, X, ClipboardList, BarChart3,
-  Briefcase, Settings, LogOut, Puzzle, Upload, FileSpreadsheet, Activity, Banknote,
+  Briefcase, Settings, LogOut, Upload, FileSpreadsheet, Activity, Banknote,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -30,7 +30,6 @@ export function MobileNav() {
             onClick={(e) => e.stopPropagation()}
           >
             <SheetLink to="/to-upload" icon={<Upload className="h-4 w-4" />} label="To Upload" onNavigate={() => setMoreOpen(false)} />
-            <SheetLink to="/get-extension" icon={<Puzzle className="h-4 w-4" />} label="Get Extension" onNavigate={() => setMoreOpen(false)} />
             {isPartner && (
               <SheetLink to="/partner-expenses" icon={<Briefcase className="h-4 w-4" />} label="Partner Expenses" onNavigate={() => setMoreOpen(false)} />
             )}

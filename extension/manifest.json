@@ -22,6 +22,12 @@
       "js": ["content/content.js"],
       "run_at": "document_idle",
       "all_frames": false
+    },
+    {
+      "matches": ["https://midas.booute.duckdns.org/*", "http://localhost:5173/*"],
+      "js": ["presence/presence.js"],
+      "run_at": "document_start",
+      "all_frames": false
     }
   ],
   "action": {
