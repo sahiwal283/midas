@@ -20,10 +20,12 @@ import extensionRouter from './routes/extensionExpenses';
 import paymentMethodsRouter from './routes/paymentMethods';
 import partnerExpensesRouter from './routes/partnerExpenses';
 import reportsRouter from './routes/reports';
+import budgetsRouter from './routes/budgets';
 import companiesRouter from './routes/companies';
 import metaRouter from './routes/meta';
 import notificationsRouter from './routes/notifications';
 import oidcAuthRouter from './routes/oidcAuth';
+import transactionsRouter from './routes/transactions';
 import zohoRouter from './routes/zoho';
 import zohoServiceRouter from './routes/zohoService';
 
@@ -32,15 +34,20 @@ const app = express();
 // ── Security ──────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-// Allow the configured web origin AND browser extension origins (chrome-extension:// / moz-extension://).
-// Extension origins cannot be enumerated ahead of time (ID changes per install), so we allow
-// the scheme prefix. This is acceptable because the extension still requires a valid session cookie.
+// Allow the configured web origin AND browser extension origins.
+// When EXTENSION_ORIGIN_ALLOWLIST is set, only those extension origins are accepted.
+// When empty, any chrome-extension:// / moz-extension:// origin is allowed (LAN/beta).
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true); // same-origin / curl
     if (origin === env.CORS_ORIGIN) return callback(null, true);
-    if (origin.startsWith('chrome-extension://') || origin.startsWith('moz-extension://')) {
-      return callback(null, true);
+    const isExt = origin.startsWith('chrome-extension://') || origin.startsWith('moz-extension://');
+    if (isExt) {
+      const allow = env.EXTENSION_ORIGIN_ALLOWLIST;
+      if (allow.length === 0 || allow.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS: extension origin ${origin} not in EXTENSION_ORIGIN_ALLOWLIST`));
     }
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
@@ -71,6 +78,7 @@ app.use('/api/v1/health', healthRouter);
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/auth', oidcAuthRouter);
 app.use('/api/v1/expenses', expensesRouter);
+app.use('/api/v1/transactions', transactionsRouter);
 app.use('/api/v1/expenses/:expenseId/receipts', receiptsRouter);
 app.use('/api/v1/expenses/:expenseId/messages', messagesRouter);
 app.use('/api/v1/captures', capturesRouter);
@@ -82,6 +90,7 @@ app.use('/api/v1/extension', extensionRouter); // browser extension (session coo
 app.use('/api/v1/payment-methods', paymentMethodsRouter);
 app.use('/api/v1/partner-expenses', partnerExpensesRouter);
 app.use('/api/v1/reports', reportsRouter);
+app.use('/api/v1/budgets', budgetsRouter);
 app.use('/api/v1/companies', companiesRouter);
 app.use('/api/v1/expenses', zohoRouter);
 app.use('/api/v1/zoho', zohoServiceRouter);

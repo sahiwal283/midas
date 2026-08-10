@@ -6,12 +6,10 @@ import { NotificationBell } from './NotificationBell';
 
 export function Layout() {
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      {/* Desktop-only sidebar; phones get the bottom nav */}
+    <div className="flex h-screen overflow-hidden bg-cream">
       <div className="hidden lg:flex">
         <Sidebar />
       </div>
-      {/* Mobile-only notification bell, fixed top-right */}
       <div className="fixed right-2 top-2 z-30 lg:hidden">
         <NotificationBell align="right" direction="down" />
       </div>

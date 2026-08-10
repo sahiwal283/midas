@@ -10,6 +10,13 @@ const schema = z.object({
   COOKIE_SECURE: z.string().transform((v) => v === 'true').default('false'),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  /**
+   * Comma-separated extension origins or bare extension IDs allowed for credentialed CORS.
+   * Examples: `chrome-extension://abcdef...,moz-extension://...` or just `abcdef...`.
+   * Empty (default) = allow any chrome-extension:// / moz-extension:// origin (LAN/beta).
+   * Production should pin known IDs once the store/build ID is stable.
+   */
+  EXTENSION_ORIGIN_ALLOWLIST: z.string().default(''),
   // Absolute web base for Ext midasUrl links (accountants open these from Trade Show).
   // Falls back to CORS_ORIGIN when unset.
   MIDAS_WEB_BASE_URL: z.string().optional(),
@@ -143,6 +150,14 @@ export const env = {
   AUTHENTIK_GROUP_ADMIN: raw.AUTHENTIK_GROUP_ADMIN.split(',').map(s => s.trim()).filter(Boolean),
   AUTHENTIK_GROUP_ACCOUNTANT: raw.AUTHENTIK_GROUP_ACCOUNTANT.split(',').map(s => s.trim()).filter(Boolean),
   AUTHENTIK_GROUP_USER: raw.AUTHENTIK_GROUP_USER.split(',').map(s => s.trim()).filter(Boolean),
+  EXTENSION_ORIGIN_ALLOWLIST: raw.EXTENSION_ORIGIN_ALLOWLIST.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      if (entry.startsWith('chrome-extension://') || entry.startsWith('moz-extension://')) return entry;
+      // Bare ID → chrome-extension origin (most common).
+      return `chrome-extension://${entry}`;
+    }),
 };
 
 // Exported for unit testing only — do not use in application code.

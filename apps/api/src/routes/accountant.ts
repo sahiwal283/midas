@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { eq, and, or, inArray, desc, isNotNull, isNull, ilike, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users, closedPeriods } from '../db/schema';
+import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users, closedPeriods, transactions } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
@@ -14,6 +14,9 @@ import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { notifyUser } from '../lib/notify';
+import { syncExpenseToTransaction } from '../lib/syncExpenseTransaction';
+import { pushPurchaseOrderToZoho } from '../lib/zohoPoPush';
+import { assertActiveCompany } from '../lib/companies';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -45,15 +48,24 @@ const reimbursementSchema = z.object({
 
 type StatusValue = (typeof expenseStatusEnum.enumValues)[number];
 
-const QUEUE_STATUSES: StatusValue[] = ['pending', 'in_review', 'awaiting_info', 'zoho_sync_failed', 'approved'];
+const QUEUE_STATUSES: StatusValue[] = ['pending', 'in_review', 'awaiting_info', 'approved'];
 
 // ── Queue ─────────────────────────────────────────────────────────────────────
 
 router.get('/queue', asyncHandler(async (req, res) => {
   const f = parseQueueFilters(req.query as Record<string, string | undefined>);
-  const queueStatuses: StatusValue[] = f.status ? [f.status as StatusValue] : QUEUE_STATUSES;
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
+  const queueStatuses: StatusValue[] = f.status === 'zoho_sync_failed'
+    ? ['approved']
+    : f.status === 'needs_review'
+      ? ['pending', 'in_review']
+      : f.status && (expenseStatusEnum.enumValues as readonly string[]).includes(f.status)
+        ? [f.status as StatusValue]
+        : QUEUE_STATUSES;
 
   const conds = [inArray(expenses.status, queueStatuses)];
+  if (f.status === 'zoho_sync_failed') conds.push(eq(expenses.integrationStatus, 'failed'));
   if (f.userId) conds.push(eq(expenses.userId, f.userId));
   if (f.search) {
     conds.push(or(
@@ -70,16 +82,25 @@ router.get('/queue', asyncHandler(async (req, res) => {
   if (f.reimbursementStatus) conds.push(sql`${expenses.reimbursementStatus} = ${f.reimbursementStatus}`);
   if (f.company) conds.push(eq(expenses.zohoEntity, f.company));
   if (f.sourceApp) conds.push(eq(expenses.sourceApp, f.sourceApp));
-  if (f.zohoStatus === 'synced') conds.push(isNotNull(expenses.zohoExpenseId));
-  if (f.zohoStatus === 'not_synced') conds.push(isNull(expenses.zohoExpenseId));
-  if (f.zohoStatus === 'sync_failed') conds.push(eq(expenses.status, 'zoho_sync_failed'));
+  if (f.zohoStatus === 'synced') conds.push(eq(expenses.integrationStatus, 'synced'));
+  if (f.zohoStatus === 'not_synced') conds.push(sql`${expenses.integrationStatus} <> 'synced'`);
+  if (f.zohoStatus === 'sync_failed') conds.push(eq(expenses.integrationStatus, 'failed'));
   if (f.missingReceipt) conds.push(sql`not exists (select 1 from receipts r where r.expense_id = ${expenses.id})`);
   if (f.ocrNeedsReview) conds.push(sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id} and r.ocr_needs_review = true)`);
   if (f.missingCategory) conds.push(and(isNull(expenses.categoryId), isNull(expenses.zohoExpenseAccountId))!);
   if (f.missingPayment) conds.push(isNull(expenses.paymentMethodId));
+  if (f.transactionType === 'expense' || f.transactionType === 'purchase_order') {
+    if (f.transactionType === 'purchase_order') {
+      res.json({ expenses: [], page, pageSize, total: 0, totalPages: 0 });
+      return;
+    }
+  }
+
+  const where = and(...conds);
+  const [{ n: total }] = await db.select({ n: sql<number>`count(*)::int` }).from(expenses).where(where);
 
   const rows = await db.query.expenses.findMany({
-    where: and(...conds),
+    where,
     with: {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
@@ -88,13 +109,59 @@ router.get('/queue', asyncHandler(async (req, res) => {
       receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
     },
     orderBy: [desc(expenses.createdAt)],
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
   });
 
   const expensesWithFlags = rows.map((row) => {
     const flags = computeFlags(row);
-    return { ...row, flags, zohoReady: flags.includes('ready_for_zoho') };
+    const wireStatus = row.integrationStatus === 'failed' && row.status === 'approved'
+      ? 'zoho_sync_failed'
+      : row.status;
+    return { ...row, status: wireStatus, flags, zohoReady: flags.includes('ready_for_zoho') };
   });
-  res.json({ expenses: expensesWithFlags });
+  res.json({
+    expenses: expensesWithFlags,
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  });
+}));
+
+/** Purchase-order review queue (transaction type filter). */
+router.get('/purchase-orders', asyncHandler(async (_req, res) => {
+  const rows = await db.query.transactions.findMany({
+    where: and(
+      eq(transactions.type, 'purchase_order'),
+      inArray(transactions.status, ['submitted', 'in_review', 'awaiting_info', 'approved']),
+    ),
+    with: {
+      user: { columns: { id: true, name: true, email: true } },
+      purchaseOrder: true,
+      lineItems: true,
+    },
+    orderBy: [desc(transactions.createdAt)],
+  });
+  res.json({
+    purchaseOrders: rows.map((r) => ({
+      ...r,
+      lineItemCount: r.lineItems?.length ?? 0,
+      poNumber: r.purchaseOrder?.poNumber ?? null,
+    })),
+  });
+}));
+
+router.post('/purchase-orders/:id/zoho-push', asyncHandler(async (req, res) => {
+  const outcome = await pushPurchaseOrderToZoho(req.params.id, req.user!.id);
+  if (outcome.ok) {
+    res.json({ transaction: outcome.transaction, zoho: outcome.zoho });
+    return;
+  }
+  if (outcome.status === 409) throw createError(outcome.message, 409, outcome.code);
+  res.status(502).json({
+    error: { code: outcome.code, message: outcome.message, requestId: outcome.requestId },
+  });
 }));
 
 router.get('/queue/summary', asyncHandler(async (_req, res) => {
@@ -105,6 +172,7 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
     },
     columns: {
       status: true,
+      integrationStatus: true,
       categoryId: true,
       paymentMethodId: true,
       zohoEntity: true,
@@ -136,7 +204,10 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
   const reimbursementEmployeeIds = new Set<string>();
 
   for (const row of rows) {
-    counts[row.status] = (counts[row.status] ?? 0) + 1;
+    const wireStatus = row.integrationStatus === 'failed' && row.status === 'approved'
+      ? 'zoho_sync_failed'
+      : row.status;
+    counts[wireStatus] = (counts[wireStatus] ?? 0) + 1;
     const flags = computeFlags(row as Parameters<typeof computeFlags>[0]);
     for (const flag of flags) {
       if (flag in counts) counts[flag]++;
@@ -215,8 +286,17 @@ router.post('/expenses/bulk-review', asyncHandler(async (req, res) => {
     if (next) reimbursementStatus = next as typeof expense.reimbursementStatus;
 
     await db.update(expenses)
-      .set({ status: 'approved', reviewedById: req.user!.id, reviewedAt: now, reimbursementStatus, updatedAt: now })
+      .set({
+        status: 'approved',
+        integrationStatus: expense.zohoEntity ? 'pending' : 'not_required',
+        reviewedById: req.user!.id,
+        reviewedAt: now,
+        reimbursementStatus,
+        updatedAt: now,
+      })
       .where(eq(expenses.id, id));
+    const after = await db.query.expenses.findFirst({ where: eq(expenses.id, id) });
+    if (after) await syncExpenseToTransaction(after);
     await auditLog({
       entityType: 'expense',
       entityId: id,
@@ -264,9 +344,12 @@ router.post('/zoho/bulk-push', asyncHandler(async (req, res) => {
       failed.push({ id, code: 'NOT_FOUND', message: 'Expense not found' });
       continue;
     }
-    if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') {
-      failed.push({ id, code: 'CONFLICT', message: `Not pushable from status '${expense.status}'` });
-      continue;
+    if (expense.status !== 'approved' || (expense.integrationStatus !== 'pending' && expense.integrationStatus !== 'failed' && expense.integrationStatus !== 'queued')) {
+      // Allow legacy rows still on zoho_sync_failed status if any remain
+      if (expense.status !== 'zoho_sync_failed' && expense.integrationStatus !== 'failed') {
+        failed.push({ id, code: 'CONFLICT', message: `Not pushable from status '${expense.status}' / integration '${expense.integrationStatus}'` });
+        continue;
+      }
     }
     const outcome = await pushExpenseToZoho(expense, req.user!.id);
     if (outcome.ok) pushed.push(id);
@@ -318,6 +401,9 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
   const [updated] = await db.update(expenses)
     .set({
       status: newStatus,
+      integrationStatus: action === 'approve'
+        ? ((('zohoEntity' in parsed && parsed.zohoEntity) || expense.zohoEntity) ? 'pending' : 'not_required')
+        : expense.integrationStatus,
       reviewedById: req.user!.id,
       reviewedAt: now,
       reimbursementStatus,
@@ -327,6 +413,8 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
     })
     .where(eq(expenses.id, req.params.id))
     .returning();
+
+  await syncExpenseToTransaction(updated);
 
   if (action === 'request_info') {
     await db.insert(expenseMessages).values({
@@ -478,7 +566,11 @@ router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
   });
   if (!expense) throw notFound('Expense not found');
 
-  if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') {
+  if (
+    expense.status !== 'approved'
+    && expense.status !== 'zoho_sync_failed'
+    && expense.integrationStatus !== 'failed'
+  ) {
     throw createError('Only approved or sync-failed expenses can be pushed to Zoho', 409, 'CONFLICT');
   }
   const outcome = await pushExpenseToZoho(expense, req.user!.id);
@@ -589,7 +681,9 @@ router.get('/expenses/:id/audit', asyncHandler(async (req, res) => {
 // ── Set Zoho entity on an approved expense ────────────────────────────────────
 
 router.patch('/expenses/:id/zoho-entity', asyncHandler(async (req, res) => {
-  const { zohoEntity } = z.object({ zohoEntity: z.string().min(1) }).parse(req.body);
+  const raw = z.object({ zohoEntity: z.string().min(1) }).parse(req.body);
+  const zohoEntity = await assertActiveCompany(raw.zohoEntity);
+  if (!zohoEntity) throw createError('zohoEntity is required', 400, 'MISSING_ZOHO_ENTITY');
   const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
   if (!expense) throw notFound('Expense not found');
 
@@ -598,6 +692,7 @@ router.patch('/expenses/:id/zoho-entity', asyncHandler(async (req, res) => {
     .where(eq(expenses.id, req.params.id))
     .returning();
 
+  await syncExpenseToTransaction(updated!);
   await auditLog({
     entityType: 'expense',
     entityId: expense.id,

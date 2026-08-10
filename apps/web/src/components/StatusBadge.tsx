@@ -12,6 +12,7 @@ const ACCOUNTANT_LABELS: Record<ExpenseStatus, string> = {
   approved: 'Approved',
   zoho_sync_failed: 'Approved',
   rejected: 'Rejected',
+  cancelled: 'Cancelled',
 };
 
 // User-facing labels (plain language). Exported for Dashboard etc.
@@ -20,9 +21,10 @@ export const USER_LABELS: Record<ExpenseStatus, string> = {
   pending: 'Pending approval',
   in_review: 'Pending approval',
   awaiting_info: 'Needs further review',
-  approved: 'Approved',
-  zoho_sync_failed: 'Approved',
+  approved: 'Approved ✓',
+  zoho_sync_failed: 'Approved ✓',
   rejected: 'Rejected',
+  cancelled: 'Cancelled',
 };
 
 const STATUS_STYLES: Record<ExpenseStatus, string> = {
@@ -33,6 +35,7 @@ const STATUS_STYLES: Record<ExpenseStatus, string> = {
   approved: 'bg-green-100 text-green-800',
   zoho_sync_failed: 'bg-green-100 text-green-800',
   rejected: 'bg-red-100 text-red-800',
+  cancelled: 'bg-gray-100 text-gray-500',
 };
 
 const REIMB_STYLES: Record<ReimbursementStatus, string> = {
@@ -58,7 +61,7 @@ const REIMB_LABELS: Record<ReimbursementStatus, string> = {
  */
 export function userStatusLabel(status: ExpenseStatus, zohoExpenseId?: string | null): string {
   if ((status === 'approved' || status === 'zoho_sync_failed') && zohoExpenseId) {
-    return 'Accounting complete';
+    return 'Accounting complete ✓';
   }
   return USER_LABELS[status] ?? status;
 }

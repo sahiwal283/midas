@@ -37,7 +37,7 @@ function ReceiptPane({ expense }: { expense: Expense }) {
   const others = receipts.filter((r) => r.id !== primary.id);
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div className="rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
       <ReceiptView expenseId={expense.id} receipt={primary} />
       {others.length > 0 && (
         <div className="mt-3 border-t border-gray-100 pt-3">
@@ -282,8 +282,8 @@ export function AccountantReview() {
     messageMutation.mutate(reply.trim());
   }
 
-  if (isLoading) return <div className="p-8 text-gray-400">Loading…</div>;
-  if (!expense) return <div className="p-8 text-red-600">Expense not found</div>;
+  if (isLoading) return <div className="p-8 text-charcoal/40">Loading…</div>;
+  if (!expense) return <div className="p-8 text-danger">Expense not found</div>;
 
   const canReview =
     expense.status === 'pending' ||
@@ -293,13 +293,13 @@ export function AccountantReview() {
   return (
     <div>
       {/* Sticky header */}
-      <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-4 py-3 lg:px-8">
+      <div className="sticky top-0 z-10 border-b border-ink/10 bg-white/95 px-4 py-3 backdrop-blur lg:px-8">
         <div className="flex flex-wrap items-center gap-3">
-          <Link to="/accountant" className="rounded p-1 text-gray-400 hover:bg-gray-100" aria-label="Back to queue">
+          <Link to="/accountant" className="rounded p-1 text-charcoal/40 hover:bg-ink/[0.04]" aria-label="Back to queue">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <div className="flex min-w-0 flex-1 items-center gap-3 flex-wrap">
-            <h1 className="truncate text-lg font-bold text-gray-900">{expense.merchant}</h1>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+            <h1 className="truncate font-display text-xl font-semibold text-ink">{expense.merchant}</h1>
             <StatusBadge status={expense.status} variant="accountant" />
             <ZohoPushBadge
               zohoExpenseId={expense.zohoExpenseId}
@@ -308,7 +308,7 @@ export function AccountantReview() {
             {expense.reimbursementStatus !== 'not_requested' && (
               <ReimbursementBadge status={expense.reimbursementStatus} />
             )}
-            <span className="text-lg font-bold text-gray-900">
+            <span className="font-display text-lg font-semibold text-ink">
               {fmtMoney(Number(expense.amount || 0))}
             </span>
           </div>
@@ -316,7 +316,7 @@ export function AccountantReview() {
             <button
               onClick={() => reviewMutation.mutate({ action: 'approve' })}
               disabled={!canReview || reviewMutation.isPending}
-              className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg bg-success px-3.5 py-2 text-sm font-semibold text-cream hover:opacity-90 disabled:opacity-40"
             >
               <CheckCircle2 className="h-4 w-4" />
               Approve
@@ -324,7 +324,7 @@ export function AccountantReview() {
             <button
               onClick={() => reviewMutation.mutate({ action: 'reject' })}
               disabled={!canReview || reviewMutation.isPending}
-              className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg bg-danger px-3.5 py-2 text-sm font-semibold text-cream hover:opacity-90 disabled:opacity-40"
             >
               <XCircle className="h-4 w-4" />
               Reject
@@ -332,7 +332,7 @@ export function AccountantReview() {
             <button
               onClick={() => setShowAskForm((v) => !v)}
               disabled={!canReview || reviewMutation.isPending}
-              className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3.5 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-500/15 disabled:opacity-40"
             >
               <MessageCircleQuestion className="h-4 w-4" />
               Ask

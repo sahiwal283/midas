@@ -31,9 +31,52 @@ See `docs/AUTHENTIK_SETUP.md` for full details.
 ### Known gaps
 - **No HTTPS yet**: `COOKIE_SECURE=false` — the JWT cookie is transmitted in plaintext over HTTP. Acceptable on a closed LAN; must flip to `true` before any external access.
 - **No token refresh**: Long-lived tokens (8h). No refresh token mechanism.
+
+### Session policy (cookie JWT)
+
+| Setting | Guidance |
+|---------|----------|
+| Cookie | httpOnly; Prefer `SameSite=Lax` (or `None`+Secure for cross-site embeds) |
+| Lifetime | `JWT_EXPIRES_IN` default **8h** — no refresh; re-auth after expiry |
+| Secure flag | `COOKIE_SECURE=false` on plain HTTP LAN; **`true` on HTTPS production** |
+| Storage | Never put the JWT in localStorage / sessionStorage |
+| Logout | Clears cookie server-side; client treats 401 as session ended |
+
+Extension and web UI share the same browser session cookie. Users must be logged into Midas in the same browser profile before the extension can call credentialed APIs.
+
+### CORS note (extension)
+
+The API allows `chrome-extension://` and `moz-extension://` origins (see `apps/api/src/server.ts`) so the extension service worker can make credentialed `fetch` calls.
+
+- **Default (empty `EXTENSION_ORIGIN_ALLOWLIST`)**: any extension origin is accepted — fine for LAN/beta with unpacked builds whose IDs change.
+- **Production**: set `EXTENSION_ORIGIN_ALLOWLIST` to comma-separated full origins (`chrome-extension://…`) or bare Chrome extension IDs. When set, only listed origins pass CORS.
+
 - **HS256 token signing**: The Midas Authentik provider uses HMAC-SHA256 (client secret as key) because no certificate keypair is assigned. Upgrade path: assign an RSA certificate in Authentik admin UI → provider switches to RS256 automatically. Midas code handles both.
 - **In-memory OIDC state store**: PKCE state is held in-memory; API restart invalidates in-flight OIDC sessions. Single-instance only.
 - **Client secret rotation recommended**: The `AUTHENTIK_CLIENT_SECRET` (prefix `L4Dq`) appeared in session transcripts. Rotate via Authentik admin UI → Providers → Midas → Edit → regenerate, then update CT 3120 `.env` and run `docker compose up -d api`.
+
+### History scan (2026-08-10)
+
+Git history search for `AUTHENTIK_CLIENT_SECRET`, `JWT_SECRET`, `ZOHO_SERVICE_TOKEN`, and password/API key patterns found documentation references (prefix `L4Dq` in `docs/SECURITY.md` / `docs/MIDAS_AUTHENTIK_APP_SIDE_DEBUG_REPORT.md`) but **no full secret values committed** in the current tree. Treat the Authentik client secret as compromised anyway and rotate before any external exposure. Do not paste live secrets into docs or agent transcripts.
+
+### Session policy (cookie JWT)
+
+| Setting | Guidance |
+|---------|----------|
+| Cookie | httpOnly, `SameSite=Lax` (or `None`+Secure when cross-site embedders need it) |
+| Lifetime | `JWT_EXPIRES_IN` default **8h** — no refresh token; user re-auths after expiry |
+| Secure flag | `COOKIE_SECURE=false` on plain HTTP LAN; **`true` in production HTTPS** |
+| Storage | Never put the JWT in localStorage / sessionStorage |
+| Logout | Clears cookie server-side; client should treat 401 as “session ended” |
+
+Extension and web UI share the same browser session cookie. Users must be logged into Midas in the same browser profile before the extension can call credentialed APIs.
+
+### CORS note (extension)
+
+The API allows `chrome-extension://` and `moz-extension://` origins (see `apps/api/src/server.ts`) so the extension service worker can make credentialed `fetch` calls.
+
+- **Default (empty `EXTENSION_ORIGIN_ALLOWLIST`)**: any extension origin is accepted — fine for LAN/beta with unpacked builds whose IDs change.
+- **Production**: set `EXTENSION_ORIGIN_ALLOWLIST` to comma-separated full origins (`chrome-extension://…`) or bare Chrome extension IDs. When set, only listed origins pass CORS.
 
 ---
 

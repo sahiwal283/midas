@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { and, count, eq, gte, inArray, isNull, lte, ne, not, or, sql, sum } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseCategories, paymentMethods, users } from '../db/schema';
+import { budgets, expenses, expenseCategories, paymentMethods, users, transactions } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, createError } from '../middleware/error';
 import { granularityFor, periodKey, fillPeriods } from '../lib/reportBuckets';
@@ -58,6 +58,12 @@ router.get('/summary', asyncHandler(async (req, res) => {
   const byEntity = await db.select({ name: expenses.zohoEntity, spend: sum(expenses.amount), n: count() })
     .from(expenses).where(scope).groupBy(expenses.zohoEntity);
 
+  const bySourceAppRows = await db.select({
+    name: expenses.sourceApp,
+    spend: sum(expenses.amount),
+    n: count(),
+  }).from(expenses).where(scope).groupBy(expenses.sourceApp);
+
   const byPm = await db.select({ name: paymentMethods.label, spend: sum(expenses.amount), n: count() })
     .from(expenses).leftJoin(paymentMethods, eq(expenses.paymentMethodId, paymentMethods.id))
     .where(scope).groupBy(paymentMethods.label);
@@ -104,12 +110,113 @@ router.get('/summary', asyncHandler(async (req, res) => {
 
   const spendTotal = num(totalsRow?.spend);
   const n = Number(totalsRow?.n ?? 0);
+
+  // Expense vs PO split from the unified transactions table (same date window).
+  const txScope = and(
+    not(inArray(transactions.status, ['draft', 'rejected', 'cancelled'])),
+    gte(transactions.transactionDate, from),
+    lte(transactions.transactionDate, to),
+    ...(entity ? [eq(transactions.zohoEntity, entity)] : []),
+  );
+  const byTxType = await db.select({
+    type: transactions.type,
+    spend: sum(transactions.total),
+    n: count(),
+  }).from(transactions).where(txScope).groupBy(transactions.type);
+
+  const [opsPending] = await db.select({ n: count() }).from(expenses)
+    .where(inArray(expenses.status, ['pending', 'in_review']));
+  const [opsAwaiting] = await db.select({ n: count() }).from(expenses)
+    .where(eq(expenses.status, 'awaiting_info'));
+  const [opsZohoFailed] = await db.select({ n: count() }).from(expenses)
+    .where(and(eq(expenses.status, 'approved'), eq(expenses.integrationStatus, 'failed')));
+  const [opsOcrReview] = await db.select({ n: count() }).from(expenses)
+    .where(sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id} and r.ocr_needs_review = true)`);
+  const [opsPoQueue] = await db.select({ n: count() }).from(transactions)
+    .where(and(
+      eq(transactions.type, 'purchase_order'),
+      inArray(transactions.status, ['submitted', 'in_review', 'awaiting_info', 'approved']),
+      sql`${transactions.integrationStatus} <> 'synced'`,
+    ));
+
+  // Budgets overlapping the report window (by calendar month of from/to).
+  const monthKeys: string[] = [];
+  {
+    const cursor = new Date(`${from}T00:00:00Z`);
+    const end = new Date(`${to}T00:00:00Z`);
+    while (cursor <= end) {
+      monthKeys.push(cursor.toISOString().slice(0, 7));
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+  }
+  const budgetRows = monthKeys.length
+    ? await db.query.budgets.findMany({
+      where: and(
+        inArray(budgets.period, monthKeys),
+        ...(entity ? [eq(budgets.companyName, entity)] : []),
+      ),
+      with: { category: { columns: { id: true, name: true } } },
+    })
+    : [];
+
+  const spendByEntity = new Map(byEntity.map((r) => [r.name ?? 'Unassigned', num(r.spend)]));
+  const budgetVsSpend = budgetRows.map((b) => {
+    const budgetAmt = num(b.amount);
+    // Category-scoped budgets compare to category spend when category set; else company total in window.
+    const spend = b.categoryId
+      ? null // filled below from byCategory join when names match company filter — keep company-level for MVP
+      : (spendByEntity.get(b.companyName) ?? 0);
+    return {
+      id: b.id,
+      companyName: b.companyName,
+      period: b.period,
+      budget: budgetAmt,
+      spend: spend ?? 0,
+      remaining: budgetAmt - (spend ?? 0),
+      categoryId: b.categoryId,
+      categoryName: b.category?.name ?? null,
+      notes: b.notes,
+    };
+  });
+
+  // For category budgets, attribute spend from byCategory only when a single company filter is set.
+  if (entity) {
+    const catSpend = new Map(byCategory.map((r) => [r.name ?? 'Uncategorized', num(r.spend)]));
+    for (const row of budgetVsSpend) {
+      if (row.categoryName) {
+        row.spend = catSpend.get(row.categoryName) ?? 0;
+        row.remaining = row.budget - row.spend;
+      }
+    }
+  }
+
   res.json({
     totals: { spend: spendTotal, count: n, avg: n > 0 ? spendTotal / n : 0, reimbursementPending: num(totalsRow?.reimb) },
+    byTransactionType: byTxType.map((r) => ({
+      type: r.type,
+      spend: num(r.spend),
+      count: Number(r.n),
+    })),
+    ops: {
+      pendingReview: Number(opsPending?.n ?? 0),
+      awaitingInfo: Number(opsAwaiting?.n ?? 0),
+      zohoFailed: Number(opsZohoFailed?.n ?? 0),
+      ocrNeedsReview: Number(opsOcrReview?.n ?? 0),
+      purchaseOrdersOpen: Number(opsPoQueue?.n ?? 0),
+    },
+    budgets: budgetVsSpend,
     granularity,
     byPeriod: fillPeriods(from, to, granularity, periodMap),
     byCategory: mapRows(byCategory, 'Uncategorized'),
     byEntity: mapRows(byEntity, 'Unassigned'),
+    bySourceApp: mapRows(
+      bySourceAppRows.map((r) => ({
+        name: r.name === 'browser_extension' ? 'Browser extension' : r.name,
+        spend: r.spend,
+        n: r.n,
+      })),
+      'Midas (manual)',
+    ),
     byPaymentMethod: mapRows(byPm, 'Unspecified'),
     topVendors,
     topUsers: mapRows(topUsers, 'Unknown'),

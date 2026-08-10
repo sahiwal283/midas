@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.20.1-alpha (2026-08-10)
+
+### Fixed
+- **Extension is now zero-config**: production URLs are the built-in defaults — install, sign in to Midas, done. Options page is dev-only override.
+- **Options Save actually saves**: the page used inline scripts, which Manifest V3 CSP silently blocks; moved to an external module.
+- Install instructions simplified (no configuration step); duplicate feature card fixed.
+
+## 0.27.0-alpha (2026-08-10)
+
+### Zoho polish + PO sync parity (Phase 8 / roadmap C)
+- **ZohoSyncCard**: works for expenses and POs (`recordKind`); branded; exported `ZohoErrorCategoryChip` / `parseSyncError`.
+- **PO detail**: shared sync card with Retry; privileged back-link to PO queue.
+- **Queues**: failed expense/PO rows show `[CATEGORY]` chips from `zohoSyncError`.
+- **Integration Health**: brand polish; live/cache source on catalog probes; **Refresh catalog** → `POST /transactions/meta/sync-catalog`.
+
+## 0.26.0-alpha (2026-08-10)
+
+### Accountant polish + PO bulk parity (Phase 7 / roadmap B)
+- **PO bulk approve**: `POST /transactions/bulk-review` + never-blind confirm (skip awaiting_info / missing lines / missing Zoho vendor or items).
+- **PO bulk Zoho push**: `POST /transactions/bulk-zoho-push` sequential push with result summary.
+- **PO queue UI**: multi-select, bulk actions bar, branded table.
+- **Brand polish**: accountant workspace header, split-screen review header/actions, PO queue cream/ink/gold.
+
+## 0.25.0-alpha (2026-08-10)
+
+### Employee capture polish (Phase 6 / roadmap A)
+- **Wizard**: cream/ink/gold restyle + step chrome (Choose → Details → Done); clearer OCR review panel.
+- **Home**: action-first subtitle and lanes; recent list uses employee status labels.
+- **Status**: employee badges show **Approved ✓** / **Accounting complete ✓**; detail passes `zohoExpenseId`.
+- **Copy**: employee-facing Entity → **Company**; upload-retry banner uses brand tokens.
+
+## 0.24.0-alpha (2026-08-10)
+
+### Launch hardening (Phase 5) + logo polish
+- **Logo**: solid two-plane geometric M mark (cream on gold plate); favicon/`logo.svg` aligned; wordmark stays title-case Fraunces.
+- **CORS**: `EXTENSION_ORIGIN_ALLOWLIST` pins chrome/moz extension origins when set; empty keeps LAN/beta wildcard (documented in `.env.example` + `docs/SECURITY.md`).
+- **Audit**: migration `0016_audit_immutable.sql` — DB triggers reject UPDATE/DELETE on `audit_logs`.
+- **Zoho catalog**: vendor/item list write-through to `vendors` / `zoho_items` with cache fallback; `POST /transactions/meta/sync-catalog`.
+- **Reports**: spend-by-source / event dimension (`bySourceApp`).
+- **Ops**: `npm run zoho:smoke -w @midas/api` (dry-run by default; `ZOHO_SMOKE_WRITE=1` for live create).
+
+## 0.23.0-alpha (2026-08-10)
+
+### Branding + UI redesign (Phase 4)
+- **Identity**: new geometric gold M mark, MIDAS wordmark, Fraunces + DM Sans, cream/ink/gold/success/danger tokens (`#C9A227` accent).
+- **Chrome**: login brand-first; sidebar/mobile IA (Add Transaction, To Upload, Reimbursements, accountant + admin groups).
+- **Surfaces**: cream canvas, denser headers on Dashboard / Expenses / Accountant / Reports / Settings; favicon updated.
+
+## 0.22.0-alpha (2026-08-10)
+
+### Phase 3 polish
+- **Budgets**: `budgets` table + `/api/v1/budgets` CRUD (admin write); Settings → Budgets; Reports budget-vs-spend.
+- **Vendor/item matching**: searchable combobox for Zoho vendors/items on PO create/detail.
+- **Provenance**: canonical `source_type` vocabulary (`manual`, `online_receipt`, `purchase_order`, …) with normalizer.
+- **Multi-company**: `zohoEntity` must match an active `companies` row (`UNKNOWN_COMPANY`).
+- **Branding**: Tailwind brand scale centered on Haute gold `#C9A227`.
+
+## 0.21.0-alpha (2026-08-10)
+
+### Transaction + purchase-order foundation (Phases 1–2)
+- **Domain model**: `transactions`, `purchase_orders`, `transaction_line_items`, `vendors`, `expense_details`; expenses dual-write into transactions; soft-cancel; `integrationStatus` split from workflow status.
+- **Zoho PO adapter**: live `POST /zoho/purchaseorders/create` with Books wire body; vendor/item list parsing; push requires Zoho vendor + item IDs; contract in `docs/ZOHO_PO_CONTRACT.md`.
+- **UI**: Add Transaction / New PO / PO detail & accountant PO queue; Integration Health page; OCR confidence warnings; accountant queue server pagination; reports ops KPIs + expense vs PO spend.
+
 ## 0.20.0-alpha (2026-08-10)
 
 ### Role-scoped Settings

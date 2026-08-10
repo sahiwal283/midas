@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle2, Clock, RefreshCw, XCircle, Send, FileX, Tag,
 import { accountantApi, expenseApi } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { StatusBadge, ZohoPushBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
+import { ZohoErrorCategoryChip } from '../components/ZohoSyncCard';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -78,7 +79,7 @@ const LANES: Record<LaneId, LaneDef> = {
     label: 'Zoho Failed',
     icon: <RefreshCw className="h-3.5 w-3.5" />,
     description: 'Zoho sync failed — needs retry.',
-    filter: (e) => e.status === 'zoho_sync_failed',
+    filter: (e) => e.status === 'zoho_sync_failed' || e.integrationStatus === 'failed',
   },
   reimbursement_pending: {
     label: 'Reimbursement',
@@ -168,6 +169,36 @@ function filtersToParams(f: QueueFilters): Record<string, string> {
   return params;
 }
 
+const PAGE_SIZE = 50;
+
+/** Map review lanes to server filters so pagination is meaningful. */
+function laneToServerParams(lane: LaneId): Record<string, string> {
+  switch (lane) {
+    case 'needs_review':
+      return { status: 'needs_review' };
+    case 'awaiting_user':
+      return { status: 'awaiting_info' };
+    case 'missing_receipt':
+      return { missingReceipt: 'true' };
+    case 'missing_category':
+      return { missingCategory: 'true' };
+    case 'missing_payment_method':
+      return { missingPayment: 'true' };
+    case 'zoho_failed':
+      return { status: 'zoho_sync_failed' };
+    case 'reimbursement_pending':
+      return { reimbursementStatus: 'pending' };
+    case 'missing_entity':
+    case 'ready_for_zoho':
+    case 'all':
+      return {};
+    default: {
+      const _exhaustive: never = lane;
+      return _exhaustive;
+    }
+  }
+}
+
 function fmtMoney(n: number): string {
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -190,6 +221,7 @@ export function AccountantQueue() {
     return fromUrl && fromUrl in LANES ? (fromUrl as LaneId) : 'needs_review';
   });
   const [quickViewId, setQuickViewId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   // Filter bar state (search input is debounced before hitting the server)
   const [filters, setFilters] = useState<QueueFilters>(() => {
@@ -204,17 +236,40 @@ export function AccountantQueue() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const queryParams = useMemo(() => filtersToParams(filters), [filters]);
-  const hasActiveFilters = Object.keys(queryParams).length > 0;
+  useEffect(() => {
+    setPage(1);
+  }, [activeLane, filters]);
+
+  const queryParams = useMemo(() => {
+    const base = { ...filtersToParams(filters), ...laneToServerParams(activeLane) };
+    if (activeLane === 'ready_for_zoho' || activeLane === 'missing_entity') {
+      // Flag-based lanes still filter client-side; pull a larger page.
+      base.page = '1';
+      base.pageSize = '200';
+    } else if (activeLane !== 'all') {
+      base.page = String(page);
+      base.pageSize = String(PAGE_SIZE);
+    }
+    return base;
+  }, [filters, activeLane, page]);
+  const hasActiveFilters = Object.keys(filtersToParams(filters)).length > 0;
 
   // Bulk selection + result toasts
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [toast, setToast] = useState<{ text: string; details?: string[] } | null>(null);
 
-  const { data: queue = [], isLoading: queueLoading } = useQuery({
+  const { data: queuePage, isLoading: queueLoading } = useQuery({
     queryKey: ['accountant-queue', queryParams],
     queryFn: () => accountantApi.queue(queryParams),
+    enabled: activeLane !== 'all',
+  });
+  const queue = queuePage?.expenses ?? [];
+
+  const { data: queueSummary } = useQuery({
+    queryKey: ['accountant-queue-summary'],
+    queryFn: () => accountantApi.queueSummary(),
+    staleTime: 30_000,
   });
 
   const { data: employees = [] } = useQuery({
@@ -349,20 +404,35 @@ export function AccountantQueue() {
     },
   });
 
-  // Derive lane counts from queue data (no extra requests)
-  const laneCounts: Partial<Record<LaneId, number>> = {};
+  // Lane counts from summary (accurate with pagination)
+  const counts = queueSummary?.counts ?? {};
+  const laneCounts: Partial<Record<LaneId, number>> = {
+    needs_review: (counts.pending ?? 0) + (counts.in_review ?? 0),
+    awaiting_user: counts.awaiting_info ?? 0,
+    missing_receipt: counts.missing_receipt ?? 0,
+    missing_category: counts.needs_category ?? 0,
+    missing_payment_method: counts.needs_payment_method ?? 0,
+    missing_entity: counts.needs_entity ?? 0,
+    ready_for_zoho: counts.ready_for_zoho ?? 0,
+    zoho_failed: counts.zoho_sync_failed ?? 0,
+    reimbursement_pending: counts.reimbursement_pending ?? 0,
+  };
   const sourceData = activeLane === 'all' ? allExpenses : queue;
-  for (const laneId of Object.keys(LANES) as LaneId[]) {
-    if (laneId === 'all') continue;
-    laneCounts[laneId] = queue.filter(LANES[laneId].filter).length;
-  }
-  const totalActive = queue.filter((e) => e.status !== 'approved' || (e.flags ?? []).includes('ready_for_zoho')).length;
+  const totalActive = (laneCounts.needs_review ?? 0)
+    + (laneCounts.awaiting_user ?? 0)
+    + (laneCounts.ready_for_zoho ?? 0)
+    + (laneCounts.zoho_failed ?? 0);
 
+  const serverFilteredLane = !['ready_for_zoho', 'missing_entity', 'all'].includes(activeLane);
   const displayData = activeLane === 'all'
     ? allExpenses
-    : queue.filter(LANES[activeLane].filter);
+    : serverFilteredLane
+      ? queue
+      : queue.filter(LANES[activeLane].filter);
 
   const isLoading = activeLane === 'all' ? allLoading : queueLoading;
+  const totalPages = activeLane === 'all' ? 1 : (queuePage?.totalPages ?? 1);
+  const totalRows = activeLane === 'all' ? allExpenses.length : (queuePage?.total ?? displayData.length);
 
   // Bulk selection — resolved against currently loaded rows
   const selectedRows = sourceData.filter((e) => selected.has(e.id));
@@ -391,7 +461,9 @@ export function AccountantQueue() {
   }
 
   // Ready-for-Zoho card — computed from currently loaded queue rows
-  const readyRows = queue.filter((e) => e.zohoReady);
+  const readyRows = activeLane === 'ready_for_zoho'
+    ? displayData.filter((e) => e.zohoReady)
+    : [];
   const readyTotal = readyRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   // Source app options for the filter — fixed set plus anything seen in the data
@@ -422,14 +494,24 @@ export function AccountantQueue() {
   const filterInputClass = 'rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none';
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Accountant Workspace</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {totalActive > 0
-            ? `${totalActive} item${totalActive !== 1 ? 's' : ''} need attention`
-            : 'All queues clear — nothing urgent.'}
-        </p>
+    <div className="p-4 lg:p-8">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl font-semibold text-ink">Accountant Workspace</h1>
+          <p className="mt-1 text-sm text-charcoal/55">
+            {totalActive > 0
+              ? `${totalActive} item${totalActive !== 1 ? 's' : ''} need attention`
+              : 'All queues clear — nothing urgent.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <Link to="/accountant/purchase-orders" className="rounded-lg border border-ink/10 bg-white px-3 py-1.5 font-medium text-ink shadow-panel hover:border-brand-500/40">
+            Purchase orders
+          </Link>
+          <Link to="/integration-health" className="rounded-lg border border-ink/10 bg-white px-3 py-1.5 font-medium text-ink shadow-panel hover:border-brand-500/40">
+            Integration health
+          </Link>
+        </div>
       </div>
 
       {/* Result toast */}
@@ -737,6 +819,32 @@ export function AccountantQueue() {
           </table>
         )}
       </div>
+
+      {activeLane !== 'all' && totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+          <p>
+            Page {page} of {totalPages} · {totalRows} total
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {quickViewId && (
         <ExpenseQuickViewModal
@@ -1082,6 +1190,7 @@ function ExpenseRow({
               zohoExpenseId={expense.zohoExpenseId}
               syncFailed={isZohoFailed}
             />
+            {isZohoFailed && <ZohoErrorCategoryChip error={expense.zohoSyncError} />}
             {needsReimb && <ReimbursementBadge status={expense.reimbursementStatus} />}
           </div>
         </td>

@@ -57,11 +57,11 @@ function Card({ title, children, className = '' }: { title?: string; children: R
   );
 }
 
-function KpiTile({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function KpiTile({ label, value, accent = false }: { label: string; value: string | number; accent?: boolean }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 ${accent ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'}`}>
-      <p className={`text-xs font-medium ${accent ? 'text-amber-800' : 'text-gray-500'}`}>{label}</p>
-      <p className={`mt-0.5 text-xl font-bold ${accent ? 'text-amber-900' : 'text-gray-900'}`}>{value}</p>
+    <div className={`rounded-xl border px-4 py-3 shadow-panel ${accent ? 'border-brand-500/30 bg-brand-500/5' : 'border-ink/10 bg-white'}`}>
+      <p className={`text-xs font-medium ${accent ? 'text-brand-800' : 'text-charcoal/50'}`}>{label}</p>
+      <p className={`mt-0.5 font-display text-xl font-semibold ${accent ? 'text-ink' : 'text-ink'}`}>{value}</p>
     </div>
   );
 }
@@ -139,6 +139,7 @@ export function Reports() {
 
   const categories = useMemo(() => foldRows(data?.byCategory ?? [], 7), [data]);
   const entities = useMemo(() => foldRows(data?.byEntity ?? [], 8), [data]);
+  const sourceApps = useMemo(() => foldRows(data?.bySourceApp ?? [], 8), [data]);
   const paymentMethods = useMemo(() => foldRows(data?.byPaymentMethod ?? [], 8), [data]);
   const entityOptions = useMemo(
     () => (data?.byEntity ?? []).map((e) => e.name).filter((n) => n !== 'Unassigned'),
@@ -161,7 +162,7 @@ export function Reports() {
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
+        <h1 className="font-display text-3xl font-semibold text-ink">Reports</h1>
         <p className="mt-1 text-sm text-gray-500">
           Company-wide spend, {range.from} to {range.to}{entity ? ` · ${entity}` : ''}{type ? ` · ${type === 'daily' ? 'Daily' : 'Event'} expenses` : ''}
         </p>
@@ -243,6 +244,63 @@ export function Reports() {
             <KpiTile label="Reimbursements pending" value={usd(data.totals.reimbursementPending)} accent={data.totals.reimbursementPending > 0} />
           </div>
 
+          {(data.byTransactionType?.length ?? 0) > 0 && (
+            <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {data.byTransactionType!.map((row) => (
+                <KpiTile
+                  key={row.type}
+                  label={row.type === 'purchase_order' ? 'Purchase orders' : 'Employee expenses'}
+                  value={`${usd(row.spend)} · ${row.count}`}
+                />
+              ))}
+            </div>
+          )}
+
+          {data.ops && (
+            <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <KpiTile label="Pending review" value={data.ops.pendingReview} />
+              <KpiTile label="Awaiting info" value={data.ops.awaitingInfo} />
+              <KpiTile label="Zoho failed" value={data.ops.zohoFailed} accent={data.ops.zohoFailed > 0} />
+              <KpiTile label="OCR needs review" value={data.ops.ocrNeedsReview} accent={data.ops.ocrNeedsReview > 0} />
+              <KpiTile label="Open POs" value={data.ops.purchaseOrdersOpen} />
+            </div>
+          )}
+
+          {(data.budgets?.length ?? 0) > 0 && (
+            <div className="mb-6">
+            <Card title="Budget vs spend">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b">
+                      <th className="py-2 pr-3">Company</th>
+                      <th className="py-2 pr-3">Period</th>
+                      <th className="py-2 pr-3">Category</th>
+                      <th className="py-2 pr-3 text-right">Budget</th>
+                      <th className="py-2 pr-3 text-right">Spend</th>
+                      <th className="py-2 text-right">Remaining</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {data.budgets!.map((b) => (
+                      <tr key={b.id}>
+                        <td className="py-2 pr-3">{b.companyName}</td>
+                        <td className="py-2 pr-3 text-gray-500">{b.period}</td>
+                        <td className="py-2 pr-3 text-gray-500">{b.categoryName ?? 'All'}</td>
+                        <td className="py-2 pr-3 text-right">{usd(b.budget)}</td>
+                        <td className="py-2 pr-3 text-right">{usd(b.spend)}</td>
+                        <td className={`py-2 text-right font-medium ${b.remaining < 0 ? 'text-red-700' : 'text-green-700'}`}>
+                          {usd(b.remaining)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+            </div>
+          )}
+
           {/* Spend over time */}
           <Card title={`Spend by ${data.granularity === 'week' ? 'week' : 'month'}`}>
             <ResponsiveContainer width="100%" height={280}>
@@ -301,12 +359,18 @@ export function Reports() {
             </Card>
           </div>
 
-          {/* Payment methods */}
-          <Card title="Spend by payment method">
-            {paymentMethods.length === 0
-              ? <p className="py-6 text-center text-sm text-gray-400">No data.</p>
-              : <BreakdownList rows={paymentMethods} />}
-          </Card>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card title="Spend by source / event">
+              {sourceApps.length === 0
+                ? <p className="py-6 text-center text-sm text-gray-400">No data.</p>
+                : <BreakdownList rows={sourceApps} />}
+            </Card>
+            <Card title="Spend by payment method">
+              {paymentMethods.length === 0
+                ? <p className="py-6 text-center text-sm text-gray-400">No data.</p>
+                : <BreakdownList rows={paymentMethods} />}
+            </Card>
+          </div>
 
           {/* Reimbursements */}
           <Card title="Reimbursements">

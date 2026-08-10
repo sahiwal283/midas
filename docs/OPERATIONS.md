@@ -156,11 +156,11 @@ ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compos
 ## Schema migrations
 
 ```bash
-# Apply schema changes (dev: push directly)
-pct exec 3120 -- docker compose -f /opt/midas/docker-compose.yml run --rm migrator
+# Preferred (Phase 1+): idempotent SQL runner — baselines pre-0014 if expenses exist
+pct exec 3120 -- docker compose -f /opt/midas/docker-compose.prod.yml run --rm migrator
 
-# The migrator runs: db:push --force && db:seed
-# db:seed is idempotent — only inserts missing categories/users
+# The migrator runs: db:migrate:sql && db:seed
+# Do NOT use db:push --force for transaction/PO schema changes.
 ```
 
 ---

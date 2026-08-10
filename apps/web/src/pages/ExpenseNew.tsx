@@ -10,7 +10,15 @@ import type { Receipt } from '../types';
 
 type WizardStep = 'choose' | 'form' | 'done';
 
-const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-3 lg:py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
+const inputCls = 'w-full rounded-lg border border-ink/15 bg-white px-3 py-3 lg:py-2 text-sm text-ink placeholder:text-charcoal/40 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
+
+function StepHint({ current, total, label }: { current: number; total: number; label: string }) {
+  return (
+    <p className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-charcoal/40">
+      Step {current} of {total} · {label}
+    </p>
+  );
+}
 
 export function ExpenseNew() {
   const navigate = useNavigate();
@@ -26,6 +34,8 @@ export function ExpenseNew() {
   const [ocrCategorySuggestion, setOcrCategorySuggestion] = useState<string | null>(null);
   // True when the current category selection came from the OCR suggestion.
   const [categoryAutoSuggested, setCategoryAutoSuggested] = useState(false);
+  /** Field keys with OCR confidence below 0.7 — shown as amber warnings on the form. */
+  const [lowConfidenceFields, setLowConfidenceFields] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -131,6 +141,18 @@ export function ExpenseNew() {
     const fields = r.ocrData?.fields;
     setOcrRan(true);
     setOcrCategorySuggestion(fields?.category?.value ?? null);
+    const low = new Set<string>();
+    const confThreshold = 0.7;
+    for (const key of ['merchant', 'amount', 'date'] as const) {
+      const conf = fields?.[key]?.confidence;
+      if (typeof conf === 'number' && conf < confThreshold) low.add(key);
+    }
+    if (r.ocrNeedsReview) {
+      low.add('merchant');
+      low.add('amount');
+      low.add('date');
+    }
+    setLowConfidenceFields(low);
     setForm((f) => ({
       ...f,
       merchant: fields?.merchant?.value ?? f.merchant,
@@ -275,12 +297,13 @@ export function ExpenseNew() {
   if (step === 'done' && result) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center p-4 lg:p-8">
-        <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-8 text-center">
-          <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
-          <h1 className="mt-4 text-xl font-bold text-gray-900">
+        <div className="w-full max-w-md rounded-2xl border border-ink/10 bg-white p-8 text-center shadow-panel">
+          <CheckCircle2 className="mx-auto h-12 w-12 text-success" />
+          <StepHint current={3} total={3} label="Done" />
+          <h1 className="mt-3 font-display text-2xl font-semibold text-ink">
             {result.pending ? 'Submitted for review' : 'Approved ✓'}
           </h1>
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-charcoal/55">
             {result.pending
               ? 'Your expense was submitted. The accountant will review it shortly.'
               : result.autoPushed
@@ -300,13 +323,13 @@ export function ExpenseNew() {
                 setResult(null);
                 setForm((f) => ({ ...f, merchant: '', amount: '', description: '', zohoExpenseAccountId: '', zohoExpenseAccountName: '' }));
               }}
-              className="rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+              className="rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-semibold text-cream hover:bg-brand-600"
             >
               Add another
             </button>
             <Link
               to="/expenses"
-              className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-lg border border-ink/15 px-5 py-2.5 text-sm font-medium text-ink hover:bg-ink/[0.03]"
             >
               My Expenses
             </Link>
@@ -321,49 +344,50 @@ export function ExpenseNew() {
     return (
       <div className="p-4 lg:p-8">
         <div className="mx-auto max-w-xl">
-          <h1 className="text-2xl font-bold text-gray-900">Add Expense</h1>
-          <p className="mt-1 text-sm text-gray-500">Start with the receipt — we'll read it for you.</p>
+          <h1 className="font-display text-3xl font-semibold text-ink">Add Expense</h1>
+          <StepHint current={1} total={3} label="Choose how to start" />
+          <p className="mt-2 text-sm text-charcoal/55">Start with the receipt — we&apos;ll read it for you.</p>
 
           <div className="mt-6 space-y-3">
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}
-              className="flex w-full items-center gap-4 rounded-xl border-2 border-brand-200 bg-brand-50 p-5 text-left hover:border-brand-400"
+              className="flex w-full items-center gap-4 rounded-xl border-2 border-brand-500/30 bg-brand-500/10 p-5 text-left hover:border-brand-500"
             >
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-500 text-cream">
                 <Camera className="h-6 w-6" />
               </span>
               <span>
-                <span className="block font-semibold text-gray-900">Scan receipt</span>
-                <span className="block text-sm text-gray-500">Take a photo with your camera</span>
+                <span className="block font-semibold text-ink">Scan receipt</span>
+                <span className="block text-sm text-charcoal/55">Take a photo with your camera</span>
               </span>
             </button>
 
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex w-full items-center gap-4 rounded-xl border border-gray-200 bg-white p-5 text-left hover:border-brand-300"
+              className="flex w-full items-center gap-4 rounded-xl border border-ink/10 bg-white p-5 text-left shadow-panel hover:border-brand-500/40"
             >
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink/[0.05] text-charcoal/70">
                 <Upload className="h-6 w-6" />
               </span>
               <span>
-                <span className="block font-semibold text-gray-900">Upload receipt</span>
-                <span className="block text-sm text-gray-500">From your camera roll or files (photos, HEIC, PDF)</span>
+                <span className="block font-semibold text-ink">Upload receipt</span>
+                <span className="block text-sm text-charcoal/55">From your camera roll or files (photos, HEIC, PDF)</span>
               </span>
             </button>
 
             <button
               type="button"
               onClick={() => setStep('form')}
-              className="flex w-full items-center gap-4 rounded-xl border border-gray-200 bg-white p-5 text-left hover:border-brand-300"
+              className="flex w-full items-center gap-4 rounded-xl border border-ink/10 bg-white p-5 text-left shadow-panel hover:border-brand-500/40"
             >
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink/[0.05] text-charcoal/70">
                 <PencilLine className="h-6 w-6" />
               </span>
               <span>
-                <span className="block font-semibold text-gray-900">Enter manually</span>
-                <span className="block text-sm text-gray-500">Type the details, attach the receipt later</span>
+                <span className="block font-semibold text-ink">Enter manually</span>
+                <span className="block text-sm text-charcoal/55">Type the details, attach the receipt later</span>
               </span>
             </button>
           </div>
@@ -379,38 +403,52 @@ export function ExpenseNew() {
   return (
     <div className="p-4 pb-28 lg:p-8">
       <div className="mx-auto max-w-xl">
-        <h1 className="text-2xl font-bold text-gray-900">Add Expense</h1>
+        <h1 className="font-display text-3xl font-semibold text-ink">Add Expense</h1>
+        <StepHint current={2} total={3} label={ocrRan ? 'Review & submit' : 'Enter details'} />
 
         {/* Receipt summary / OCR review card */}
         {receipt && (
-          <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+          <div className="mt-4 rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
             <div className="flex items-start gap-3">
               {previewUrl ? (
-                <img src={previewUrl} alt="Receipt" className="h-20 w-20 shrink-0 rounded-md border border-gray-200 object-cover" />
+                <img src={previewUrl} alt="Receipt" className="h-20 w-20 shrink-0 rounded-md border border-ink/10 object-cover" />
               ) : (
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50">
-                  <FileText className="h-8 w-8 text-gray-400" />
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-cream">
+                  <FileText className="h-8 w-8 text-charcoal/40" />
                 </div>
               )}
               <div className="min-w-0 flex-1">
                 {uploading ? (
-                  <p className="flex items-center gap-2 text-sm text-gray-600">
+                  <p className="flex items-center gap-2 text-sm text-charcoal/70">
                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
                     Reading your receipt…
                   </p>
                 ) : ocrRan ? (
-                  <p className="flex items-center gap-1.5 text-sm font-medium text-gray-800">
-                    <Sparkles className="h-4 w-4 text-brand-600" />
-                    Check what we read — correct anything that looks off.
-                  </p>
+                  <div>
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                      <Sparkles className="h-4 w-4 text-brand-600" />
+                      Check what we read — correct anything that looks off.
+                    </p>
+                    {lowConfidenceFields.size > 0 && (
+                      <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-800">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        Low confidence on {Array.from(lowConfidenceFields).join(', ')} — please double-check those fields.
+                      </p>
+                    )}
+                  </div>
                 ) : (
-                  <p className="text-sm text-gray-600">Receipt attached.</p>
+                  <p className="text-sm text-charcoal/60">Receipt attached.</p>
                 )}
-                <p className="mt-1 truncate text-xs text-gray-400">{receipt.name}</p>
+                <p className="mt-1 truncate text-xs text-charcoal/40">{receipt.name}</p>
                 <button
                   type="button"
-                  onClick={() => { setReceipt(null); setOcrRan(false); setOcrCategorySuggestion(null); }}
-                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-600"
+                  onClick={() => {
+                    setReceipt(null);
+                    setOcrRan(false);
+                    setOcrCategorySuggestion(null);
+                    setLowConfidenceFields(new Set());
+                  }}
+                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-charcoal/50 hover:text-danger"
                 >
                   <X className="h-3 w-3" /> Remove
                 </button>
@@ -420,30 +458,61 @@ export function ExpenseNew() {
         )}
 
         {!receipt && (
-          <div className="mt-4 flex items-center justify-between rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3">
-            <p className="text-sm text-gray-500">No receipt attached yet.</p>
+          <div className="mt-4 flex items-center justify-between rounded-xl border border-dashed border-ink/20 bg-white/60 px-4 py-3">
+            <p className="text-sm text-charcoal/50">No receipt attached yet.</p>
             <div className="flex gap-2">
-              <button type="button" onClick={() => cameraInputRef.current?.click()} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+              <button type="button" onClick={() => cameraInputRef.current?.click()} className="rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-xs font-medium text-ink hover:bg-ink/[0.03]">
                 Scan
               </button>
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-xs font-medium text-ink hover:bg-ink/[0.03]">
                 Upload
               </button>
             </div>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-xl border border-gray-200 bg-white p-5">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-xl border border-ink/10 bg-white p-5 shadow-panel">
           <Field label="Merchant *">
-            <input required value={form.merchant} onChange={(e) => set('merchant', e.target.value)} placeholder="Coffee Shop, Airline, etc." className={inputCls} />
+            <input
+              required
+              value={form.merchant}
+              onChange={(e) => set('merchant', e.target.value)}
+              placeholder="Coffee Shop, Airline, etc."
+              className={`${inputCls}${lowConfidenceFields.has('merchant') ? ' border-amber-400 ring-1 ring-amber-200' : ''}`}
+            />
+            {lowConfidenceFields.has('merchant') && (
+              <p className="mt-1 text-xs text-amber-700">OCR was unsure about the merchant — confirm or edit.</p>
+            )}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Amount *">
-              <input required type="number" min="0.01" step="0.01" inputMode="decimal" value={form.amount} onChange={(e) => set('amount', e.target.value)} placeholder="0.00" className={inputCls} />
+              <input
+                required
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputMode="decimal"
+                value={form.amount}
+                onChange={(e) => set('amount', e.target.value)}
+                placeholder="0.00"
+                className={`${inputCls}${lowConfidenceFields.has('amount') ? ' border-amber-400 ring-1 ring-amber-200' : ''}`}
+              />
+              {lowConfidenceFields.has('amount') && (
+                <p className="mt-1 text-xs text-amber-700">Double-check the amount.</p>
+              )}
             </Field>
             <Field label="Date *">
-              <input required type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className={inputCls} />
+              <input
+                required
+                type="date"
+                value={form.date}
+                onChange={(e) => set('date', e.target.value)}
+                className={`${inputCls}${lowConfidenceFields.has('date') ? ' border-amber-400 ring-1 ring-amber-200' : ''}`}
+              />
+              {lowConfidenceFields.has('date') && (
+                <p className="mt-1 text-xs text-amber-700">Double-check the date.</p>
+              )}
             </Field>
           </div>
 
@@ -466,7 +535,7 @@ export function ExpenseNew() {
               ))}
             </select>
             {form.paymentMethodId && form.company && (
-              <p className="mt-1 text-xs text-gray-400">Auto-filled from your card — change it if this expense belongs to another company.</p>
+              <p className="mt-1 text-xs text-charcoal/40">Auto-filled from your card — change it if this expense belongs to another company.</p>
             )}
           </Field>
 
@@ -488,7 +557,7 @@ export function ExpenseNew() {
                 ))}
               </select>
               {categoryAutoSuggested && !!form.zohoExpenseAccountId && (
-                <p className="mt-1 text-xs text-gray-400">Suggested from the receipt — change if wrong.</p>
+                <p className="mt-1 text-xs text-charcoal/40">Suggested from the receipt — change if wrong.</p>
               )}
             </Field>
           )}
@@ -529,7 +598,7 @@ export function ExpenseNew() {
           )}
 
           {error && (
-            <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -539,14 +608,14 @@ export function ExpenseNew() {
             <button
               type="submit"
               disabled={submitting || uploading}
-              className="flex-1 rounded-lg bg-brand-600 px-5 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60 lg:flex-none"
+              className="flex-1 rounded-lg bg-brand-500 px-5 py-3 text-sm font-semibold text-cream hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 lg:flex-none"
             >
               {submitting ? 'Submitting…' : 'Submit expense'}
             </button>
             <button
               type="button"
               onClick={() => navigate(-1)}
-              className="rounded-lg border border-gray-300 px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-lg border border-ink/15 px-5 py-3 text-sm font-medium text-ink hover:bg-ink/[0.03]"
             >
               Cancel
             </button>
@@ -563,7 +632,7 @@ export function ExpenseNew() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+      <label className="mb-1 block text-sm font-medium text-charcoal/70">{label}</label>
       {children}
     </div>
   );

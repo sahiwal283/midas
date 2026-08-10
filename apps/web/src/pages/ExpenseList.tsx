@@ -244,7 +244,7 @@ export function ExpenseList() {
     <div className="p-4 lg:p-8">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Expenses</h1>
+          <h1 className="font-display text-3xl font-semibold text-ink">Expenses</h1>
           {actionNeeded > 0 && (
             <p className="mt-1 flex items-center gap-1 text-sm font-medium text-amber-700">
               <AlertCircle className="h-4 w-4" />
@@ -253,11 +253,11 @@ export function ExpenseList() {
           )}
         </div>
         <Link
-          to="/expenses/new"
+          to="/transactions/new"
           className="flex shrink-0 items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
         >
           <Plus className="h-4 w-4" />
-          New Expense
+          Add Transaction
         </Link>
       </div>
 
@@ -443,7 +443,7 @@ export function ExpenseList() {
         ) : expenses.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <p className="text-gray-500">No expenses yet.</p>
-            <Link to="/expenses/new" className="mt-2 inline-block text-sm text-brand-600 hover:underline">
+            <Link to="/transactions/new" className="mt-2 inline-block text-sm text-brand-600 hover:underline">
               Create your first expense
             </Link>
           </div>

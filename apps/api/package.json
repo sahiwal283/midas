@@ -1,6 +1,6 @@
 {
   "name": "@midas/api",
-  "version": "0.20.0-alpha",
+  "version": "0.27.0-alpha",
   "private": true,
   "main": "dist/server.js",
   "scripts": {
@@ -13,12 +13,14 @@
     "db:push": "drizzle-kit push --force",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:sql": "tsx --env-file=../../.env src/db/runSqlMigrations.ts",
     "db:seed": "tsx --env-file=../../.env src/db/seed.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "drizzle-kit push --force && tsx --env-file=../../.env src/db/seed.ts",
     "import:run": "tsx --env-file=../../.env src/scripts/run-import.ts",
     "ext:create-connection": "tsx --env-file=../../.env src/scripts/create-ext-connection.ts",
-    "ext:smoke": "tsx --env-file=../../.env src/scripts/ext-smoke.ts"
+    "ext:smoke": "tsx --env-file=../../.env src/scripts/ext-smoke.ts",
+    "zoho:smoke": "tsx --env-file=../../.env src/scripts/zoho-smoke.ts"
   },
   "dependencies": {
     "@midas/import": "*",

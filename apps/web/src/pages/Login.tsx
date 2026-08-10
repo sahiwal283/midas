@@ -2,7 +2,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
-import { MidasLogo } from '../components/MidasLogo';
+import { MidasLogo, MidasWordmark } from '../components/MidasLogo';
 
 interface AuthConfig {
   authMode: 'local' | 'authentik';
@@ -62,24 +62,33 @@ export function Login() {
   }
 
   const isAuthentikMode = authConfig.authMode === 'authentik';
+  const inputCls = 'w-full rounded-lg border border-ink/15 bg-white px-3 py-2.5 text-sm text-ink placeholder:text-charcoal/40 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <MidasLogo size={48} className="mx-auto mb-3" />
-          <h1 className="text-3xl font-bold text-brand-700">Midas</h1>
-          <p className="mt-1 text-sm text-gray-500">Internal Expense Platform</p>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-cream px-4">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-60"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,162,39,0.18), transparent 55%), radial-gradient(ellipse 60% 40% at 100% 100%, rgba(23,23,23,0.04), transparent)',
+        }}
+      />
+
+      <div className="relative w-full max-w-sm">
+        <div className="mb-10 text-center">
+          <MidasLogo size={56} className="mx-auto mb-4" />
+          <MidasWordmark className="block text-[2rem]" />
+          <p className="mt-2 text-sm tracking-wide text-charcoal/55">Expense management</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-          <h2 className="mb-6 text-xl font-semibold text-gray-900">Sign in</h2>
+        <div className="rounded-2xl border border-ink/10 bg-white p-8 shadow-panel">
+          <h2 className="mb-6 font-display text-xl font-semibold text-ink">Sign in</h2>
 
           {oidcError && (
-            <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="mb-4 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
               <p>{oidcErrorLabel(oidcError)}</p>
               {oidcRequestId && (
-                <p className="mt-1 text-xs text-red-500">Reference: {oidcRequestId}</p>
+                <p className="mt-1 text-xs opacity-70">Reference: {oidcRequestId}</p>
               )}
             </div>
           )}
@@ -87,7 +96,7 @@ export function Login() {
           {isAuthentikMode && (
             <a
               href="/api/v1/auth/oidc/login"
-              className="mb-6 flex w-full items-center justify-center rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+              className="mb-6 flex w-full items-center justify-center rounded-lg bg-brand-500 px-4 py-3 text-sm font-semibold text-cream hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-cream"
             >
               Sign in with Authentik
             </a>
@@ -95,50 +104,23 @@ export function Login() {
 
           {isAuthentikMode && authConfig.showLocalLogin && (
             <details className="group">
-              <summary className="cursor-pointer select-none list-none text-xs text-gray-400 hover:text-gray-600">
-                <span className="border-b border-dashed border-gray-300">Break-glass local login</span>
+              <summary className="cursor-pointer select-none list-none text-xs text-charcoal/40 hover:text-charcoal/70">
+                <span className="border-b border-dashed border-ink/20">Break-glass local login</span>
               </summary>
-              <p className="mt-2 text-xs text-amber-600">
+              <p className="mt-2 text-xs text-brand-700">
                 Use local login only for break-glass/admin fallback.
               </p>
               <form onSubmit={handleSubmit} className="mt-3 space-y-3">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="email">
-                    Email
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                    placeholder="you@company.com"
-                    autoComplete="email"
-                  />
+                  <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="email">Email</label>
+                  <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder="you@company.com" autoComplete="email" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="password">
-                    Password
-                  </label>
-                  <input
-                    id="password"
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                    autoComplete="current-password"
-                  />
+                  <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="password">Password</label>
+                  <input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} autoComplete="current-password" />
                 </div>
-                {error && (
-                  <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-                )}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                >
+                {error && <p className="rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">{error}</p>}
+                <button type="submit" disabled={loading} className="w-full rounded-lg border border-ink/15 bg-white px-4 py-2 text-sm font-medium text-ink hover:bg-cream disabled:opacity-60">
                   {loading ? 'Signing in…' : 'Sign in'}
                 </button>
               </form>
@@ -148,42 +130,15 @@ export function Login() {
           {!isAuthentikMode && authConfig.showLocalLogin && (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="email">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                  placeholder="you@company.com"
-                  autoComplete="email"
-                />
+                <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="email">Email</label>
+                <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder="you@company.com" autoComplete="email" />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="password">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                  autoComplete="current-password"
-                />
+                <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="password">Password</label>
+                <input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} autoComplete="current-password" />
               </div>
-              {error && (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-              )}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
-              >
+              {error && <p className="rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">{error}</p>}
+              <button type="submit" disabled={loading} className="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-cream hover:bg-brand-600 disabled:opacity-60">
                 {loading ? 'Signing in…' : 'Sign in'}
               </button>
             </form>

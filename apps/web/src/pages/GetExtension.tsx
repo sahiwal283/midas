@@ -6,7 +6,6 @@ import { Download, Puzzle, Crop, Sparkles, Camera } from 'lucide-react';
 //   "API URL"     — the API ORIGIN only; the extension appends /api/v1 itself.
 // In production both are the same domain because nginx proxies /api.
 const PROD_WEB_URL = 'https://midas.booute.duckdns.org';
-const PROD_API_URL = 'https://midas.booute.duckdns.org';
 
 export function GetExtension() {
   return (
@@ -35,8 +34,8 @@ export function GetExtension() {
         />
         <FeatureCard
           icon={<Camera className="h-5 w-5 text-brand-600" />}
-          title="Drag-to-crop"
-          body="Drag a rectangle around the receipt — only the receipt is saved, sharp and clean."
+          title="Zero setup"
+          body="Preconfigured for Midas — install it, sign in once, and start filing expenses."
         />
       </div>
 
@@ -78,25 +77,10 @@ export function GetExtension() {
             <strong>Midas Capture</strong>.
           </Step>
           <Step n={5}>
-            Right-click the Midas icon → <strong>Options</strong> and set:
-            <div className="mt-2 space-y-1.5">
-              <div className="rounded-lg bg-gray-50 px-3 py-2">
-                <span className="font-medium text-gray-900">Web UI URL:</span>{' '}
-                <Code>{PROD_WEB_URL}</Code>
-              </div>
-              <div className="rounded-lg bg-gray-50 px-3 py-2">
-                <span className="font-medium text-gray-900">API URL:</span>{' '}
-                <Code>{PROD_API_URL}</Code>
-                <p className="mt-1 text-xs text-gray-500">
-                  The API origin only — no <Code>/api</Code> path; the extension adds it itself.
-                </p>
-              </div>
-            </div>
-          </Step>
-          <Step n={6}>
-            <strong>Log into Midas in this browser first.</strong> The extension uses your Midas session
-            cookie — there's no separate extension login. If you see "Not logged in to Midas", open{' '}
-            <Code>{PROD_WEB_URL}</Code>, sign in, and try again.
+            <strong>That's it — no configuration needed.</strong> The extension comes preconfigured for
+            Midas. It uses your Midas session cookie, so just make sure you're signed in to{' '}
+            <Code>{PROD_WEB_URL}</Code> in this browser; if you ever see "Not logged in to Midas", sign
+            in there and try again.
           </Step>
         </ol>
 

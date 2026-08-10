@@ -1,5 +1,6 @@
 import { env } from '../../config/env';
 import type { ExpenseSourceContext } from '../../db/schema';
+import { toWireExpenseStatus, type IntegrationStatus, type LegacyExpenseStatus } from '../transactionStatus';
 
 type ExpenseRow = {
   id: string;
@@ -9,6 +10,7 @@ type ExpenseRow = {
   date: string;
   description: string | null;
   status: string;
+  integrationStatus?: string | null;
   reimbursementStatus: string;
   sourceApp: string | null;
   sourceRefId: string | null;
@@ -47,6 +49,11 @@ export function toExtExpenseDto(row: ExpenseRow) {
   const cardUsed = ctx.cardUsed !== undefined ? (ctx.cardUsed as string | null) : null;
   const midasUrl = midasExpenseUrl(row.id);
 
+  const wireStatus = toWireExpenseStatus(
+    row.status as LegacyExpenseStatus,
+    (row.integrationStatus ?? (row.zohoExpenseId ? 'synced' : 'not_required')) as IntegrationStatus,
+  );
+
   return {
     id: row.id,
     merchant: row.merchant,
@@ -54,7 +61,7 @@ export function toExtExpenseDto(row: ExpenseRow) {
     currency: row.currency,
     date: row.date,
     description: row.description,
-    status: row.status,
+    status: wireStatus,
     reimbursementStatus: row.reimbursementStatus,
     sourceApp: row.sourceApp,
     sourceRefId: row.sourceRefId,

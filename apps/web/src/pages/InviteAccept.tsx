@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import client from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { MidasLogo } from '../components/MidasLogo';
+import { MidasLogo, MidasWordmark } from '../components/MidasLogo';
 import type { User } from '../types';
 
 interface InviteInfo {
@@ -60,38 +60,38 @@ export function InviteAccept() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-cream px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <MidasLogo size={48} className="mx-auto mb-3" />
-          <h1 className="text-3xl font-bold text-brand-700">Midas</h1>
-          <p className="mt-1 text-sm text-gray-500">Internal Expense Platform</p>
+          <MidasWordmark className="text-3xl" />
+          <p className="mt-2 text-sm text-charcoal/55">Expense management</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+        <div className="rounded-2xl border border-ink/10 bg-white p-8 shadow-panel">
           {isLoading ? (
             <div className="flex justify-center py-8">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
             </div>
           ) : !invite?.valid ? (
             <div className="text-center">
-              <h2 className="text-xl font-semibold text-gray-900">Invite not valid</h2>
-              <p className="mt-3 text-sm text-gray-600">
+              <h2 className="font-display text-xl font-semibold text-ink">Invite not valid</h2>
+              <p className="mt-3 text-sm text-charcoal/60">
                 This invite link is invalid or has expired. Invitations are single-use and expire
                 after 7 days — ask your administrator to send you a new one.
               </p>
               <Link
                 to="/login"
-                className="mt-6 inline-block rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="mt-6 inline-block rounded-lg border border-ink/15 px-4 py-2 text-sm font-medium text-ink hover:bg-cream"
               >
                 Go to sign in
               </Link>
             </div>
           ) : (
             <>
-              <h2 className="text-xl font-semibold text-gray-900">Welcome{invite.name ? `, ${invite.name}` : ''}</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                Set a password for <span className="font-medium text-gray-700">{invite.email}</span> to finish
+              <h2 className="font-display text-xl font-semibold text-ink">Welcome{invite.name ? `, ${invite.name}` : ''}</h2>
+              <p className="mt-1 text-sm text-charcoal/55">
+                Set a password for <span className="font-medium text-ink">{invite.email}</span> to finish
                 setting up your account.
               </p>
 

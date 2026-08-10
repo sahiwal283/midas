@@ -1,3 +1,17 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-cream font-sans text-ink;
+  }
+
+  h1, h2, h3 {
+    @apply font-display tracking-tight text-ink;
+  }
+}

@@ -155,7 +155,7 @@ function ZohoReadinessPanel({ expenseId }: { expenseId: string }) {
             <p><span className="font-medium">Merchant:</span> {mappedPayload.merchant}</p>
             <p><span className="font-medium">Amount:</span> {mappedPayload.currency} {mappedPayload.amount}</p>
             <p><span className="font-medium">Date:</span> {mappedPayload.date}</p>
-            <p><span className="font-medium">Entity:</span> {mappedPayload.zohoEntity}</p>
+            <p><span className="font-medium">Company:</span> {mappedPayload.zohoEntity}</p>
             <p><span className="font-medium">Category:</span> {mappedPayload.categoryName ?? '—'}</p>
             <p><span className="font-medium">Payment method:</span> {mappedPayload.paymentMethodLabel ?? '—'}</p>
             <p><span className="font-medium">Brand:</span> {mappedPayload.brand}</p>
@@ -608,7 +608,11 @@ export function ExpenseDetail() {
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-900">{expense.merchant}</h1>
-            <StatusBadge status={expense.status} variant={isPrivileged ? 'accountant' : 'user'} />
+            <StatusBadge
+              status={expense.status}
+              variant={isPrivileged ? 'accountant' : 'user'}
+              zohoExpenseId={expense.zohoExpenseId}
+            />
             {expense.reimbursementStatus !== 'not_requested' && (
               <ReimbursementBadge status={expense.reimbursementStatus} />
             )}
@@ -952,7 +956,7 @@ export function ExpenseDetail() {
                   value={expense.zohoExpenseAccountName ?? expense.category?.name ?? '—'}
                 />
               )}
-              {expense.zohoEntity && <Row label="Brand / entity" value={expense.zohoEntity} />}
+              {expense.zohoEntity && <Row label="Company" value={expense.zohoEntity} />}
               {expense.paymentMethod && (
                 <Row
                   label="Payment method"

@@ -92,3 +92,17 @@ contract.
 4. Migration of historical data uses `@midas/import` (batch), which is separate from this live sync model — see `docs/IMPORT_FRAMEWORK.md`.
 5. The full bilateral cutover (ownership, APIs, OCR, import, UI) is
    `docs/TRADE_SHOW_MIGRATION_CONTRACT.md` — sync/offline alone is not enough to merge.
+
+---
+
+## Offline / flaky-network test matrix (Phase 2)
+
+| Scenario | Expected |
+|----------|----------|
+| Upload receipt while online | Sync OCR; form prefills; confidence warnings if low |
+| Upload while offline / network error | Item queued in “To upload”; banner shows retry |
+| Submit expense while offline | Queued; drains on reconnect |
+| Extension capture with valid session cookie | Credentialed API succeeds (CORS allows extension origin) |
+| Extension without login | 401; open Midas web and log in, then retry |
+| Zoho PO push with missing vendor/item ids | 409 `MISSING_ZOHO_VENDOR` / `MISSING_ZOHO_ITEM` — no Books write |
+| Zoho PO push live (service mode) | Creates Books PO; stores `zohoRecordId`; avoid blind retry on timeout until service idempotency is fixed |

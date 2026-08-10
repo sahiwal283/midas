@@ -64,38 +64,38 @@ function AccountantDashboard({ name }: { name: string }) {
   return (
     <div className="p-4 lg:p-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="font-display text-3xl font-semibold text-ink">
           {timeGreeting()}, {name.split(' ')[0]}
         </h1>
-        <p className="mt-1 text-sm text-gray-500">Here&apos;s what needs your attention today</p>
+        <p className="mt-1 text-sm text-charcoal/55">Here&apos;s what needs your attention today</p>
       </div>
 
       {/* Queue overview */}
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-6 py-4">
-          <h2 className="font-semibold text-gray-900">Review Queues</h2>
+      <div className="mb-6 rounded-xl border border-ink/10 bg-white shadow-panel">
+        <div className="border-b border-ink/10 px-6 py-4">
+          <h2 className="font-display text-lg font-semibold text-ink">Review Queues</h2>
         </div>
         {isLoading ? (
-          <div className="px-6 py-8 text-center text-sm text-gray-400">Loading…</div>
+          <div className="px-6 py-8 text-center text-sm text-charcoal/40">Loading…</div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-ink/5">
             {rows.map((row) => (
               <Link
                 key={row.label}
                 to={row.to}
-                className="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+                className="flex items-center justify-between px-6 py-4 hover:bg-cream/80"
               >
                 <div className="flex items-center gap-3">
                   {row.icon}
-                  <span className="text-sm font-medium text-gray-900">{row.label}</span>
+                  <span className="text-sm font-medium text-ink">{row.label}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className={`rounded-full px-2.5 py-0.5 text-sm font-semibold ${
-                    row.count > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-500'
+                  <span className={`rounded-md px-2.5 py-0.5 text-sm font-semibold ${
+                    row.count > 0 ? 'bg-brand-500/15 text-brand-800' : 'bg-ink/5 text-charcoal/50'
                   }`}>
                     {row.count}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-gray-300" />
+                  <ChevronRight className="h-4 w-4 text-charcoal/25" />
                 </div>
               </Link>
             ))}
@@ -107,31 +107,31 @@ function AccountantDashboard({ name }: { name: string }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Link
           to="/accountant?status=ready_for_zoho"
-          className="rounded-xl border border-teal-200 bg-teal-50 p-5 transition-colors hover:bg-teal-100"
+          className="rounded-xl border border-success/25 bg-success/5 p-5 transition-colors hover:bg-success/10"
         >
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-teal-800">Ready for Zoho</p>
-            <CheckCircle2 className="h-5 w-5 text-teal-600" />
+            <p className="text-sm font-medium text-success">Ready for Zoho</p>
+            <CheckCircle2 className="h-5 w-5 text-success" />
           </div>
-          <p className="mt-2 text-3xl font-bold text-teal-900">
+          <p className="mt-2 font-display text-3xl font-semibold text-ink">
             {fmtMoney(summary?.readyForZohoAmount ?? 0)}
           </p>
-          <p className="mt-1 text-xs text-teal-700">
+          <p className="mt-1 text-xs text-success/80">
             {counts.ready_for_zoho ?? 0} expense{(counts.ready_for_zoho ?? 0) !== 1 ? 's' : ''} ready to push
           </p>
         </Link>
         <Link
           to="/accountant?reimbursementStatus=pending"
-          className="rounded-xl border border-orange-200 bg-orange-50 p-5 transition-colors hover:bg-orange-100"
+          className="rounded-xl border border-brand-500/30 bg-brand-500/5 p-5 transition-colors hover:bg-brand-500/10"
         >
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-orange-800">Awaiting Reimbursement</p>
-            <Banknote className="h-5 w-5 text-orange-600" />
+            <p className="text-sm font-medium text-brand-800">Awaiting Reimbursement</p>
+            <Banknote className="h-5 w-5 text-brand-600" />
           </div>
-          <p className="mt-2 text-3xl font-bold text-orange-900">
+          <p className="mt-2 font-display text-3xl font-semibold text-ink">
             {fmtMoney(summary?.reimbursementPendingAmount ?? 0)}
           </p>
-          <p className="mt-1 text-xs text-orange-700">
+          <p className="mt-1 text-xs text-brand-700/80">
             {summary?.reimbursementEmployees ?? 0} employee{(summary?.reimbursementEmployees ?? 0) !== 1 ? 's' : ''} waiting
           </p>
         </Link>
@@ -309,15 +309,21 @@ function EmployeeDashboard() {
     <div className="p-4 lg:p-8">
       <div className="mb-8 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Welcome, {user?.name?.split(' ')[0]}</h1>
-          <p className="mt-1 text-sm text-gray-500">Here's an overview of your expenses</p>
+          <h1 className="font-display text-3xl font-semibold text-ink">
+            {timeGreeting()}, {user?.name?.split(' ')[0]}
+          </h1>
+          <p className="mt-1 text-sm text-charcoal/55">
+            {actionNeeded.length > 0
+              ? `${actionNeeded.length} expense${actionNeeded.length === 1 ? '' : 's'} need${actionNeeded.length === 1 ? 's' : ''} your attention`
+              : 'Here\u2019s what needs you next'}
+          </p>
         </div>
         <Link
-          to="/expenses/new"
-          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+          to="/transactions/new"
+          className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-600"
         >
           <Plus className="h-4 w-4" />
-          New Expense
+          Add Transaction
         </Link>
       </div>
 
@@ -349,53 +355,68 @@ function EmployeeDashboard() {
         </div>
       )}
 
-      {/* Action-first: what needs you, then what's in flight */}
+      {/* Action-first lanes */}
       <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
-        <StatCard label="Needs your attention" value={actionNeeded.length} icon={<AlertCircle className={`h-5 w-5 ${actionNeeded.length > 0 ? 'text-amber-600' : 'text-gray-300'}`} />} />
-        <StatCard label="Under Review" value={inFlight.length} icon={<ReceiptText className="h-5 w-5 text-yellow-600" />} />
-        <StatCard label="Approved" value={approved.length} icon={<CheckCircle2 className="h-5 w-5 text-green-600" />} />
+        <StatCard
+          label="Needs your attention"
+          value={actionNeeded.length}
+          accent={actionNeeded.length > 0}
+          icon={<AlertCircle className={`h-5 w-5 ${actionNeeded.length > 0 ? 'text-amber-600' : 'text-charcoal/30'}`} />}
+        />
+        <StatCard
+          label="Under review"
+          value={inFlight.length}
+          icon={<ReceiptText className="h-5 w-5 text-brand-600" />}
+        />
+        <StatCard
+          label="Approved"
+          value={approved.length}
+          icon={<CheckCircle2 className="h-5 w-5 text-success" />}
+        />
       </div>
 
       {/* Recent expenses */}
-      <div className="rounded-xl border border-gray-200 bg-white">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="font-semibold text-gray-900">Recent Expenses</h2>
-          <Link to="/expenses" className="text-sm text-brand-600 hover:text-brand-700">View all</Link>
+      <div className="rounded-xl border border-ink/10 bg-white shadow-panel">
+        <div className="flex items-center justify-between border-b border-ink/10 px-6 py-4">
+          <h2 className="font-display text-lg font-semibold text-ink">Recent expenses</h2>
+          <Link to="/expenses" className="text-sm font-medium text-brand-700 hover:text-brand-800">View all</Link>
         </div>
 
         {isLoading ? (
-          <div className="px-6 py-8 text-center text-sm text-gray-400">Loading…</div>
+          <div className="px-6 py-8 text-center text-sm text-charcoal/40">Loading…</div>
         ) : recent.length === 0 ? (
-          <div className="px-6 py-8 text-center text-sm text-gray-400">
+          <div className="px-6 py-8 text-center text-sm text-charcoal/45">
             No expenses yet.{' '}
-            <Link to="/expenses/new" className="text-brand-600 hover:underline">Create one</Link>
+            <Link to="/transactions/new" className="text-brand-700 hover:underline">Create one</Link>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-ink/5">
             {recent.map((expense) => (
               <Link
                 key={expense.id}
                 to={`/expenses/${expense.id}`}
-                className={`flex items-center justify-between px-6 py-4 hover:bg-gray-50 ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}
+                className={`flex items-center justify-between px-6 py-4 hover:bg-ink/[0.02] ${expense.status === 'awaiting_info' ? 'bg-amber-50/80' : ''}`}
               >
                 <div>
-                  <p className="font-medium text-gray-900">{expense.merchant}</p>
-                  <p className="text-sm text-gray-500">
+                  <p className="font-medium text-ink">{expense.merchant}</p>
+                  <p className="text-sm text-charcoal/50">
                     {expense.date} · {expense.category?.name ?? 'Uncategorized'}
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="font-semibold text-gray-900">
+                  <span className="font-semibold text-ink">
                     {expense.currency} {Number(expense.amount).toFixed(2)}
                   </span>
-                  <div className="w-36 text-right">
+                  <div className="w-40 text-right">
                     {expense.status === 'awaiting_info' ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
                         <AlertCircle className="h-3 w-3" />
                         Action needed
                       </span>
                     ) : (
-                      <span className="text-xs text-gray-500">{userStatusLabel(expense.status, expense.zohoExpenseId)}</span>
+                      <span className="text-xs font-medium text-charcoal/60">
+                        {userStatusLabel(expense.status, expense.zohoExpenseId)}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -415,14 +436,24 @@ function EmployeeDashboard() {
   );
 }
 
-function StatCard({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
+function StatCard({
+  label,
+  value,
+  icon,
+  accent = false,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  accent?: boolean;
+}) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className={`rounded-xl border bg-white p-5 shadow-panel ${accent ? 'border-amber-400/60' : 'border-ink/10'}`}>
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{label}</p>
+        <p className="text-sm text-charcoal/55">{label}</p>
         {icon}
       </div>
-      <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
+      <p className="mt-2 font-display text-3xl font-semibold text-ink">{value}</p>
     </div>
   );
 }

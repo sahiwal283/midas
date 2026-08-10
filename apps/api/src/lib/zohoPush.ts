@@ -5,6 +5,7 @@ import { auditLog } from './audit';
 import { zoho, ZohoServiceError, type ZohoPushResult } from './zoho';
 import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
 import { classifyZohoError } from './zohoErrors';
+import { syncExpenseToTransaction } from './syncExpenseTransaction';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -67,9 +68,18 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
     const result = await pushWithRetry(payload);
 
     const [updated] = await db.update(expenses)
-      .set({ status: 'approved', zohoExpenseId: result.zohoExpenseId, zohoSyncedAt: result.syncedAt, zohoSyncError: null, updatedAt: new Date() })
+      .set({
+        status: 'approved',
+        integrationStatus: 'synced',
+        zohoExpenseId: result.zohoExpenseId,
+        zohoSyncedAt: result.syncedAt,
+        zohoSyncError: null,
+        updatedAt: new Date(),
+      })
       .where(eq(expenses.id, expense.id))
       .returning();
+
+    await syncExpenseToTransaction(updated);
 
     await auditLog({
       entityType: 'expense',
@@ -86,8 +96,17 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
     const syncError = `[${category}] ${zohoErr?.message ?? (err instanceof Error ? err.message : String(err))}`.slice(0, 500);
 
     await db.update(expenses)
-      .set({ status: 'zoho_sync_failed', zohoSyncError: syncError, updatedAt: new Date() })
+      .set({
+        status: 'approved',
+        integrationStatus: 'failed',
+        zohoSyncError: syncError,
+        zohoRequestId: zohoErr?.requestId ?? null,
+        updatedAt: new Date(),
+      })
       .where(eq(expenses.id, expense.id));
+
+    const failedRow = await db.query.expenses.findFirst({ where: eq(expenses.id, expense.id) });
+    if (failedRow) await syncExpenseToTransaction(failedRow);
 
     await auditLog({
       entityType: 'expense',

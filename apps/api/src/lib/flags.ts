@@ -36,10 +36,13 @@ export function computeFlags(row: FlagsInput): Flag[] {
   if (!row.paymentMethodId) flags.push('needs_payment_method');
   if (row.status === 'approved' && !row.zohoEntity) flags.push('needs_entity');
   if (row.reimbursementStatus === 'pending') flags.push('reimbursement_pending');
-  if (row.zohoExpenseId) flags.push('zoho_synced');
+  if (row.zohoExpenseId || (row as FlagsInput & { integrationStatus?: string }).integrationStatus === 'synced') {
+    flags.push('zoho_synced');
+  }
 
+  const integrationFailed = (row as FlagsInput & { integrationStatus?: string }).integrationStatus === 'failed';
   const zohoReady =
-    row.status === 'approved' &&
+    (row.status === 'approved' || row.status === 'zoho_sync_failed' || integrationFailed) &&
     !!row.zohoEntity &&
     !row.zohoExpenseId &&
     hasExpenseAccount &&

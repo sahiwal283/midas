@@ -17,6 +17,8 @@ import { editableFields, editRefusalMessage } from '../lib/expenseEdit';
 import { isLikelyDuplicate } from '../lib/duplicates';
 import { isAutoPushEligible } from '../lib/autoApprove';
 import { pushExpenseToZoho } from '../lib/zohoPush';
+import { syncExpenseToTransaction, removeSyncedTransaction } from '../lib/syncExpenseTransaction';
+import { assertActiveCompany } from '../lib/companies';
 
 const router = Router();
 
@@ -155,6 +157,8 @@ router.post('/', asyncHandler(async (req, res) => {
     throw createError('zohoEntity is required when selecting a Zoho expense account', 400, 'MISSING_ZOHO_ENTITY');
   }
 
+  zohoEntity = await assertActiveCompany(zohoEntity);
+
   const [expense] = await db.insert(expenses).values({
     userId: req.user!.id,
     merchant: body.merchant ?? '',
@@ -171,6 +175,7 @@ router.post('/', asyncHandler(async (req, res) => {
     reimbursementStatus,
   }).returning();
 
+  await syncExpenseToTransaction(expense);
   await auditLog({ entityType: 'expense', entityId: expense.id, userId: req.user!.id, action: 'created', after: expense });
 
   res.status(201).json({ expense });
@@ -209,6 +214,10 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   }
   const before = { ...expense };
 
+  if (body.zohoEntity !== undefined) {
+    body = { ...body, zohoEntity: (await assertActiveCompany(body.zohoEntity)) ?? undefined };
+  }
+
   let reimbursementPatch: { reimbursementStatus?: 'pending' } = {};
   if (body.paymentMethodId) {
     const pm = await db.query.paymentMethods.findFirst({
@@ -228,6 +237,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     .where(eq(expenses.id, req.params.id))
     .returning();
 
+  await syncExpenseToTransaction(updated);
   await auditLog({ entityType: 'expense', entityId: expense.id, userId: req.user!.id, action: 'updated', before, after: updated });
 
   res.json({ expense: updated });
@@ -261,6 +271,7 @@ router.post('/:id/clone', asyncHandler(async (req, res) => {
     reimbursementStatus: 'not_requested',
   }).returning();
 
+  await syncExpenseToTransaction(clone);
   await auditLog({
     entityType: 'expense',
     entityId: clone.id,
@@ -383,7 +394,7 @@ async function deleteExpenseRecord(
   actor: { id: string; role: import('@midas/shared').UserRole },
   force: boolean,
   closedPeriods: string[],
-): Promise<{ ok: true } | { ok: false; status: 403 | 404 | 409; code: string; message: string }> {
+): Promise<{ ok: true; mode: 'hard_delete' | 'soft_cancel' } | { ok: false; status: 403 | 404 | 409; code: string; message: string }> {
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, expenseId),
     with: { receipts: true },
@@ -408,9 +419,28 @@ async function deleteExpenseRecord(
     return { ok: false, status: 409, code: 'PERIOD_CLOSED', message: closedPeriodMessage(periodOf(expense.date)) };
   }
 
+  if (decision.mode === 'soft_cancel') {
+    const [updated] = await db.update(expenses)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(eq(expenses.id, expense.id))
+      .returning();
+    await syncExpenseToTransaction(updated);
+    await auditLog({
+      entityType: 'expense',
+      entityId: expense.id,
+      userId: actor.id,
+      action: 'cancelled',
+      before: { status: expense.status },
+      after: { status: 'cancelled' },
+      metadata: { force: force || undefined },
+    });
+    return { ok: true, mode: 'soft_cancel' };
+  }
+
   for (const r of expense.receipts) {
     await storage.delete(r.storagePath);
   }
+  await removeSyncedTransaction(expense.id);
   await db.delete(expenses).where(eq(expenses.id, expense.id));
   await auditLog({
     entityType: 'expense',
@@ -424,7 +454,7 @@ async function deleteExpenseRecord(
       force: force || undefined,
     },
   });
-  return { ok: true };
+  return { ok: true, mode: 'hard_delete' };
 }
 
 // Bulk delete (accountant/admin cleanup + owner drafts)

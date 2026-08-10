@@ -8,6 +8,16 @@ export interface OcrField {
   source: 'document_ai' | 'llm' | 'rule_based' | 'inference' | string;
 }
 
+export interface OcrLineItem {
+  description: string | null;
+  quantity: number | null;
+  unit: string | null;
+  unitPrice: number | null;
+  tax: number | null;
+  total: number | null;
+  confidence: number;
+}
+
 export interface OcrResult {
   requestId: string;
   jobId: string | null;
@@ -27,6 +37,8 @@ export interface OcrResult {
     taxAmount?: OcrField;
     tipAmount?: OcrField;
   };
+  /** Normalized line items when the OCR engine extracts them (PO / detailed receipts). */
+  lineItems?: OcrLineItem[];
   categories: Array<{ name: string; score: number }>;
   costEstimateUsd: number | null;
   ledgerRecorded: boolean;

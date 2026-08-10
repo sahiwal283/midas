@@ -37,6 +37,19 @@ Midas authenticates to the service with a per-app credential (`ZOHO_SERVICE_TOKE
 
 `GET /api/v1/zoho/service-health` (accountant/admin) returns the service `/health` result + current `zohoMode`/`dryRun`/`liveWritesEnabled`. This is the safe way to confirm Midas → service reachability without touching Zoho.
 
+## Purchase orders
+
+PO push mirrors expenses. See [`docs/ZOHO_PO_CONTRACT.md`](./ZOHO_PO_CONTRACT.md).
+
+| Setting | Value |
+|---------|-------|
+| Adapter methods | `pushPurchaseOrder`, `listVendors`, `listItems` |
+| Idempotency | `midas-po-<transactionId>` |
+| Modes | Same `ZOHO_MODE` / `ZOHO_DRY_RUN` as expenses |
+| Proposed endpoint | `POST /zoho/purchaseorders/create_books` |
+
+Live PO writes remain gated on the Zoho Integration Service shipping PO capabilities. Midas mock + dry-run paths are ready.
+
 ## Environment Variables
 
 | Variable | Description | Default |

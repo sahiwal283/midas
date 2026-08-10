@@ -9,24 +9,24 @@ const base = {
 };
 
 describe('canSessionDeleteExpense', () => {
-  it('allows owner draft', () => {
-    expect(
-      canSessionDeleteExpense({
-        role: 'user',
-        actorUserId: 'u1',
-        expense: { ...base, status: 'draft' },
-      }).ok,
-    ).toBe(true);
+  it('allows owner draft as hard delete', () => {
+    const d = canSessionDeleteExpense({
+      role: 'user',
+      actorUserId: 'u1',
+      expense: { ...base, status: 'draft' },
+    });
+    expect(d.ok).toBe(true);
+    if (d.ok) expect(d.mode).toBe('hard_delete');
   });
 
-  it('allows owner unreviewed pending without Zoho', () => {
-    expect(
-      canSessionDeleteExpense({
-        role: 'user',
-        actorUserId: 'u1',
-        expense: base,
-      }).ok,
-    ).toBe(true);
+  it('allows owner unreviewed pending as soft cancel', () => {
+    const d = canSessionDeleteExpense({
+      role: 'user',
+      actorUserId: 'u1',
+      expense: base,
+    });
+    expect(d.ok).toBe(true);
+    if (d.ok) expect(d.mode).toBe('soft_cancel');
   });
 
   it('blocks owner approved', () => {
@@ -38,14 +38,14 @@ describe('canSessionDeleteExpense', () => {
     expect(d.ok).toBe(false);
   });
 
-  it('allows accountant without Zoho', () => {
-    expect(
-      canSessionDeleteExpense({
-        role: 'accountant',
-        actorUserId: 'a1',
-        expense: { ...base, status: 'approved', userId: 'u1' },
-      }).ok,
-    ).toBe(true);
+  it('allows accountant soft-cancel without Zoho', () => {
+    const d = canSessionDeleteExpense({
+      role: 'accountant',
+      actorUserId: 'a1',
+      expense: { ...base, status: 'approved', userId: 'u1' },
+    });
+    expect(d.ok).toBe(true);
+    if (d.ok) expect(d.mode).toBe('soft_cancel');
   });
 
   it('blocks Zoho-linked without admin force', () => {
@@ -58,14 +58,14 @@ describe('canSessionDeleteExpense', () => {
     expect(d.ok).toBe(false);
   });
 
-  it('allows admin force for Zoho-linked', () => {
-    expect(
-      canSessionDeleteExpense({
-        role: 'admin',
-        actorUserId: 'admin',
-        expense: { ...base, zohoExpenseId: 'z-1' },
-        force: true,
-      }).ok,
-    ).toBe(true);
+  it('allows admin force soft-cancel for Zoho-linked', () => {
+    const d = canSessionDeleteExpense({
+      role: 'admin',
+      actorUserId: 'admin',
+      expense: { ...base, zohoExpenseId: 'z-1' },
+      force: true,
+    });
+    expect(d.ok).toBe(true);
+    if (d.ok) expect(d.mode).toBe('soft_cancel');
   });
 });

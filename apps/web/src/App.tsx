@@ -16,7 +16,12 @@ import { GetExtension } from './pages/GetExtension';
 import { ToUpload } from './pages/ToUpload';
 import { Admin } from './pages/Admin';
 import { PartnerExpenses } from './pages/PartnerExpenses';
+import { TransactionNew } from './pages/TransactionNew';
+import { PurchaseOrderNew } from './pages/PurchaseOrderNew';
+import { PurchaseOrderDetail } from './pages/PurchaseOrderDetail';
 import { Reports } from './pages/Reports';
+import { PurchaseOrderQueue } from './pages/PurchaseOrderQueue';
+import { IntegrationHealth } from './pages/IntegrationHealth';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -42,6 +47,9 @@ export default function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/expenses" element={<ExpenseList />} />
+              <Route path="/transactions/new" element={<TransactionNew />} />
+              <Route path="/transactions/po/new" element={<PurchaseOrderNew />} />
+              <Route path="/transactions/:id" element={<PurchaseOrderDetail />} />
               <Route path="/expenses/new" element={<ExpenseNew />} />
               <Route path="/expenses/:id" element={<ExpenseDetail />} />
               <Route path="/get-extension" element={<GetExtension />} />
@@ -74,10 +82,26 @@ export default function App() {
                 }
               />
               <Route
+                path="/accountant/purchase-orders"
+                element={
+                  <ProtectedRoute roles={['accountant', 'admin']}>
+                    <PurchaseOrderQueue />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/accountant/:id"
                 element={
                   <ProtectedRoute roles={['accountant', 'admin']}>
                     <AccountantReview />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/integration-health"
+                element={
+                  <ProtectedRoute roles={['accountant', 'admin', 'developer']}>
+                    <IntegrationHealth />
                   </ProtectedRoute>
                 }
               />

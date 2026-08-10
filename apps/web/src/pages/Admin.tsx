@@ -7,9 +7,10 @@ import { companyApi } from '../api/companies';
 import { paymentMethodsApi } from '../api/expenses';
 import { MyAccountSection } from './settings/MyAccountSection';
 import { PaymentMethodsSection } from './settings/PaymentMethodsSection';
+import { BudgetsSection } from './settings/BudgetsSection';
 import type { User } from '../types';
 
-type Section = 'account' | 'companies' | 'users' | 'categories' | 'payment-methods' | 'connections' | 'audit';
+type Section = 'account' | 'companies' | 'users' | 'categories' | 'payment-methods' | 'budgets' | 'connections' | 'audit';
 
 interface AdminUser extends User {
   hasPassword: boolean;
@@ -25,6 +26,7 @@ const EXPENSES_GROUP: NavGroup = {
   items: [
     { id: 'categories', label: 'Categories' },
     { id: 'payment-methods', label: 'Payment Methods' },
+    { id: 'budgets', label: 'Budgets' },
   ],
 };
 
@@ -41,7 +43,19 @@ function navGroupsForRole(role: string | undefined): NavGroup[] {
       { label: 'Security', items: [{ id: 'audit', label: 'Audit Log' }] },
     ];
   }
-  if (role === 'accountant') return [ACCOUNT_GROUP, EXPENSES_GROUP];
+  if (role === 'accountant') {
+    return [
+      ACCOUNT_GROUP,
+      {
+        label: 'Expenses',
+        items: [
+          { id: 'categories', label: 'Categories' },
+          { id: 'payment-methods', label: 'Payment Methods' },
+          { id: 'budgets', label: 'Budgets' },
+        ],
+      },
+    ];
+  }
   return [ACCOUNT_GROUP];
 }
 
@@ -75,7 +89,7 @@ export function Admin() {
 
   return (
     <div className="p-8">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">Settings</h1>
+      <h1 className="mb-6 font-display text-3xl font-semibold text-ink">Settings</h1>
 
       <div className="flex flex-col gap-8 lg:flex-row">
         {/* Grouped section nav */}
@@ -112,6 +126,7 @@ export function Admin() {
           {activeSection === 'companies' && <CompaniesTab />}
           {activeSection === 'categories' && <CategoriesTab />}
           {activeSection === 'payment-methods' && <PaymentMethodsSection />}
+          {activeSection === 'budgets' && <BudgetsSection />}
           {activeSection === 'connections' && <ConnectionsTab />}
           {activeSection === 'audit' && <AuditTab />}
         </div>

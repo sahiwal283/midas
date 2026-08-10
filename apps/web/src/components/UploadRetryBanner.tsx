@@ -30,21 +30,22 @@ export function UploadRetryBanner() {
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5 lg:px-8">
-      <p className="flex items-center gap-2 text-sm text-amber-900">
-        <CloudUpload className="h-4 w-4 shrink-0" />
-        {count} expense{count !== 1 ? 's' : ''} couldn't finish uploading.
+    <div className="flex items-center justify-between gap-3 border-b border-brand-500/25 bg-brand-500/10 px-4 py-2.5 lg:px-8">
+      <p className="flex items-center gap-2 text-sm text-ink">
+        <CloudUpload className="h-4 w-4 shrink-0 text-brand-700" />
+        {count} expense{count !== 1 ? 's' : ''} couldn&apos;t finish uploading.
       </p>
       <div className="flex shrink-0 items-center gap-3">
         <button
+          type="button"
           onClick={() => void retry()}
           disabled={retrying}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-cream hover:bg-brand-600 disabled:opacity-60"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${retrying ? 'animate-spin' : ''}`} />
           {retrying ? 'Retrying…' : 'Tap to retry'}
         </button>
-        <Link to="/to-upload" className="text-xs font-medium text-amber-800 underline">
+        <Link to="/to-upload" className="text-xs font-medium text-brand-700 underline">
           Details
         </Link>
       </div>

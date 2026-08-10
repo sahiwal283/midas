@@ -1,6 +1,8 @@
 import { env } from '../config/env';
 import { logger } from './logger';
 import type { ZohoServicePayload } from './zohoPayload';
+import type { ZohoPoServicePayload } from './zohoPoPayload';
+import { toZohoBooksPoCreateBody } from './zohoPoPayload';
 
 /** Thin legacy shape still accepted by mock/tests; service push prefers ZohoServicePayload. */
 export interface ZohoPushPayload {
@@ -22,8 +24,30 @@ export interface ZohoPushResult {
   dryRun?: boolean;
 }
 
+export interface ZohoPoPushResult {
+  zohoPurchaseOrderId: string;
+  syncedAt: Date;
+  dryRun?: boolean;
+}
+
+export interface ZohoVendor {
+  vendorId: string;
+  vendorName: string;
+  companyName?: string | null;
+}
+
+export interface ZohoItem {
+  itemId: string;
+  name: string;
+  sku?: string | null;
+  unit?: string | null;
+}
+
 export interface ZohoAdapter {
   pushExpense(payload: ZohoPushBody): Promise<ZohoPushResult>;
+  pushPurchaseOrder(payload: ZohoPoServicePayload): Promise<ZohoPoPushResult>;
+  listVendors(brand: string): Promise<ZohoVendor[]>;
+  listItems(brand: string): Promise<ZohoItem[]>;
 }
 
 /** Structured error from the Zoho Integration Service (never includes the app token). */
@@ -204,6 +228,28 @@ class MockZohoAdapter implements ZohoAdapter {
       syncedAt: new Date(),
     };
   }
+
+  async pushPurchaseOrder(payload: ZohoPoServicePayload): Promise<ZohoPoPushResult> {
+    logger.debug({ payload }, 'Zoho mock: would push purchase order to Zoho');
+    return {
+      zohoPurchaseOrderId: `MOCK-ZOHO-PO-${Date.now()}`,
+      syncedAt: new Date(),
+    };
+  }
+
+  async listVendors(_brand: string): Promise<ZohoVendor[]> {
+    return [
+      { vendorId: 'MOCK-V-1', vendorName: 'ABC Food Supply' },
+      { vendorId: 'MOCK-V-2', vendorName: 'Demo Ingredients Co' },
+    ];
+  }
+
+  async listItems(_brand: string): Promise<ZohoItem[]> {
+    return [
+      { itemId: 'MOCK-I-1', name: 'Mini Marshmallows', unit: 'bag', sku: 'MM-5LB' },
+      { itemId: 'MOCK-I-2', name: 'Butter', unit: 'case', sku: 'BUT-CS' },
+    ];
+  }
 }
 
 // Service adapter — calls the shared Zoho Integration Service.
@@ -241,8 +287,8 @@ export class ServiceZohoAdapter implements ZohoAdapter {
       throw new Error(`Zoho service request failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     }
     if (!res.ok) {
-      const body = await res.text();
-      throw parseServiceErrorBody(body, res.status);
+      const errBody = await res.text();
+      throw parseServiceErrorBody(errBody, res.status);
     }
     const data = await res.json() as {
       zohoExpenseId?: string;
@@ -267,6 +313,119 @@ export class ServiceZohoAdapter implements ZohoAdapter {
       });
     }
     return { zohoExpenseId, syncedAt: new Date() };
+  }
+
+  async pushPurchaseOrder(payload: ZohoPoServicePayload): Promise<ZohoPoPushResult> {
+    const baseUrl = env.ZOHO_SERVICE_BASE_URL;
+    if (!baseUrl) throw new Error('ZOHO_SERVICE_BASE_URL is not configured');
+    if (!env.ZOHO_SERVICE_TOKEN) throw new Error('ZOHO_SERVICE_TOKEN is not configured');
+
+    if (env.ZOHO_DRY_RUN) {
+      logger.info({ payload, brand: payload.brand }, 'Zoho dry-run: skipping live PO POST to integration service');
+      return {
+        zohoPurchaseOrderId: `DRY-RUN-PO-${Date.now()}`,
+        syncedAt: new Date(),
+        dryRun: true,
+      };
+    }
+
+    // Books wire shape only — never forward nested camelCase provenance/lineItems.
+    const body = toZohoBooksPoCreateBody(payload);
+
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(`${baseUrl}/zoho/purchaseorders/create`, {
+        method: 'POST',
+        headers: serviceHeaders({ 'Content-Type': 'application/json' }, payload.brand),
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new Error(`Zoho service PO request failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw parseServiceErrorBody(errBody, res.status);
+    }
+    const data = await res.json() as {
+      zohoPurchaseOrderId?: string;
+      purchaseorder_id?: string;
+      id?: string;
+      data?: {
+        purchaseorder?: { purchaseorder_id?: string };
+        purchaseorder_id?: string;
+      };
+    };
+    const zohoPurchaseOrderId =
+      data.zohoPurchaseOrderId
+      ?? data.purchaseorder_id
+      ?? data.data?.purchaseorder?.purchaseorder_id
+      ?? data.data?.purchaseorder_id
+      ?? data.id;
+    if (!zohoPurchaseOrderId) {
+      throw new ZohoServiceError({
+        status: res.status,
+        code: 'ZOHO_RESPONSE_INVALID',
+        message: 'Zoho service response missing purchaseorder_id',
+      });
+    }
+    return { zohoPurchaseOrderId, syncedAt: new Date() };
+  }
+
+  async listVendors(brand: string): Promise<ZohoVendor[]> {
+    const baseUrl = env.ZOHO_SERVICE_BASE_URL;
+    if (!baseUrl) throw new Error('ZOHO_SERVICE_BASE_URL is not configured');
+    if (!env.ZOHO_SERVICE_TOKEN) throw new Error('ZOHO_SERVICE_TOKEN is not configured');
+
+    const res = await fetchWithTimeout(
+      `${baseUrl}/zoho/vendors/list`,
+      { method: 'GET', headers: serviceHeaders({}, brand) },
+      15000,
+    );
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw parseServiceErrorBody(errBody, res.status);
+    }
+    const data = await res.json() as {
+      vendors?: Array<Record<string, unknown>>;
+      contacts?: Array<Record<string, unknown>>;
+      data?: {
+        vendors?: Array<Record<string, unknown>>;
+        contacts?: Array<Record<string, unknown>>;
+      };
+    };
+    const rows = data.vendors ?? data.contacts ?? data.data?.vendors ?? data.data?.contacts ?? [];
+    return rows.map((v) => ({
+      vendorId: String(v.vendorId ?? v.vendor_id ?? v.contact_id ?? ''),
+      vendorName: String(v.vendorName ?? v.vendor_name ?? v.contact_name ?? v.company_name ?? ''),
+      companyName: (v.company_name as string | undefined) ?? null,
+    })).filter((v) => v.vendorId && v.vendorName);
+  }
+
+  async listItems(brand: string): Promise<ZohoItem[]> {
+    const baseUrl = env.ZOHO_SERVICE_BASE_URL;
+    if (!baseUrl) throw new Error('ZOHO_SERVICE_BASE_URL is not configured');
+    if (!env.ZOHO_SERVICE_TOKEN) throw new Error('ZOHO_SERVICE_TOKEN is not configured');
+
+    const res = await fetchWithTimeout(
+      `${baseUrl}/zoho/items/list`,
+      { method: 'GET', headers: serviceHeaders({}, brand) },
+      15000,
+    );
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw parseServiceErrorBody(errBody, res.status);
+    }
+    const data = await res.json() as {
+      items?: Array<Record<string, unknown>>;
+      data?: { items?: Array<Record<string, unknown>> };
+    };
+    const rows = data.items ?? data.data?.items ?? [];
+    return rows.map((i) => ({
+      itemId: String(i.itemId ?? i.item_id ?? ''),
+      name: String(i.name ?? i.item_name ?? ''),
+      sku: (i.sku as string | undefined) ?? null,
+      unit: (i.unit as string | undefined) ?? null,
+    })).filter((i) => i.itemId && i.name);
   }
 }
 

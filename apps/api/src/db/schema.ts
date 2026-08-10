@@ -18,7 +18,8 @@ export type ExpenseSourceContext = {
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'accountant', 'admin', 'partner', 'developer']);
 export const expenseStatusEnum = pgEnum('expense_status', [
-  'draft', 'pending', 'in_review', 'awaiting_info', 'approved', 'zoho_sync_failed', 'rejected',
+  // zoho_sync_failed kept for DB/API compat; new writes use approved + integration_status=failed
+  'draft', 'pending', 'in_review', 'awaiting_info', 'approved', 'zoho_sync_failed', 'rejected', 'cancelled',
 ]);
 export const reimbursementStatusEnum = pgEnum('reimbursement_status', [
   'not_requested', 'pending', 'approved', 'rejected', 'paid',
@@ -27,6 +28,15 @@ export const ocrStatusEnum = pgEnum('ocr_status', ['pending', 'processing', 'don
 export const captureSourceEnum = pgEnum('capture_source', ['extension', 'manual']);
 export const partnerExpenseCategoryEnum = pgEnum('partner_expense_category', ['business', 'personal']);
 export const captureStatusEnum = pgEnum('capture_status', ['draft', 'linked', 'discarded']);
+
+/** Shared financial root: expense | purchase_order */
+export const transactionTypeEnum = pgEnum('transaction_type', ['expense', 'purchase_order']);
+export const transactionStatusEnum = pgEnum('transaction_status', [
+  'draft', 'submitted', 'in_review', 'awaiting_info', 'approved', 'rejected', 'cancelled',
+]);
+export const integrationStatusEnum = pgEnum('integration_status', [
+  'not_required', 'pending', 'queued', 'syncing', 'synced', 'failed',
+]);
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
@@ -98,6 +108,22 @@ export const companies = pgTable('companies', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+/** Monthly spend budgets per company (and optional expense category). */
+export const budgets = pgTable('budgets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyName: text('company_name').references(() => companies.name, { onDelete: 'restrict', onUpdate: 'cascade' }).notNull(),
+  /** YYYY-MM */
+  period: char('period', { length: 7 }).notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  categoryId: uuid('category_id').references(() => expenseCategories.id, { onDelete: 'set null' }),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+  index('budgets_period_idx').on(t.period),
+  index('budgets_company_idx').on(t.companyName),
+]);
+
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
 export const expenses = pgTable('expenses', {
@@ -124,6 +150,8 @@ export const expenses = pgTable('expenses', {
   date: date('date').notNull(),
   description: text('description'),
   status: expenseStatusEnum('status').default('draft').notNull(),
+  /** Zoho/integration pipeline — separate from workflow status. */
+  integrationStatus: integrationStatusEnum('integration_status').default('not_required').notNull(),
   reimbursementStatus: reimbursementStatusEnum('reimbursement_status').default('not_requested').notNull(),
   reviewedById: uuid('reviewed_by_id').references(() => users.id, { onDelete: 'set null' }),
   reviewedAt: timestamp('reviewed_at'),
@@ -136,6 +164,7 @@ export const expenses = pgTable('expenses', {
   zohoSyncedAt: timestamp('zoho_synced_at'),
   // Stores the last Zoho sync error message when status = zoho_sync_failed
   zohoSyncError: text('zoho_sync_error'),
+  zohoRequestId: text('zoho_request_id'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [
@@ -152,6 +181,119 @@ export const expenses = pgTable('expenses', {
   // Prevents duplicate imports from external apps. Postgres treats (NULL,NULL) as non-equal,
   // so multiple manually-submitted expenses (both cols null) are always allowed.
   uniqueIndex('expenses_source_unique_idx').on(t.sourceApp, t.sourceRefId),
+]);
+
+// ── Vendors (first-class; POs + expense merchant matching) ────────────────────
+
+export const vendors = pgTable('vendors', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  normalizedName: text('normalized_name').notNull(),
+  zohoVendorId: text('zoho_vendor_id'),
+  defaultEntity: text('default_entity'),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('vendors_normalized_name_idx').on(t.normalizedName),
+  index('vendors_zoho_vendor_id_idx').on(t.zohoVendorId),
+]);
+
+// ── Zoho items cache (PO line-item matching) ──────────────────────────────────
+
+export const zohoItems = pgTable('zoho_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  zohoItemId: text('zoho_item_id').notNull(),
+  name: text('name').notNull(),
+  sku: text('sku'),
+  unit: text('unit'),
+  brand: text('brand').notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  syncedAt: timestamp('synced_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('zoho_items_brand_zoho_id_idx').on(t.brand, t.zohoItemId),
+  index('zoho_items_name_idx').on(t.name),
+]);
+
+// ── Transactions (shared financial root) ──────────────────────────────────────
+
+export const transactions = pgTable('transactions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  type: transactionTypeEnum('type').notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'restrict' }).notNull(),
+  vendorId: uuid('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+  /** Display / OCR vendor or merchant string. */
+  vendorName: text('vendor_name').notNull(),
+  transactionDate: date('transaction_date').notNull(),
+  currency: char('currency', { length: 3 }).default('USD').notNull(),
+  total: numeric('total', { precision: 12, scale: 2 }).notNull(),
+  taxTotal: numeric('tax_total', { precision: 12, scale: 2 }).default('0').notNull(),
+  description: text('description'),
+  status: transactionStatusEnum('status').default('draft').notNull(),
+  integrationStatus: integrationStatusEnum('integration_status').default('not_required').notNull(),
+  sourceApp: text('source_app'),
+  sourceRefId: text('source_ref_id'),
+  sourceLabel: text('source_label'),
+  sourceUrl: text('source_url'),
+  sourceType: text('source_type'),
+  sourceContext: jsonb('source_context').$type<ExpenseSourceContext>().default({}).notNull(),
+  externalUserId: text('external_user_id'),
+  zohoEntity: text('zoho_entity'),
+  zohoRecordId: text('zoho_record_id'),
+  zohoSyncedAt: timestamp('zoho_synced_at'),
+  zohoSyncError: text('zoho_sync_error'),
+  zohoRequestId: text('zoho_request_id'),
+  reviewedById: uuid('reviewed_by_id').references(() => users.id, { onDelete: 'set null' }),
+  reviewedAt: timestamp('reviewed_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+  index('transactions_user_id_idx').on(t.userId),
+  index('transactions_type_idx').on(t.type),
+  index('transactions_status_idx').on(t.status),
+  index('transactions_integration_status_idx').on(t.integrationStatus),
+  index('transactions_created_at_idx').on(t.createdAt),
+  index('transactions_vendor_id_idx').on(t.vendorId),
+  uniqueIndex('transactions_source_unique_idx').on(t.sourceApp, t.sourceRefId),
+]);
+
+export const expenseDetails = pgTable('expense_details', {
+  transactionId: uuid('transaction_id').primaryKey().references(() => transactions.id, { onDelete: 'cascade' }),
+  categoryId: uuid('category_id').references(() => expenseCategories.id, { onDelete: 'set null' }),
+  paymentMethodId: uuid('payment_method_id').references(() => paymentMethods.id, { onDelete: 'set null' }),
+  reimbursementStatus: reimbursementStatusEnum('reimbursement_status').default('not_requested').notNull(),
+  zohoExpenseAccountId: text('zoho_expense_account_id'),
+  zohoExpenseAccountName: text('zoho_expense_account_name'),
+});
+
+export const purchaseOrders = pgTable('purchase_orders', {
+  transactionId: uuid('transaction_id').primaryKey().references(() => transactions.id, { onDelete: 'cascade' }),
+  poNumber: text('po_number'),
+  zohoVendorId: text('zoho_vendor_id'),
+  deliveryDate: date('delivery_date'),
+  notes: text('notes'),
+});
+
+export const transactionLineItems = pgTable('transaction_line_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  transactionId: uuid('transaction_id').references(() => transactions.id, { onDelete: 'cascade' }).notNull(),
+  lineNumber: integer('line_number').notNull(),
+  itemId: uuid('item_id').references(() => zohoItems.id, { onDelete: 'set null' }),
+  zohoItemId: text('zoho_item_id'),
+  description: text('description').notNull(),
+  quantity: numeric('quantity', { precision: 14, scale: 4 }).notNull(),
+  unit: text('unit'),
+  unitPrice: numeric('unit_price', { precision: 12, scale: 4 }).notNull(),
+  tax: numeric('tax', { precision: 12, scale: 2 }).default('0').notNull(),
+  total: numeric('total', { precision: 12, scale: 2 }).notNull(),
+  ocrConfidence: numeric('ocr_confidence', { precision: 5, scale: 4 }),
+  needsReview: boolean('needs_review').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+  index('transaction_line_items_tx_idx').on(t.transactionId),
+  uniqueIndex('transaction_line_items_tx_line_idx').on(t.transactionId, t.lineNumber),
 ]);
 
 // ── Receipts ──────────────────────────────────────────────────────────────────
@@ -375,4 +517,41 @@ export const partnerExpensesRelations = relations(partnerExpenses, ({ one }) => 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, { fields: [notifications.userId], references: [users.id] }),
   expense: one(expenses, { fields: [notifications.expenseId], references: [expenses.id] }),
+}));
+
+export const vendorsRelations = relations(vendors, ({ many }) => ({
+  transactions: many(transactions),
+}));
+
+export const budgetsRelations = relations(budgets, ({ one }) => ({
+  company: one(companies, { fields: [budgets.companyName], references: [companies.name] }),
+  category: one(expenseCategories, { fields: [budgets.categoryId], references: [expenseCategories.id] }),
+}));
+
+export const transactionsRelations = relations(transactions, ({ one, many }) => ({
+  user: one(users, { fields: [transactions.userId], references: [users.id] }),
+  vendor: one(vendors, { fields: [transactions.vendorId], references: [vendors.id] }),
+  reviewedBy: one(users, { fields: [transactions.reviewedById], references: [users.id] }),
+  expenseDetails: one(expenseDetails),
+  purchaseOrder: one(purchaseOrders),
+  lineItems: many(transactionLineItems),
+}));
+
+export const expenseDetailsRelations = relations(expenseDetails, ({ one }) => ({
+  transaction: one(transactions, { fields: [expenseDetails.transactionId], references: [transactions.id] }),
+  category: one(expenseCategories, { fields: [expenseDetails.categoryId], references: [expenseCategories.id] }),
+  paymentMethod: one(paymentMethods, { fields: [expenseDetails.paymentMethodId], references: [paymentMethods.id] }),
+}));
+
+export const purchaseOrdersRelations = relations(purchaseOrders, ({ one }) => ({
+  transaction: one(transactions, { fields: [purchaseOrders.transactionId], references: [transactions.id] }),
+}));
+
+export const transactionLineItemsRelations = relations(transactionLineItems, ({ one }) => ({
+  transaction: one(transactions, { fields: [transactionLineItems.transactionId], references: [transactions.id] }),
+  item: one(zohoItems, { fields: [transactionLineItems.itemId], references: [zohoItems.id] }),
+}));
+
+export const zohoItemsRelations = relations(zohoItems, ({ many }) => ({
+  lineItems: many(transactionLineItems),
 }));

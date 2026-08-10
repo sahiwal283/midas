@@ -18,6 +18,8 @@ export interface QueueFilters {
   missingReceipt?: boolean;
   missingCategory?: boolean;
   missingPayment?: boolean;
+  /** expense | purchase_order — Phase 1 type filter */
+  transactionType?: 'expense' | 'purchase_order';
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -38,6 +40,9 @@ export function parseQueueFilters(q: Record<string, string | undefined>): QueueF
   if (q.zohoStatus === 'synced' || q.zohoStatus === 'not_synced' || q.zohoStatus === 'sync_failed') f.zohoStatus = q.zohoStatus;
   if (q.company) f.company = q.company;
   if (q.sourceApp) f.sourceApp = q.sourceApp;
+  if (q.transactionType === 'expense' || q.transactionType === 'purchase_order') {
+    f.transactionType = q.transactionType;
+  }
   for (const key of BOOL_KEYS) {
     if (q[key] === 'true' || q[key] === '1') f[key] = true;
   }

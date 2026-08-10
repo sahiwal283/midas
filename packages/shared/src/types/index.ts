@@ -35,6 +35,28 @@ export interface Company {
   sortOrder?: number;
 }
 
+/** Canonical provenance for expense/transaction source_type. */
+export type TransactionSourceType =
+  | 'manual'
+  | 'online_receipt'
+  | 'purchase_order'
+  | 'browser_extension'
+  | 'trade_show_event'
+  | 'import'
+  | 'partner'
+  | 'other';
+
+export interface Budget {
+  id: string;
+  companyName: string;
+  period: string;
+  amount: string;
+  categoryId: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Partner Expenses ─────────────────────────────────────────────────────────
 
 export type PartnerExpenseCategory = 'business' | 'personal';
@@ -102,14 +124,63 @@ export function fromOwnerRef(owner: OwnerRef | null | undefined): { sourceApp: s
 
 // ── Expense ───────────────────────────────────────────────────────────────────
 
-export type ExpenseStatus = 'draft' | 'pending' | 'in_review' | 'awaiting_info' | 'approved' | 'zoho_sync_failed' | 'rejected';
+export type ExpenseStatus = 'draft' | 'pending' | 'in_review' | 'awaiting_info' | 'approved' | 'zoho_sync_failed' | 'rejected' | 'cancelled';
 export type ReimbursementStatus = 'not_requested' | 'pending' | 'approved' | 'rejected' | 'paid';
+export type IntegrationStatus = 'not_required' | 'pending' | 'queued' | 'syncing' | 'synced' | 'failed';
+export type TransactionType = 'expense' | 'purchase_order';
+export type TransactionStatus = 'draft' | 'submitted' | 'in_review' | 'awaiting_info' | 'approved' | 'rejected' | 'cancelled';
 
 export interface ExpenseCategory {
   id: string;
   name: string;
   description: string | null;
   isActive: boolean;
+}
+
+export interface TransactionLineItem {
+  id: string;
+  transactionId: string;
+  lineNumber: number;
+  description: string;
+  quantity: string;
+  unit: string | null;
+  unitPrice: string;
+  tax: string;
+  total: string;
+  zohoItemId: string | null;
+  ocrConfidence: string | null;
+  needsReview: boolean;
+}
+
+export interface PurchaseOrderDetails {
+  transactionId: string;
+  poNumber: string | null;
+  zohoVendorId: string | null;
+  deliveryDate: string | null;
+  notes: string | null;
+}
+
+export interface Transaction {
+  id: string;
+  type: TransactionType;
+  userId: string;
+  vendorName: string;
+  transactionDate: string;
+  currency: string;
+  total: string;
+  taxTotal: string;
+  description: string | null;
+  status: TransactionStatus;
+  integrationStatus: IntegrationStatus;
+  zohoEntity: string | null;
+  zohoRecordId: string | null;
+  zohoSyncedAt: string | null;
+  zohoSyncError?: string | null;
+  purchaseOrder?: PurchaseOrderDetails | null;
+  lineItems?: TransactionLineItem[];
+  user?: Pick<User, 'id' | 'name' | 'email'>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Expense {
@@ -132,6 +203,8 @@ export interface Expense {
   date: string;
   description: string | null;
   status: ExpenseStatus;
+  /** Separate from workflow status — Zoho pipeline. */
+  integrationStatus?: IntegrationStatus;
   reimbursementStatus: ReimbursementStatus;
   /** Set when an accountant completes a review action (approve/reject/request info) */
   reviewedById: string | null;
@@ -191,11 +264,11 @@ export interface Receipt {
   /** Full OCR result payload; `fields.{merchant,amount,date}.value` prefill the wizard. */
   ocrData?: {
     fields?: {
-      merchant?: { value: string | null };
-      amount?: { value: number | null };
-      date?: { value: string | null };
+      merchant?: OcrField;
+      amount?: OcrField & { value: number | string | null };
+      date?: OcrField;
       /** OCR-suggested expense category — used to preselect the COA account in the wizard. */
-      category?: { value: string | null };
+      category?: OcrField;
     };
   } | null;
   ocrCostEstimateUsd: string | null;

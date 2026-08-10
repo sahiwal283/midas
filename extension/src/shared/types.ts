@@ -4,8 +4,8 @@ export interface ExtensionConfig {
 }
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
-  midasUrl: 'http://localhost:5173',
-  midasApiUrl: 'http://localhost:4000',
+  midasUrl: 'https://midas.booute.duckdns.org',
+  midasApiUrl: 'https://midas.booute.duckdns.org',
 };
 
 export interface CaptureResult {

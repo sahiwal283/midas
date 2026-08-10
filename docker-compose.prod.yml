@@ -15,7 +15,7 @@ services:
       target: build
     env_file: .env
     restart: "no"
-    command: sh -c "npm run db:push -- --force && npm run db:seed"
+    command: sh -c "npm run db:migrate:sql && npm run db:seed"
 
   api:
     build:
