@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -10,8 +11,10 @@ import { PaymentMethodsSection } from './settings/PaymentMethodsSection';
 import { BudgetsSection } from './settings/BudgetsSection';
 import type { User } from '../types';
 import { flattenTree, descendantIdSet, type CategoryTreeNode } from '../lib/categoryTree';
+import { useCollapsibleTree } from '../lib/useCollapsibleTree';
+import { ChartOfAccountsSection } from './settings/ChartOfAccountsSection';
 
-type Section = 'account' | 'companies' | 'users' | 'categories' | 'payment-methods' | 'budgets' | 'connections' | 'audit';
+type Section = 'account' | 'companies' | 'users' | 'categories' | 'chart-of-accounts' | 'payment-methods' | 'budgets' | 'connections' | 'audit';
 
 interface AdminUser extends User {
   hasPassword: boolean;
@@ -26,6 +29,7 @@ const EXPENSES_GROUP: NavGroup = {
   label: 'Expenses',
   items: [
     { id: 'categories', label: 'Categories' },
+    { id: 'chart-of-accounts', label: 'Chart of Accounts' },
     { id: 'payment-methods', label: 'Payment Methods' },
     { id: 'budgets', label: 'Budgets' },
   ],
@@ -47,14 +51,7 @@ function navGroupsForRole(role: string | undefined): NavGroup[] {
   if (role === 'accountant') {
     return [
       ACCOUNT_GROUP,
-      {
-        label: 'Expenses',
-        items: [
-          { id: 'categories', label: 'Categories' },
-          { id: 'payment-methods', label: 'Payment Methods' },
-          { id: 'budgets', label: 'Budgets' },
-        ],
-      },
+      EXPENSES_GROUP,
     ];
   }
   return [ACCOUNT_GROUP];
@@ -126,6 +123,7 @@ export function Admin() {
           {activeSection === 'users' && <UsersTab />}
           {activeSection === 'companies' && <CompaniesTab />}
           {activeSection === 'categories' && <CategoriesTab />}
+          {activeSection === 'chart-of-accounts' && <ChartOfAccountsSection />}
           {activeSection === 'payment-methods' && <PaymentMethodsSection />}
           {activeSection === 'budgets' && <BudgetsSection />}
           {activeSection === 'connections' && <ConnectionsTab />}
@@ -1003,6 +1001,7 @@ function CategoriesTab() {
   });
 
   const ordered = useMemo(() => flattenTree(categories), [categories]);
+  const { rows, toggle, expandAll, collapseAll } = useCollapsibleTree(categories);
   // Valid parents for a node: everything except itself and its own descendants.
   const validParents = (id: string) => {
     const blocked = descendantIdSet(categories, id);
@@ -1039,14 +1038,35 @@ function CategoriesTab() {
           Add
         </button>
       </div>
+      <div className="flex items-center gap-3 text-xs">
+        <button onClick={expandAll} className="text-brand-600 underline hover:text-brand-700">Expand all</button>
+        <button onClick={collapseAll} className="text-brand-600 underline hover:text-brand-700">Collapse all</button>
+      </div>
       <div className="rounded-xl border border-gray-200 bg-white">
-        {ordered.map(({ cat, depth }) => (
+        {rows.map(({ cat, depth, hasChildren, collapsed, descendantCount }) => (
           <div key={cat.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-3 last:border-0">
-            <div style={{ paddingLeft: depth * 20 }}>
-              <p className="font-medium text-gray-900">
-                {depth > 0 && <span className="text-gray-300">└ </span>}{cat.name}
-              </p>
-              {cat.description && <p className="text-xs text-gray-400">{cat.description}</p>}
+            <div className="flex items-center gap-1.5" style={{ paddingLeft: depth * 20 }}>
+              {hasChildren ? (
+                <button
+                  onClick={() => toggle(cat.id)}
+                  className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                  aria-label={collapsed ? `Expand ${cat.name}` : `Collapse ${cat.name}`}
+                  aria-expanded={!collapsed}
+                >
+                  {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+              ) : (
+                <span className="inline-block w-5" />
+              )}
+              <div>
+                <p className="font-medium text-gray-900">
+                  {cat.name}
+                  {hasChildren && collapsed && (
+                    <span className="ml-2 text-xs font-normal text-gray-400">{descendantCount}</span>
+                  )}
+                </p>
+                {cat.description && <p className="text-xs text-gray-400">{cat.description}</p>}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <select
