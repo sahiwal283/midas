@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.0-alpha (2026-08-10)
+
+### Navigation consolidation
+- **Add Transaction** opens the receipt wizard directly; the Expense-vs-PO chooser page is gone ("Create a purchase order instead" lives inside the wizard). Mobile camera button goes straight to scan again.
+- **To Upload** removed from navigation (the tap-to-retry banner covers it; the page remains reachable from the banner).
+
 ## 0.27.1-alpha (2026-08-10)
 
 ### Extension onboarding
