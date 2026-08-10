@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.0-alpha (2026-08-10)
+
+### Platform hardening
+- **Receipts and captures now require authentication**: files stream through `/api/v1/files/*` (owner or accountant/admin/developer); the public `/uploads` static mount is removed. Path-traversal guarded.
+- **Close periods**: accountants can close a month (`closed_periods`, migration 0013); edits, deletes, submits, reviews, and reimbursement changes on expenses in a closed month are blocked (`PERIOD_CLOSED`); admin force-delete remains as the audited override; reopen is admin-only. Corrections flow through the clone-to-new-draft path into an open period.
+- **Merchant normalization** in reports: AMAZON.COM / Amazon.com*123 / AMZN now roll up as one vendor.
+- **Production security checklist** added to OPERATIONS.md (incl. rotate/deactivate seeded partner@/developer@ before pilot).
+
 ## 0.15.0-alpha (2026-08-10)
 
 ### Notifications
