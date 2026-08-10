@@ -53,7 +53,7 @@ export function PurchaseOrderDetail() {
 
   const cancel = useMutation({
     mutationFn: async () => (await api.post(`/transactions/${id}/cancel`)).data,
-    onSuccess: () => navigate('/transactions/new'),
+    onSuccess: () => navigate('/expenses/new'),
   });
 
   const patch = useMutation({
@@ -132,7 +132,7 @@ export function PurchaseOrderDetail() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <Link to={isPrivileged ? '/accountant/purchase-orders' : '/transactions/new'} className="text-sm font-medium text-brand-700">
+      <Link to={isPrivileged ? '/accountant/purchase-orders' : '/expenses/new'} className="text-sm font-medium text-brand-700">
         ← {isPrivileged ? 'PO queue' : 'New transaction'}
       </Link>
       <h1 className="mt-2 mb-1 font-display text-3xl font-semibold text-ink">Purchase Order</h1>

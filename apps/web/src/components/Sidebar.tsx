@@ -61,13 +61,9 @@ export function Sidebar() {
             <ReceiptText className="h-4 w-4" />
             Expenses
           </NavLink>
-          <NavLink to="/transactions/new" className={linkClass}>
+          <NavLink to="/expenses/new" className={linkClass}>
             <PlusCircle className="h-4 w-4" />
             Add Transaction
-          </NavLink>
-          <NavLink to="/to-upload" className={linkClass}>
-            <Upload className="h-4 w-4" />
-            To Upload
           </NavLink>
         </div>
 

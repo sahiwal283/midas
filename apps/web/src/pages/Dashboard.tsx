@@ -319,7 +319,7 @@ function EmployeeDashboard() {
           </p>
         </div>
         <Link
-          to="/transactions/new"
+          to="/expenses/new"
           className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-600"
         >
           <Plus className="h-4 w-4" />
@@ -387,7 +387,7 @@ function EmployeeDashboard() {
         ) : recent.length === 0 ? (
           <div className="px-6 py-8 text-center text-sm text-charcoal/45">
             No expenses yet.{' '}
-            <Link to="/transactions/new" className="text-brand-700 hover:underline">Create one</Link>
+            <Link to="/expenses/new" className="text-brand-700 hover:underline">Create one</Link>
           </div>
         ) : (
           <div className="divide-y divide-ink/5">

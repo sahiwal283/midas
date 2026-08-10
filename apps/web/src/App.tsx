@@ -15,7 +15,6 @@ import { AccountantReview } from './pages/AccountantReview';
 import { ToUpload } from './pages/ToUpload';
 import { Admin } from './pages/Admin';
 import { PartnerExpenses } from './pages/PartnerExpenses';
-import { TransactionNew } from './pages/TransactionNew';
 import { PurchaseOrderNew } from './pages/PurchaseOrderNew';
 import { PurchaseOrderDetail } from './pages/PurchaseOrderDetail';
 import { Reports } from './pages/Reports';
@@ -46,7 +45,7 @@ export default function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/expenses" element={<ExpenseList />} />
-              <Route path="/transactions/new" element={<TransactionNew />} />
+              <Route path="/transactions/new" element={<Navigate to="/expenses/new" replace />} />
               <Route path="/transactions/po/new" element={<PurchaseOrderNew />} />
               <Route path="/transactions/:id" element={<PurchaseOrderDetail />} />
               <Route path="/expenses/new" element={<ExpenseNew />} />

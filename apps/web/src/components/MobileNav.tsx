@@ -29,7 +29,6 @@ export function MobileNav() {
             className="absolute bottom-16 left-3 right-3 rounded-2xl border border-ink/10 bg-white p-2 shadow-panel"
             onClick={(e) => e.stopPropagation()}
           >
-            <SheetLink to="/to-upload" icon={<Upload className="h-4 w-4" />} label="To Upload" onNavigate={() => setMoreOpen(false)} />
             {isPartner && (
               <SheetLink to="/partner-expenses" icon={<Briefcase className="h-4 w-4" />} label="Partner Expenses" onNavigate={() => setMoreOpen(false)} />
             )}
@@ -62,7 +61,7 @@ export function MobileNav() {
 
         <div className="relative flex flex-1 justify-center">
           <Link
-            to="/transactions/new"
+            to="/expenses/new?mode=scan"
             aria-label="Add transaction"
             className="-mt-5 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-cream shadow-lg ring-4 ring-cream active:bg-brand-600"
           >

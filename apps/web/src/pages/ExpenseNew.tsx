@@ -392,6 +392,14 @@ export function ExpenseNew() {
             </button>
           </div>
 
+          {/* POs live here too so "Add Transaction" needs no separate chooser page. */}
+          <p className="mt-5 text-center text-sm text-charcoal/60">
+            Ordering from a vendor with line items?{' '}
+            <Link to="/transactions/po/new" className="font-medium text-brand-700 hover:underline">
+              Create a purchase order instead
+            </Link>
+          </p>
+
           <input ref={fileInputRef} type="file" accept="image/*,.pdf,.heic,.heif" className="hidden" onChange={handleFile} />
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
         </div>
