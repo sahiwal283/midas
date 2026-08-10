@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.0-alpha (2026-08-10)
+
+### Transactions, Purchase Orders, Budgets (landed from parallel session)
+- Transaction/PO foundation: purchase orders with line items, vendors, Zoho items catalog, PO queue + detail + bulk review, Zoho PO sync parity, budgets section, integration health page, audit-log immutability triggers (migrations 0014-0016, idempotent SQL runner).
+- Note: these features rode into main alongside the 0.20.1 extension fix; this release deploys both.
+
 ## 0.20.1-alpha (2026-08-10)
 
 ### Fixed
