@@ -1,6 +1,6 @@
 {
   "name": "@midas/api",
-  "version": "0.29.0-alpha",
+  "version": "0.30.0-alpha",
   "private": true,
   "main": "dist/server.js",
   "scripts": {
