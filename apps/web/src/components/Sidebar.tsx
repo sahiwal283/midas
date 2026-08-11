@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, ClipboardList, Settings, LogOut, Briefcase,
-  BarChart3, Activity, FileSpreadsheet, PlusCircle, Upload, Banknote,
+  BarChart3, Activity, FileSpreadsheet, PlusCircle, Upload, Banknote, Heart,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
@@ -112,7 +112,11 @@ export function Sidebar() {
       </nav>
 
       <div className="px-4 pb-2 pt-2 text-center">
-        <p className="text-[11px] text-charcoal/40">Built by your haute tech team</p>
+        <p className="flex items-center justify-center gap-1 text-[11px] text-charcoal/40">
+          <span>Made with</span>
+          <Heart className="h-3 w-3 shrink-0 fill-danger text-danger" role="img" aria-label="love" />
+          <span>by your Haute tech team</span>
+        </p>
         <p className="mt-0.5 text-[11px] text-charcoal/30">{version}</p>
       </div>
 
