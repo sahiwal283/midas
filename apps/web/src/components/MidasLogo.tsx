@@ -37,9 +37,10 @@ export function MidasLogo({ size = 32, className, bare = false }: MidasLogoProps
   );
 
   if (bare) {
+    // Navy, not gold: champagne gold is only 1.98:1 on a light surface.
     return (
       <span
-        className={`inline-flex items-center justify-center text-brand-500 ${className ?? ''}`}
+        className={`inline-flex items-center justify-center text-brand-800 ${className ?? ''}`}
         style={{ width: size, height: size }}
         aria-label="Midas"
         role="img"
@@ -51,7 +52,7 @@ export function MidasLogo({ size = 32, className, bare = false }: MidasLogoProps
 
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-[20%] bg-brand-500 text-cream ${className ?? ''}`}
+      className={`inline-flex items-center justify-center rounded-[20%] bg-brand-800 text-gold-400 ${className ?? ''}`}
       style={{ width: size, height: size }}
       aria-label="Midas"
       role="img"
