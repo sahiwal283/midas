@@ -52,11 +52,15 @@ The Midas Authentik provider is configured with `signing_key_id=NULL`, which mea
 
 | Authentik group | Midas role |
 |---|---|
-| `midas-admins` | admin |
-| `midas-accountants` | accountant |
-| `midas-users` | user |
+| `midas-admins`, `app-midas-admins`, `IT` | admin |
+| `midas-accountants`, `app-midas-accountants` | accountant |
+| `midas-users`, `app-midas-users`, `Employees` | user |
 
-Highest-privilege wins when a user is in multiple groups. No matching group → login denied (`denied_no_group`). Role is synced from Authentik groups on every SSO login — Authentik groups are the source of truth in `authentik` mode.
+Highest-privilege wins when a user is in multiple groups. No matching group → login denied (`denied_no_group`).
+
+Groups gate **access**, not role. The mapped role is applied only when auto-creating a new
+user; on every later login the user's existing Midas role is left alone (see the comment in
+`routes/oidcAuth.ts` — "Midas owns roles"). Change a role in Settings → Users, not in Authentik.
 
 ### User provisioning on first SSO login
 
@@ -69,7 +73,7 @@ Resolution order:
 3. **Auto-create** (`AUTHENTIK_AUTO_CREATE_USERS=true`) — if no link and no email match, create a new Midas user with `passwordHash=null` (SSO-only). Role comes from Authentik groups. Audit: `sso.user_auto_created`.
 4. **Deny** — if `AUTHENTIK_AUTO_CREATE_USERS=false` and no match: `denied_no_match`. Admin must pre-provision via Admin → Users.
 
-Auto-create is **gated by group membership**: only users in `midas-admins`, `midas-accountants`, or `midas-users` are auto-provisioned. A user with an Authentik account but no approved Midas group is always denied (`denied_no_group`).
+Auto-create is **gated by group membership**: only users in a group listed in `AUTHENTIK_GROUP_ADMIN` / `_ACCOUNTANT` / `_USER` (currently including `IT` and `Employees`) are auto-provisioned. A user with an Authentik account but no approved Midas group is always denied (`denied_no_group`).
 
 **SSO-only users** (`passwordHash=null`) cannot use local login. The local login route returns 401 for accounts without a password hash. An admin can set a local fallback password via Admin → Users → Reset Password if needed.
 
@@ -99,7 +103,7 @@ Auto-create is **gated by group membership**: only users in `midas-admins`, `mid
 |---|---|
 | `midas-admins`, `app-midas-admins`, `IT` | admin |
 | `midas-accountants`, `app-midas-accountants` | accountant |
-| `midas-users`, `app-midas-users`, `employee` | user |
+| `midas-users`, `app-midas-users`, `Employees` | user |
 
 To assign a user to a group: Authentik admin UI → Directory → Groups → select group → Members tab.
 
@@ -108,9 +112,9 @@ who sees/launches Midas from the Authentik portal. It does **not** grant Midas a
 Midas separately requires one of the group **names above** to appear in the token's
 `groups` claim. A user can have the app assigned and still hit `denied_no_group`.
 
-`IT` and `employee` were added 2026-08-11 so the org-wide groups work without creating
-per-app `midas-*` groups. Matching is exact and **case-sensitive** — `Employee` or
-`employees` will not match `employee`.
+`IT` and `Employees` were added 2026-08-11 so the org-wide groups work without creating
+per-app `midas-*` groups. Matching is exact and **case-sensitive** — `employee` and
+`employees` both fail against the real group name, which is `Employees`.
 
 Group membership only sets the *initial* role for auto-created users. Existing users keep
 whatever role they have in Midas (Settings → Users); an SSO login never overwrites it.
@@ -134,7 +138,7 @@ AUTHENTIK_SCOPES=openid email profile groups
 # Group name → role mapping (must match Authentik group names exactly, case-sensitive)
 AUTHENTIK_GROUP_ADMIN=app-midas-admins,midas-admins,IT
 AUTHENTIK_GROUP_ACCOUNTANT=app-midas-accountants,midas-accountants
-AUTHENTIK_GROUP_USER=app-midas-users,midas-users,employee
+AUTHENTIK_GROUP_USER=app-midas-users,midas-users,Employees
 ```
 
 > **Changing these requires recreating the container, not restarting it.** Compose injects
