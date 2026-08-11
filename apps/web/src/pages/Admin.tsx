@@ -323,6 +323,18 @@ function UsersTab() {
     queryFn: () => client.get('/admin/users').then((r) => r.data.users),
   });
 
+  // Two accounts with the same person's name are usually one person who was
+  // created twice (once locally, once via SSO). Surface it before it calcifies.
+  const duplicateNames = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const u of users) {
+      const key = u.name.trim().toLowerCase().replace(/\s+/g, ' ');
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([k]) => k));
+  }, [users]);
+
+
   const createMutation = useMutation({
     mutationFn: (body: typeof createForm) => client.post('/admin/users', body),
     onSuccess: () => {
@@ -674,9 +686,17 @@ function UsersTab() {
                   </td>
                   <td className="px-4 py-3 font-medium text-gray-900">
                     {u.name}
+                    {duplicateNames.has(u.name.trim().toLowerCase().replace(/\s+/g, ' ')) && (
+                      <span
+                        className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                        title="Another account has this name — they may be the same person recorded twice."
+                      >
+                        possible duplicate
+                      </span>
+                    )}
                     {u.department && <span className="ml-2 text-xs font-normal text-gray-400">{u.department}</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{u.email}</td>
+                  <td className="px-4 py-3 text-gray-600">{u.email ?? <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-3 text-gray-600">
                     <select
                       value={u.role}
@@ -889,6 +909,7 @@ function UserProfileEditor({ user, allUsers, onClose, onError }: {
 }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({
+    ssoUsername: user.ssoUsername ?? '',
     department: user.department ?? '',
     employeeId: user.employeeId ?? '',
     costCenter: user.costCenter ?? '',
@@ -908,6 +929,7 @@ function UserProfileEditor({ user, allUsers, onClose, onError }: {
 
   const saveMutation = useMutation({
     mutationFn: () => client.patch(`/admin/users/${user.id}`, {
+      ssoUsername: form.ssoUsername.trim() || null,
       department: form.department.trim() || null,
       employeeId: form.employeeId.trim() || null,
       costCenter: form.costCenter.trim() || null,
@@ -931,6 +953,18 @@ function UserProfileEditor({ user, allUsers, onClose, onError }: {
     <div className="space-y-3">
       <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Org profile — {user.name}</h4>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Authentik username</label>
+          <input
+            value={form.ssoUsername}
+            onChange={(e) => set('ssoUsername', e.target.value)}
+            placeholder="e.g. jsmith"
+            className={inputCls}
+          />
+          <p className="mt-1 text-[11px] text-gray-400">
+            Links this person to their SSO account before their first login, so they are not created twice.
+          </p>
+        </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-600">Department</label>
           <input value={form.department} onChange={(e) => set('department', e.target.value)} placeholder="e.g. Marketing" className={inputCls} />

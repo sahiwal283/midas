@@ -10,6 +10,8 @@ export interface User {
   username: string;
   /** Optional; required only by email-delivered features (invites, notifications). */
   email: string | null;
+  /** Authentik username, set by an admin to pre-link this user to an IdP identity. */
+  ssoUsername?: string | null;
   name: string;
   role: UserRole;
   isActive: boolean;

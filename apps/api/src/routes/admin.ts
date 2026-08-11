@@ -163,6 +163,8 @@ router.post('/users', adminOnly, asyncHandler(async (req, res) => {
 }));
 
 const profileFieldsSchema = z.object({
+  /** Authentik username — pre-links this user to an IdP identity before first login. */
+  ssoUsername: z.string().max(120).nullable().optional(),
   department: z.string().max(120).nullable().optional(),
   employeeId: z.string().max(60).nullable().optional(),
   costCenter: z.string().max(60).nullable().optional(),
@@ -172,7 +174,7 @@ const profileFieldsSchema = z.object({
 });
 
 const PROFILE_FIELDS = [
-  'department', 'employeeId', 'costCenter', 'managerId', 'defaultZohoEntity', 'defaultPaymentMethodId',
+  'ssoUsername', 'department', 'employeeId', 'costCenter', 'managerId', 'defaultZohoEntity', 'defaultPaymentMethodId',
 ] as const;
 
 const patchUserSchema = profileFieldsSchema.extend({
@@ -184,6 +186,7 @@ const patchUserSchema = profileFieldsSchema.extend({
 const userReturningColumns = {
   id: users.id,
   username: users.username,
+  ssoUsername: users.ssoUsername,
   email: users.email,
   name: users.name,
   role: users.role,

@@ -55,6 +55,12 @@ export const users = pgTable('users', {
    * features that actually deliver mail (invites, notification email).
    */
   email: text('email').unique(),
+  /**
+   * Authentik username, set by an admin to pre-link this Midas user to an IdP
+   * identity before their first SSO login. Checked ahead of username/email
+   * matching so linking never depends on those happening to agree.
+   */
+  ssoUsername: text('sso_username'),
   name: text('name').notNull(),
   role: userRoleEnum('role').default('user').notNull(),
   passwordHash: text('password_hash'),
