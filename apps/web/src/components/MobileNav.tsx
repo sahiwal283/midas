@@ -6,9 +6,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
+// Matches the desktop navy rail: gold marks the active destination.
 const itemCls = ({ isActive }: { isActive: boolean }) =>
-  `flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
-    isActive ? 'text-brand-600' : 'text-charcoal/50'
+  `flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors ${
+    isActive ? 'text-gold-400' : 'text-brand-300'
   }`;
 
 export function MobileNav() {
@@ -55,7 +56,7 @@ export function MobileNav() {
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-ink/10 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-white/10 bg-brand-800 pb-[env(safe-area-inset-bottom)] lg:hidden">
         <NavLink to="/dashboard" className={itemCls}>
           <LayoutDashboard className="h-5 w-5" />
           Home
@@ -65,7 +66,7 @@ export function MobileNav() {
           <Link
             to="/expenses/new?mode=scan"
             aria-label="Add transaction"
-            className="-mt-5 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-cream shadow-lg ring-4 ring-cream active:bg-brand-600"
+            className="-mt-5 flex h-14 w-14 items-center justify-center rounded-full bg-gold-400 text-brand-800 shadow-lg ring-4 ring-brand-800 transition-colors active:bg-gold-500"
           >
             <Camera className="h-6 w-6" />
           </Link>
@@ -84,7 +85,7 @@ export function MobileNav() {
         ) : (
           <button
             onClick={() => setMoreOpen((o) => !o)}
-            className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-charcoal/50"
+            className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-brand-300"
           >
             {moreOpen ? <X className="h-5 w-5" /> : <MoreDots />}
             More
@@ -94,7 +95,7 @@ export function MobileNav() {
         {isPrivileged && (
           <button
             onClick={() => setMoreOpen((o) => !o)}
-            className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-charcoal/50"
+            className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-brand-300"
           >
             {moreOpen ? <X className="h-5 w-5" /> : <MoreDots />}
             More
