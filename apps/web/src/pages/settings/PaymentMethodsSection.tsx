@@ -163,7 +163,7 @@ export function PaymentMethodsSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Default Zoho entity</label>
+              <label className="mb-1 block text-xs font-medium text-gray-700">Default company</label>
               <input
                 value={form.defaultZohoEntity}
                 onChange={(e) => set('defaultZohoEntity', e.target.value)}
@@ -230,7 +230,7 @@ export function PaymentMethodsSection() {
               <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <th className="px-6 py-3">Label</th>
                 <th className="px-6 py-3">Brand</th>
-                <th className="px-6 py-3">Entity</th>
+                <th className="px-6 py-3">Company</th>
                 <th className="px-6 py-3">Zoho Account</th>
                 <th className="px-6 py-3">Assignment</th>
                 <th className="px-6 py-3">Status</th>
@@ -411,7 +411,7 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Default company (Zoho entity)</label>
+          <label className="mb-1 block text-xs font-medium text-gray-700">Default company</label>
           <input
             value={form.defaultZohoEntity}
             onChange={(e) => set('defaultZohoEntity', e.target.value)}

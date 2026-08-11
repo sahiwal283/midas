@@ -220,7 +220,7 @@ export function Reports() {
             onChange={(e) => setEntity(e.target.value)}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none"
           >
-            <option value="">All entities</option>
+            <option value="">All companies</option>
             {entityOptions.map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
@@ -354,7 +354,7 @@ export function Reports() {
                 </div>
               )}
             </Card>
-            <Card title="Spend by entity">
+            <Card title="Spend by company">
               {entities.length === 0
                 ? <p className="py-6 text-center text-sm text-gray-400">No data.</p>
                 : <BreakdownList rows={entities} />}

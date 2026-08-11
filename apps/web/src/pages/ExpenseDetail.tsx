@@ -249,7 +249,7 @@ const ACTION_LABELS: Record<string, string> = {
   'reimbursement.updated': 'Reimbursement updated',
   'zoho.pushed': 'Pushed to Zoho',
   'zoho.failed': 'Zoho push failed',
-  'zoho_entity.set': 'Zoho entity set',
+  'zoho_entity.set': 'Company set',
   'submitted': 'Submitted for review',
   'created': 'Expense created',
   'updated': 'Fields updated',
