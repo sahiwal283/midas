@@ -51,7 +51,9 @@ function ChartTooltip({ active, payload, label }: any) {
 function Card({ title, children, className = '' }: { title?: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-xl border border-gray-200 bg-white p-5 ${className}`}>
-      {title && <h2 className="mb-4 text-sm font-semibold text-gray-700">{title}</h2>}
+      {title && (
+        <h2 className="mb-4 border-b border-gold-400/60 pb-2.5 text-sm font-semibold text-gray-700">{title}</h2>
+      )}
       {children}
     </div>
   );
