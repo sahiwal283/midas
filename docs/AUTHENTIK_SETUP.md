@@ -97,11 +97,23 @@ Auto-create is **gated by group membership**: only users in `midas-admins`, `mid
 
 | Group | Maps to role |
 |---|---|
-| `midas-admins` | admin |
-| `midas-accountants` | accountant |
-| `midas-users` | user |
+| `midas-admins`, `app-midas-admins`, `IT` | admin |
+| `midas-accountants`, `app-midas-accountants` | accountant |
+| `midas-users`, `app-midas-users`, `employee` | user |
 
 To assign a user to a group: Authentik admin UI → Directory → Groups → select group → Members tab.
+
+**Two independent gates.** Binding the *application* to a group in Authentik controls
+who sees/launches Midas from the Authentik portal. It does **not** grant Midas access:
+Midas separately requires one of the group **names above** to appear in the token's
+`groups` claim. A user can have the app assigned and still hit `denied_no_group`.
+
+`IT` and `employee` were added 2026-08-11 so the org-wide groups work without creating
+per-app `midas-*` groups. Matching is exact and **case-sensitive** — `Employee` or
+`employees` will not match `employee`.
+
+Group membership only sets the *initial* role for auto-created users. Existing users keep
+whatever role they have in Midas (Settings → Users); an SSO login never overwrites it.
 
 ---
 
@@ -120,10 +132,19 @@ AUTHENTIK_POST_LOGOUT_REDIRECT_URI=http://192.168.1.210:5173/login
 AUTHENTIK_SCOPES=openid email profile groups
 
 # Group name → role mapping (must match Authentik group names exactly, case-sensitive)
-AUTHENTIK_GROUP_ADMIN=midas-admins
-AUTHENTIK_GROUP_ACCOUNTANT=midas-accountants
-AUTHENTIK_GROUP_USER=midas-users
+AUTHENTIK_GROUP_ADMIN=app-midas-admins,midas-admins,IT
+AUTHENTIK_GROUP_ACCOUNTANT=app-midas-accountants,midas-accountants
+AUTHENTIK_GROUP_USER=app-midas-users,midas-users,employee
 ```
+
+> **Changing these requires recreating the container, not restarting it.** Compose injects
+> `.env` via `env_file:` at container *create* time, so `docker compose restart api` keeps
+> the old values (verified 2026-08-11 — `printenv` still showed the previous list). Use:
+>
+> ```bash
+> ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d --force-recreate --no-deps api'"
+> ssh root@192.168.1.190 "pct exec 3120 -- docker exec midas-api-1 printenv AUTHENTIK_GROUP_ADMIN"   # confirm
+> ```
 
 ---
 
