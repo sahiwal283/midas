@@ -2,23 +2,31 @@ import { useEffect, useState } from 'react';
 import { Download, Puzzle, X } from 'lucide-react';
 
 // First-run modal that replaces the old /get-extension page. Desktop-only
-// (the extension can't be installed on mobile). Suppressed once the user has
-// dismissed it, downloaded the zip, or actually installed the extension —
-// the extension's presence content script stamps
-// document.documentElement.dataset.midasExtension with its version.
+// (the extension can't be installed on mobile).
+//
+// Only two things silence it for good: the extension actually being installed
+// (its content script stamps document.documentElement.dataset.midasExtension),
+// or the user explicitly choosing "Don't show this again". Closing with the X
+// snoozes for the browser session only, and downloading the zip is not the
+// same as installing it — otherwise someone who downloads and never installs
+// is never reminded.
 
 const STORAGE_KEY = 'midas.extensionSetup';
+/** Session-scoped so an X-dismiss returns on the next visit, not the next page. */
+const SNOOZE_KEY = 'midas.extensionSetup.snoozed';
 export const SHOW_EXTENSION_SETUP_EVENT = 'midas:show-extension-setup';
 
 // Same production URL note as the old GetExtension page: in production the
 // web UI and API share a domain because nginx proxies /api.
 const PROD_WEB_URL = 'https://midas.booute.duckdns.org';
 
-type SetupState = 'dismissed' | 'downloaded' | 'installed';
+/** Permanent suppression only. Legacy 'dismissed'/'downloaded' values are ignored. */
+type SetupState = 'installed' | 'never';
 
 function readState(): SetupState | null {
   try {
-    return localStorage.getItem(STORAGE_KEY) as SetupState | null;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw === 'installed' || raw === 'never' ? raw : null;
   } catch {
     return null;
   }
@@ -32,6 +40,22 @@ function writeState(value: SetupState) {
   }
 }
 
+function isSnoozed(): boolean {
+  try {
+    return sessionStorage.getItem(SNOOZE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function snooze() {
+  try {
+    sessionStorage.setItem(SNOOZE_KEY, '1');
+  } catch {
+    // Ignore — worst case it reappears on the next navigation.
+  }
+}
+
 function extensionInstalled(): boolean {
   return Boolean(document.documentElement.dataset.midasExtension);
 }
@@ -40,6 +64,7 @@ function extensionInstalled(): boolean {
 export function reopenExtensionSetup() {
   try {
     localStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(SNOOZE_KEY);
   } catch {
     // Ignore.
   }
@@ -58,7 +83,7 @@ export function ExtensionSetupModal() {
       writeState('installed');
       return;
     }
-    if (readState()) return;
+    if (readState() || isSnoozed()) return;
     const timer = window.setTimeout(() => {
       if (extensionInstalled()) {
         writeState('installed');
@@ -73,7 +98,6 @@ export function ExtensionSetupModal() {
   // dispatches this event (see reopenExtensionSetup).
   useEffect(() => {
     function onShow() {
-      setDownloaded(readState() === 'downloaded');
       setOpen(true);
     }
     window.addEventListener(SHOW_EXTENSION_SETUP_EVENT, onShow);
@@ -83,14 +107,20 @@ export function ExtensionSetupModal() {
   if (!open) return null;
 
   function handleDownload() {
-    writeState('downloaded');
+    // Downloading is not installing — this only drives the UI hint. The modal
+    // keeps returning until the extension is actually detected.
     setDownloaded(true);
-    // Keep the modal open so the user can follow the install steps.
   }
 
+  /** X or "Remind me later": back on the next visit. */
   function handleClose() {
-    // Don't downgrade 'downloaded'/'installed' to 'dismissed'.
-    if (!readState()) writeState('dismissed');
+    snooze();
+    setOpen(false);
+  }
+
+  /** Explicit opt-out: never again on this browser. */
+  function handleNeverShow() {
+    writeState('never');
     setOpen(false);
   }
 
@@ -120,7 +150,8 @@ export function ExtensionSetupModal() {
             type="button"
             onClick={handleClose}
             className="rounded-lg p-1 text-charcoal/40 hover:bg-ink/[0.04] hover:text-ink"
-            aria-label="Close"
+            aria-label="Close — we'll remind you next time"
+            title="Close — we'll remind you next time"
           >
             <X className="h-5 w-5" />
           </button>
@@ -180,6 +211,28 @@ export function ExtensionSetupModal() {
           <div className="mt-4 rounded-lg border border-ink/10 bg-cream px-4 py-3 text-xs text-charcoal/60">
             <strong className="text-charcoal/80">Firefox:</strong> not supported yet — the extension
             is Chrome/Edge only for now.
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink/10 px-6 py-3">
+          <p className="text-xs text-charcoal/50">
+            This closes for now and reappears next time, until the extension is installed.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleNeverShow}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal/60 underline-offset-2 hover:text-ink hover:underline"
+            >
+              Don&apos;t show this again
+            </button>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="rounded-lg border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink hover:bg-ink/[0.04]"
+            >
+              Remind me later
+            </button>
           </div>
         </div>
       </div>
