@@ -27,6 +27,8 @@ import { requireScope } from '../middleware/requireScope';
 import { asyncHandler, createError, notFound } from '../middleware/error';
 import { auditLog } from '../lib/audit';
 import { resolveCategoryId, resolveCategoryIdOrOther } from '../lib/ext/categories';
+import { applyVocabulary } from '../lib/ext/categoryVocabulary';
+import { allowedCategoryIds } from '../lib/ext/categoryVocabularyDb';
 import { EXT_EXPENSE_WITH, toExtExpenseDto } from '../lib/ext/dto';
 import { ExtImportTargetPort } from '../lib/ext/importTarget';
 import { mapImportExpenseStatus, mapImportReimbursementStatus } from '../lib/ext/maps';
@@ -92,13 +94,17 @@ async function loadExpenseDto(id: string) {
 
 // ── Categories ───────────────────────────────────────────────────────────────
 
-router.get('/categories', requireScope('expenses:read'), asyncHandler(async (_req, res) => {
+// Only the categories this connection is scoped to. A connection with no
+// allowlist rows is unrestricted, so consumers keep their own vocabulary
+// instead of inheriting every category Midas happens to define.
+router.get('/categories', requireScope('expenses:read'), asyncHandler(async (req, res) => {
   const rows = await db.query.expenseCategories.findMany({
     where: eq(expenseCategories.isActive, true),
     orderBy: [asc(expenseCategories.name)],
   });
+  const allowed = req.appConnection ? await allowedCategoryIds(req.appConnection.id) : null;
   res.json({
-    categories: rows.map((c) => ({
+    categories: applyVocabulary(rows, allowed).map((c) => ({
       id: c.id,
       name: c.name,
       description: c.description,

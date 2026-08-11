@@ -437,6 +437,22 @@ export const appConnections = pgTable('app_connections', {
   lastUsedAt: timestamp('last_used_at'),
 });
 
+// ── Per-connection category vocabulary ────────────────────────────────────────
+// Which Midas categories a consuming app may see via GET /ext/categories.
+// A connection with NO rows here is unrestricted (sees every active category),
+// so existing integrations keep working until someone opts them in.
+// Midas stays app-agnostic: the vocabulary is data, never hardcoded names.
+
+export const appConnectionCategories = pgTable('app_connection_categories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  connectionId: uuid('connection_id').references(() => appConnections.id, { onDelete: 'cascade' }).notNull(),
+  categoryId: uuid('category_id').references(() => expenseCategories.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('app_connection_categories_conn_cat_idx').on(t.connectionId, t.categoryId),
+  index('app_connection_categories_conn_idx').on(t.connectionId),
+]);
+
 // ── Category mappings (OCR / legacy suggestion → categoryId per sourceApp) ────
 
 export const categoryMappings = pgTable('category_mappings', {
