@@ -37,10 +37,12 @@ export function MidasLogo({ size = 32, className, bare = false }: MidasLogoProps
   );
 
   if (bare) {
-    // Navy, not gold: champagne gold is only 1.98:1 on a light surface.
+    // Defaults to navy — champagne gold is only 1.98:1 on a light surface — but
+    // callers on a dark surface (the sidebar) pass text-gold-400.
+    const hasColor = /(^|\s)text-/.test(className ?? '');
     return (
       <span
-        className={`inline-flex items-center justify-center text-brand-800 ${className ?? ''}`}
+        className={`inline-flex items-center justify-center ${hasColor ? '' : 'text-brand-800'} ${className ?? ''}`}
         style={{ width: size, height: size }}
         aria-label="Midas"
         role="img"
@@ -62,11 +64,19 @@ export function MidasLogo({ size = 32, className, bare = false }: MidasLogoProps
   );
 }
 
-/** Product wordmark — Fraunces, calm tracking. */
+/**
+ * Product wordmark — Fraunces, calm tracking.
+ * Colour defaults to ink but is overridable: pass a `text-*` class (the navy
+ * sidebar needs cream). Relying on class order to beat a hardcoded colour is
+ * fragile, so the default is only applied when the caller supplies none.
+ */
 export function MidasWordmark({ className = '' }: { className?: string }) {
+  const hasColor = /(^|\s)text-(?!\[|xs|sm|base|lg|xl|\dxl)/.test(className);
   return (
     <span
-      className={`font-display font-semibold tracking-[-0.03em] text-ink ${className || 'text-[1.35rem] leading-none'}`}
+      className={`font-display font-semibold tracking-[-0.03em] ${hasColor ? '' : 'text-ink'} ${
+        className || 'text-[1.35rem] leading-none'
+      }`}
     >
       Midas
     </span>

@@ -69,8 +69,10 @@ export function Login() {
       <div
         className="pointer-events-none absolute inset-0 opacity-60"
         style={{
+          // Champagne gold wash above, deep navy settling below — restrained,
+          // no visible banding, and it never sits behind body copy.
           background:
-            'radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,162,39,0.18), transparent 55%), radial-gradient(ellipse 60% 40% at 100% 100%, rgba(23,23,23,0.04), transparent)',
+            'radial-gradient(ellipse 80% 50% at 50% -10%, rgba(212,175,55,0.20), transparent 55%), radial-gradient(ellipse 70% 45% at 50% 110%, rgba(11,31,51,0.10), transparent 60%)',
         }}
       />
 
