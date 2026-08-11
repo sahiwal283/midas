@@ -16,6 +16,7 @@ import { evaluateZohoReadiness } from '../lib/zohoReadiness';
 import { editableFields, editRefusalMessage } from '../lib/expenseEdit';
 import { isLikelyDuplicate } from '../lib/duplicates';
 import { isAutoPushEligible } from '../lib/autoApprove';
+import { resolveExpenseKind } from '../lib/expenseKind';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { syncExpenseToTransaction, removeSyncedTransaction } from '../lib/syncExpenseTransaction';
 import { effectivelyActiveIds, descendantIds } from '../lib/categoryTree';
@@ -40,6 +41,8 @@ const createExpenseSchema = z.object({
   /** Live Zoho expense COA account_id for this entity. */
   zohoExpenseAccountId: z.string().min(1).optional(),
   zohoExpenseAccountName: z.string().min(1).optional(),
+  /** Partner-role only; coerced to 'business' for every other role. */
+  expenseKind: z.enum(['business', 'partner']).optional(),
 });
 
 const updateExpenseSchema = createExpenseSchema.partial();
@@ -176,6 +179,7 @@ router.post('/', asyncHandler(async (req, res) => {
     zohoEntity,
     zohoExpenseAccountId: body.zohoExpenseAccountId ?? null,
     zohoExpenseAccountName: body.zohoExpenseAccountName ?? null,
+    expenseKind: resolveExpenseKind(body.expenseKind, req.user!.role),
     status: 'draft',
     reimbursementStatus,
   }).returning();
@@ -236,6 +240,9 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     .set({
       ...body,
       ...reimbursementPatch,
+      ...(body.expenseKind !== undefined
+        ? { expenseKind: resolveExpenseKind(body.expenseKind, req.user!.role) }
+        : {}),
       amount: body.amount !== undefined ? String(body.amount) : undefined,
       updatedAt: new Date(),
     })
