@@ -45,9 +45,6 @@ export function Sidebar() {
       <div className="flex h-16 items-center gap-2.5 border-b border-ink/10 px-4">
         <MidasLogo size={30} />
         <MidasWordmark />
-        <span className="rounded-md bg-brand-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">
-          Beta
-        </span>
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3">
