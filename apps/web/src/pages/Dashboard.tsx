@@ -1,11 +1,9 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, ReceiptText, AlertCircle, CheckCircle2, Clock, RefreshCw, FileX, Banknote, ChevronRight, Lock } from 'lucide-react';
+import { Plus, ReceiptText, AlertCircle, CheckCircle2, Clock, RefreshCw, FileX, Banknote, ChevronRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { expenseApi, accountantApi } from '../api/expenses';
 import { userStatusLabel } from '../components/StatusBadge';
-import { ConfirmModal } from '../components/ConfirmModal';
 
 function fmtMoney(n: number): string {
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -137,160 +135,9 @@ function AccountantDashboard({ name }: { name: string }) {
         </Link>
       </div>
 
-      {/* Closed accounting periods */}
-      <div className="mt-6">
-        <ClosedPeriodsCard />
-      </div>
     </div>
   );
 }
-
-// ── Closed accounting periods card ────────────────────────────────────────────
-
-function fmtPeriod(period: string): string {
-  const [y, m] = period.split('-');
-  const d = new Date(Number(y), Number(m) - 1, 1);
-  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-}
-
-function ClosedPeriodsCard() {
-  const { user } = useAuth();
-  const qc = useQueryClient();
-  const canReopen = user?.role === 'admin' || user?.role === 'developer';
-
-  const [month, setMonth] = useState('');
-  const [confirmClose, setConfirmClose] = useState(false);
-  const [reopenTarget, setReopenTarget] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const { data: periods = [], isLoading } = useQuery({
-    queryKey: ['closed-periods'],
-    queryFn: () => accountantApi.closedPeriods(),
-  });
-
-  const closeMutation = useMutation({
-    mutationFn: () => accountantApi.closePeriod(month),
-    onSuccess: () => {
-      setConfirmClose(false);
-      setMonth('');
-      setError(null);
-      qc.invalidateQueries({ queryKey: ['closed-periods'] });
-    },
-    onError: (err: any) => {
-      setConfirmClose(false);
-      setError(err?.response?.data?.error?.message ?? 'Could not close the period');
-    },
-  });
-
-  const reopenMutation = useMutation({
-    mutationFn: (period: string) => accountantApi.reopenPeriod(period),
-    onSuccess: () => {
-      setReopenTarget(null);
-      setError(null);
-      qc.invalidateQueries({ queryKey: ['closed-periods'] });
-    },
-    onError: (err: any) => {
-      setReopenTarget(null);
-      setError(err?.response?.data?.error?.message ?? 'Could not reopen the period');
-    },
-  });
-
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white">
-      <div className="flex items-center gap-2 border-b border-gray-200 px-6 py-4">
-        <Lock className="h-4 w-4 text-gray-500" />
-        <h2 className="font-semibold text-gray-900">Closed Periods</h2>
-      </div>
-      <div className="px-6 py-4">
-        <p className="mb-3 text-xs text-gray-500">
-          Expenses dated in a closed month are locked — no edits, deletes, submissions, reviews, or
-          reimbursement changes. Corrections go through a new expense in an open month.
-        </p>
-
-        {error && (
-          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        <div className="mb-4 flex items-center gap-2">
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-900"
-            aria-label="Month to close"
-          />
-          <button
-            type="button"
-            disabled={!month || closeMutation.isPending}
-            onClick={() => setConfirmClose(true)}
-            className="rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-          >
-            Close period
-          </button>
-        </div>
-
-        {isLoading ? (
-          <p className="text-sm text-gray-400">Loading…</p>
-        ) : periods.length === 0 ? (
-          <p className="text-sm text-gray-400">No closed periods yet.</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {periods.map((p) => (
-              <li key={p.period} className="flex items-center justify-between py-2">
-                <div>
-                  <span className="text-sm font-medium text-gray-900">{fmtPeriod(p.period)}</span>
-                  <span className="ml-2 text-xs text-gray-400">
-                    closed {new Date(p.createdAt).toLocaleDateString()}
-                    {p.closedBy?.name ? ` by ${p.closedBy.name}` : ''}
-                  </span>
-                  {p.note && <p className="text-xs text-gray-500">{p.note}</p>}
-                </div>
-                {canReopen && (
-                  <button
-                    type="button"
-                    onClick={() => setReopenTarget(p.period)}
-                    disabled={reopenMutation.isPending}
-                    className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50"
-                  >
-                    Reopen
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <ConfirmModal
-        open={confirmClose}
-        title={`Close ${month ? fmtPeriod(month) : 'period'}?`}
-        confirmLabel="Close period"
-        loading={closeMutation.isPending}
-        onConfirm={() => closeMutation.mutate()}
-        onCancel={() => setConfirmClose(false)}
-      >
-        Every expense dated in {month ? fmtPeriod(month) : 'this month'} will be locked against
-        edits, deletes, submissions, reviews, and reimbursement changes.
-      </ConfirmModal>
-
-      <ConfirmModal
-        open={reopenTarget !== null}
-        title={`Reopen ${reopenTarget ? fmtPeriod(reopenTarget) : 'period'}?`}
-        confirmLabel="Reopen period"
-        danger
-        loading={reopenMutation.isPending}
-        onConfirm={() => reopenTarget && reopenMutation.mutate(reopenTarget)}
-        onCancel={() => setReopenTarget(null)}
-      >
-        Expenses in this month become editable and reviewable again. The action is audited.
-      </ConfirmModal>
-    </div>
-  );
-}
-
-// ── Employee dashboard (unchanged behavior) ───────────────────────────────────
 
 function EmployeeDashboard() {
   const { user } = useAuth();
@@ -426,12 +273,6 @@ function EmployeeDashboard() {
         )}
       </div>
 
-      {/* Closed accounting periods — admins/developers manage (incl. reopen) */}
-      {(user?.role === 'admin' || user?.role === 'developer') && (
-        <div className="mt-6">
-          <ClosedPeriodsCard />
-        </div>
-      )}
     </div>
   );
 }
