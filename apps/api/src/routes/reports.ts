@@ -137,11 +137,11 @@ router.get('/summary', asyncHandler(async (req, res) => {
   }).from(transactions).where(txScope).groupBy(transactions.type);
 
   const [opsPending] = await db.select({ n: count() }).from(expenses)
-    .where(inArray(expenses.status, ['pending', 'in_review']));
+    .where(and(inArray(expenses.status, ['pending', 'in_review']), eq(expenses.expenseKind, 'business')));
   const [opsAwaiting] = await db.select({ n: count() }).from(expenses)
-    .where(eq(expenses.status, 'awaiting_info'));
+    .where(and(eq(expenses.status, 'awaiting_info'), eq(expenses.expenseKind, 'business')));
   const [opsZohoFailed] = await db.select({ n: count() }).from(expenses)
-    .where(and(eq(expenses.status, 'approved'), eq(expenses.integrationStatus, 'failed')));
+    .where(and(eq(expenses.status, 'approved'), eq(expenses.integrationStatus, 'failed'), eq(expenses.expenseKind, 'business')));
   const [opsOcrReview] = await db.select({ n: count() }).from(expenses)
     .where(sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id} and r.ocr_needs_review = true)`);
   const [opsPoQueue] = await db.select({ n: count() }).from(transactions)
