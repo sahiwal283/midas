@@ -88,14 +88,22 @@ Auto-create is **gated by group membership**: only users in a group listed in `A
 | Client ID | `347nbznJmVPx7V60PNevuwtkanwVdyS7tBBd7640` |
 | Client Secret | stored in `/opt/midas/.env` on CT 3120 (rotated 2026-05-21) |
 | Redirect URI | `http://192.168.1.210:4000/api/v1/auth/oidc/callback` |
-| Launch URL | `http://192.168.1.210:5173` |
-| Post-logout redirect | `http://192.168.1.210:5173/login` |
+| Launch URL | `https://midas.booute.duckdns.org/api/v1/auth/oidc/login` |
+| Post-logout redirect | `https://midas.booute.duckdns.org/login` |
 | Scopes | openid, email, profile, groups |
 | Groups claim | "Coruscant groups claim" property mapping — expression: `return [g.name for g in request.user.ak_groups.all()]` |
 | Signing | HS256 (client secret) — no certificate keypair assigned |
 | PKCE | S256 supported |
 
 ---
+
+> **Launch URL must be the OIDC start endpoint, not the app root** (fixed 2026-08-11).
+> It was `https://midas.booute.duckdns.org`, so clicking the Midas tile in Authentik
+> opened the Midas login page and required a manual "Sign in with SSO" click even
+> though the user was already signed in to Authentik. Pointing it at
+> `/api/v1/auth/oidc/login` starts the OIDC flow immediately, so an authenticated
+> user lands straight in Midas. This matches the working pattern used by the
+> Zoho Integration Admin app (`…/admin/auth/oidc/start`).
 
 ## Current Midas groups in Authentik
 
