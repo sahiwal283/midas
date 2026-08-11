@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarisePartnerRows } from '../lib/partnerSummary';
+import { effectiveDateRange, summarisePartnerRows } from '../lib/partnerSummary';
 
 describe('summarisePartnerRows', () => {
   it('groups by key, sums spend and counts, sorted by spend descending', () => {
@@ -22,5 +22,21 @@ describe('summarisePartnerRows', () => {
 
   it('returns an empty array for no rows', () => {
     expect(summarisePartnerRows([], () => 'x')).toEqual([]);
+  });
+});
+
+describe('effectiveDateRange', () => {
+  it('returns null when no range is given and there are no partner expenses to bound it', () => {
+    expect(effectiveDateRange(undefined, undefined, { min: null, max: null })).toBeNull();
+  });
+
+  it('falls back to the min/max expense date when no range is given and rows exist', () => {
+    expect(effectiveDateRange(undefined, undefined, { min: '2026-01-05', max: '2026-03-20' }))
+      .toEqual({ from: '2026-01-05', to: '2026-03-20' });
+  });
+
+  it('uses the explicit range as-is, ignoring the bounds', () => {
+    expect(effectiveDateRange('2026-02-01', '2026-02-28', { min: '2026-01-05', max: '2026-03-20' }))
+      .toEqual({ from: '2026-02-01', to: '2026-02-28' });
   });
 });

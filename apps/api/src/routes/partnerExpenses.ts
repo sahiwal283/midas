@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { and, desc, eq, gte, lte, sum, count } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, max, min, sum, count } from 'drizzle-orm';
 import { db } from '../db/index';
 import { expenses } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, createError } from '../middleware/error';
-import { summarisePartnerRows } from '../lib/partnerSummary';
+import { effectiveDateRange, summarisePartnerRows } from '../lib/partnerSummary';
 import { rollUpByTopAncestor } from '../lib/categoryTree';
 import { granularityFor, periodKey, fillPeriods } from '../lib/reportBuckets';
 
@@ -22,8 +22,12 @@ function scope(from?: string, to?: string) {
 }
 
 function range(req: { query: Record<string, unknown> }) {
-  const from = typeof req.query.from === 'string' ? req.query.from : undefined;
-  const to = typeof req.query.to === 'string' ? req.query.to : undefined;
+  // An empty string (e.g. a page that always sends `from=&to=`) is treated the
+  // same as an absent param — `scope()` already ignores falsy from/to, so this
+  // doesn't change `GET /`'s behaviour, it just makes `/summary`'s "no range
+  // supplied" branch robust to both shapes.
+  const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : undefined;
+  const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : undefined;
   return { from, to };
 }
 
@@ -43,10 +47,37 @@ router.get('/', asyncHandler(async (req, res) => {
 
 router.get('/summary', asyncHandler(async (req, res) => {
   const { from, to } = range(req);
-  if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to) || from > to) {
-    throw createError('from/to must be YYYY-MM-DD with from <= to', 400, 'INVALID_RANGE');
+  if (from !== undefined && !DATE_RE.test(from)) {
+    throw createError('from must be YYYY-MM-DD', 400, 'INVALID_RANGE');
   }
-  const where = scope(from, to);
+  if (to !== undefined && !DATE_RE.test(to)) {
+    throw createError('to must be YYYY-MM-DD', 400, 'INVALID_RANGE');
+  }
+  if (from !== undefined && to !== undefined && from > to) {
+    throw createError('from must be <= to', 400, 'INVALID_RANGE');
+  }
+
+  // No explicit range (the page's default state): fall back to the min/max
+  // date across all partner expenses so the summary matches the unfiltered
+  // table. Zero partner expenses is a real state (e.g. first deploy) — not
+  // an error — so it resolves to an empty, zeroed-out summary below.
+  const [bounds] = await db.select({ min: min(expenses.date), max: max(expenses.date) })
+    .from(expenses).where(eq(expenses.expenseKind, 'partner'));
+  const resolved = effectiveDateRange(from, to, { min: bounds?.min ?? null, max: bounds?.max ?? null });
+
+  if (!resolved) {
+    res.json({
+      totals: { spend: 0, count: 0 },
+      granularity: 'month',
+      byCategory: [],
+      byPeriod: [],
+      byPerson: [],
+    });
+    return;
+  }
+  const { from: effFrom, to: effTo } = resolved;
+
+  const where = scope(effFrom, effTo);
   const num = (v: unknown) => Number(v ?? 0);
 
   const [totalsRow] = await db.select({ spend: sum(expenses.amount), n: count() })
@@ -78,14 +109,14 @@ router.get('/summary', asyncHandler(async (req, res) => {
 
   const byDate = await db.select({ date: expenses.date, spend: sum(expenses.amount), n: count() })
     .from(expenses).where(where).groupBy(expenses.date);
-  const granularity = granularityFor(from, to);
+  const granularity = granularityFor(effFrom, effTo);
   const periodMap = new Map<string, { spend: number; count: number }>();
   for (const r of byDate) {
     const key = periodKey(r.date, granularity);
     const cur = periodMap.get(key) ?? { spend: 0, count: 0 };
     periodMap.set(key, { spend: cur.spend + num(r.spend), count: cur.count + Number(r.n) });
   }
-  const byPeriod = fillPeriods(from, to, granularity, periodMap);
+  const byPeriod = fillPeriods(effFrom, effTo, granularity, periodMap);
 
   res.json({
     totals: { spend: num(totalsRow?.spend), count: Number(totalsRow?.n ?? 0) },
