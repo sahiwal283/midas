@@ -54,6 +54,7 @@ export function Login() {
       case 'token_error': return 'SSO sign-in failed. Please contact an administrator.';
       case 'invalid_state': return 'SSO session expired. Please try again.';
       case 'denied_no_group': return 'Your account is not assigned to a Midas access group.';
+      case 'denied_no_email': return 'Your Authentik account has no email address, so Midas could not create your account. Ask an admin to add an email to your Authentik profile, then sign in again.';
       case 'denied_no_match': return 'Your SSO account is not linked to a Midas account. Contact an administrator.';
       case 'denied_inactive': return 'Your account has been deactivated. Contact an administrator.';
       case 'missing_params': return 'SSO callback was incomplete. Please try again.';
