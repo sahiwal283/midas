@@ -73,6 +73,16 @@ Resolution order:
 3. **Auto-create** (`AUTHENTIK_AUTO_CREATE_USERS=true`) — if no link and no email match, create a new Midas user with `passwordHash=null` (SSO-only). Role comes from Authentik groups. Audit: `sso.user_auto_created`.
 4. **Deny** — if `AUTHENTIK_AUTO_CREATE_USERS=false` and no match: `denied_no_match`. Admin must pre-provision via Admin → Users.
 
+**An Authentik account without an email cannot be auto-provisioned** — it fails with
+`denied_no_email`. Midas's `users.email` is unique and not-null: it is the identity key
+for notifications, reimbursements, and `/ext` actor resolution, so a synthesised address
+would put unreachable contacts into an app that emails people about their money.
+Observed 2026-08-11: a user in `Employees` passed the group gate and still could not sign
+in because their Authentik profile had no email. **Fix it in Authentik** (Directory →
+Users → set Email), not in Midas. Making email a required field in the Authentik
+enrolment flow prevents recurrence. Both `denied_no_email` and `denied_no_match` are now
+written to the Midas audit log (`sso.login_denied_*`).
+
 Auto-create is **gated by group membership**: only users in a group listed in `AUTHENTIK_GROUP_ADMIN` / `_ACCOUNTANT` / `_USER` (currently including `IT` and `Employees`) are auto-provisioned. A user with an Authentik account but no approved Midas group is always denied (`denied_no_group`).
 
 **SSO-only users** (`passwordHash=null`) cannot use local login. The local login route returns 401 for accounts without a password hash. An admin can set a local fallback password via Admin → Users → Reset Password if needed.

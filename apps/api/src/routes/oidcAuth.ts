@@ -139,8 +139,26 @@ router.get('/oidc/callback', asyncHandler(async (req, res) => {
   const resolved = await resolveLocalUser(claims, role, env.AUTHENTIK_AUTO_CREATE_USERS);
 
   if (!resolved) {
-    console.error('[oidc:callback] denied_no_match — sub:', claims.sub, '| emailDomain:', claims.email?.split('@')[1] ?? 'no-email');
-    res.redirect(`${webBase}/login?oidc_error=denied_no_match`);
+    // Auto-provisioning cannot create a user without an email: users.email is the
+    // unique identity key (notifications, reimbursements, ext actor resolution).
+    // Distinguish that from "auto-create is off" so the message is actionable.
+    const missingEmail = !claims.email;
+    const reason = missingEmail ? 'denied_no_email' : 'denied_no_match';
+    console.error(`[oidc:callback] ${reason} — sub:`, claims.sub, '| emailDomain:', claims.email?.split('@')[1] ?? 'no-email');
+    await auditLog({
+      entityType: 'sso',
+      entityId: claims.sub,
+      action: `sso.login_${reason}`,
+      metadata: {
+        provider: 'authentik',
+        sub: claims.sub,
+        emailDomain: claims.email?.split('@')[1] ?? null,
+        hasEmail: Boolean(claims.email),
+        preferredUsername: claims.preferred_username ?? null,
+        autoCreateEnabled: env.AUTHENTIK_AUTO_CREATE_USERS,
+      },
+    });
+    res.redirect(`${webBase}/login?oidc_error=${reason}`);
     return;
   }
 
