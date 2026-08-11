@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, ClipboardList, Settings, LogOut, Briefcase,
   BarChart3, Activity, FileSpreadsheet, PlusCircle, Upload, Banknote, Heart,
@@ -9,6 +9,7 @@ import client from '../api/client';
 import { MIDAS_VERSION } from '@midas/shared';
 import { MidasLogo, MidasWordmark } from './MidasLogo';
 import { NotificationBell } from './NotificationBell';
+import { accountantNavActive } from '../lib/navActive';
 
 // Navy rail. The active row carries a gold spine — gold reads 7.94:1 on navy,
 // where on the light content area it would only manage 1.98:1.
@@ -41,6 +42,7 @@ export function Sidebar() {
   });
 
   const version = `v${meta?.version ?? MIDAS_VERSION}`;
+  const accountantActive = accountantNavActive(useLocation());
 
   return (
     <aside className="flex h-screen w-60 flex-col bg-brand-800">
@@ -81,15 +83,17 @@ export function Sidebar() {
           <>
             <SectionLabel>Accountant</SectionLabel>
             <div className="space-y-0.5">
-              <NavLink to="/accountant" className={linkClass}>
+              {/* These three share the /accountant pathname space, so their
+                  active state is computed rather than left to NavLink. */}
+              <NavLink to="/accountant" className={() => linkClass({ isActive: accountantActive.reviewQueue })}>
                 <ClipboardList className="h-4 w-4" />
                 Review Queue
               </NavLink>
-              <NavLink to="/accountant/purchase-orders" className={linkClass}>
+              <NavLink to="/accountant/purchase-orders" className={() => linkClass({ isActive: accountantActive.purchaseOrders })}>
                 <FileSpreadsheet className="h-4 w-4" />
                 Purchase Orders
               </NavLink>
-              <NavLink to="/accountant?reimbursementStatus=pending" className={linkClass}>
+              <NavLink to="/accountant?reimbursementStatus=pending" className={() => linkClass({ isActive: accountantActive.reimbursements })}>
                 <Banknote className="h-4 w-4" />
                 Reimbursements
               </NavLink>
