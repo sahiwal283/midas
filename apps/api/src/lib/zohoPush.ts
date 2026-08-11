@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/index';
 import { expenses } from '../db/schema';
 import { auditLog } from './audit';
+import { isPartnerExpense } from './expenseKind';
 import { zoho, ZohoServiceError, type ZohoPushResult } from './zoho';
 import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
 import { resolveCategoryEntityAccountId } from './categoryZohoAccounts';
@@ -41,6 +42,12 @@ export type ZohoPushOutcome =
  * by daily-expense auto-push on submit.
  */
 export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: string): Promise<ZohoPushOutcome> {
+  if (isPartnerExpense(expense)) {
+    return {
+      ok: false, status: 409, code: 'PARTNER_EXPENSE_NOT_PUSHABLE',
+      message: 'Partner expenses are tracked separately and are never pushed to Zoho',
+    };
+  }
   if (!expense.zohoEntity) {
     return { ok: false, status: 409, code: 'MISSING_ZOHO_ENTITY', message: 'zohoEntity must be set before pushing to Zoho' };
   }
