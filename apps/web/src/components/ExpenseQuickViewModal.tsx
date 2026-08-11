@@ -186,7 +186,7 @@ export function ExpenseQuickViewModal({
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Entity</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Company</p>
                   <p className="mt-1 text-sm text-gray-800">{expense.zohoEntity ?? '—'}</p>
                 </div>
               </div>

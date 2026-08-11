@@ -649,7 +649,10 @@ Actor headers on mutating calls: `X-Actor-Email` / body `submitterEmail`, `X-Act
 | Method | Path | Scope | Notes |
 |---|---|---|---|
 | `POST` | `/ocr/process` | `ocr:process` | Sync OCR, no expense persist |
-| `GET` | `/categories` | `expenses:read` | Active categories |
+| `GET` | `/categories` | `expenses:read` | Active categories **scoped to the calling connection** (Settings → Connections → Categories). No allowlist rows = unrestricted. |
+| `GET` | `/payment-methods` | `expenses:read` | Active, company-wide cards. `defaultCompany` (+ deprecated `defaultZohoEntity`) |
+| `GET` | `/companies` | `expenses:read` | Active companies by `sortOrder`; `name` is the identifier. Includes `zohoEnabled:false` companies |
+| `GET` | `/health/vocabulary` | `expenses:read` | Cutover self-check: counts of categories/payment methods/companies visible to this connection |
 | `POST` | `/expenses` | `expenses:create` | Idempotent `(sourceApp,sourceRefId)`; default status `pending` |
 | `GET` | `/expenses` | `expenses:read` | Filters: `sourceApp`, `eventId`, `externalUserId`, `q`, dates, cursor |
 | `GET` | `/expenses/by-ref` | `expenses:read` | `?sourceApp=&sourceRefId=` |
@@ -660,6 +663,11 @@ Actor headers on mutating calls: `X-Actor-Email` / body `submitterEmail`, `X-Act
 | `PUT` | `/expenses/:id/receipts/primary` | `expenses:update` | Replace primary receipt |
 | `GET` | `/expenses/:id/receipts/:receiptId/content` | `expenses:read` | Byte stream |
 | `POST` | `/expenses/import` | `expenses:import` | Bulk; `dryRun`; `skipOcr` on receipts |
+
+**Company (formerly "entity").** Expense payloads accept `company`; the older
+`zohoEntity` is a deprecated alias that still works, and `company` wins when both
+are sent. Responses return both. Applies to `POST /expenses`, `PATCH /expenses/:id`
+and `POST /expenses/import`. The `expenses.zoho_entity` column is unchanged.
 
 Env: `EXT_AUTO_PROVISION_USERS` (default `false`) auto-creates Midas users by email on Ext mutate.
 

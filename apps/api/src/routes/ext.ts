@@ -15,6 +15,7 @@ import {
 import { ImportService, type ImportRecord } from '@midas/import';
 import { db } from '../db/index';
 import {
+  companies,
   expenseCategories,
   expenses,
   paymentMethods,
@@ -125,12 +126,64 @@ router.get('/payment-methods', requireScope('expenses:read'), asyncHandler(async
       label: pm.label,
       lastFour: pm.lastFour,
       brand: pm.brand,
+      /** Preferred name; `defaultZohoEntity` is the deprecated alias. */
+      defaultCompany: pm.defaultZohoEntity,
       defaultZohoEntity: pm.defaultZohoEntity,
       requiresReimbursement: pm.requiresReimbursement,
       /** Alias for Trade Show `zohoPaymentAccountId` — Zoho Books paid-through account id/name. */
       zohoPaymentAccountId: pm.zohoAccountName,
       zohoAccountName: pm.zohoAccountName,
     })),
+  });
+}));
+
+// Companies catalog (Trade Show entityOptions → Midas SoR).
+// `name` is the identifier: expenses.zoho_entity stores the company NAME and
+// consumers already send names, so there is no id translation to get wrong.
+// Non-Zoho companies are included with zohoEnabled:false — Midas stays
+// app-agnostic and lets the consumer decide whether to offer them.
+router.get('/companies', requireScope('expenses:read'), asyncHandler(async (_req, res) => {
+  const rows = await db.query.companies.findMany({
+    where: eq(companies.isActive, true),
+    orderBy: [asc(companies.sortOrder), asc(companies.name)],
+  });
+  res.json({
+    companies: rows.map((c) => ({
+      name: c.name,
+      zohoEnabled: c.zohoEnabled,
+      sortOrder: c.sortOrder,
+    })),
+  });
+}));
+
+// Cutover self-check: the three vocabulary counts a consumer should confirm
+// before switching over, in one call instead of three plus manual counting.
+router.get('/health/vocabulary', requireScope('expenses:read'), asyncHandler(async (req, res) => {
+  const allCats = await db.query.expenseCategories.findMany({
+    where: eq(expenseCategories.isActive, true),
+  });
+  const allowed = req.appConnection ? await allowedCategoryIds(req.appConnection.id) : null;
+  const visibleCategories = applyVocabulary(allCats, allowed);
+
+  const [pmRows, companyRows] = await Promise.all([
+    db.query.paymentMethods.findMany({
+      where: and(eq(paymentMethods.isActive, true), eq(paymentMethods.isCompanyWide, true)),
+    }),
+    db.query.companies.findMany({ where: eq(companies.isActive, true) }),
+  ]);
+
+  res.json({
+    appName: req.appConnection?.appName ?? null,
+    categories: {
+      visible: visibleCategories.length,
+      totalActiveInMidas: allCats.length,
+      scoped: allowed !== null,
+    },
+    paymentMethods: { visible: pmRows.length },
+    companies: {
+      visible: companyRows.length,
+      zohoEnabled: companyRows.filter((c) => c.zohoEnabled).length,
+    },
   });
 }));
 
@@ -307,6 +360,8 @@ const createSchema = z.object({
   location: z.string().optional().nullable(),
   reimbursementRequired: z.boolean().optional(),
   status: expenseStatusEnum.optional(),
+  /** Company that paid. `zohoEntity` is the deprecated alias; `company` wins if both are sent. */
+  company: z.string().optional().nullable(),
   zohoEntity: z.string().optional().nullable(),
   metadata: z.record(z.unknown()).optional(),
 });
@@ -379,7 +434,7 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
     externalUserId,
     status: body.status ?? 'pending',
     reimbursementStatus,
-    zohoEntity: body.zohoEntity ?? null,
+    zohoEntity: body.company ?? body.zohoEntity ?? null,
   }).returning();
 
   await auditLog({
@@ -423,6 +478,9 @@ const patchSchema = z.object({
   sourceUrl: z.union([z.string().url(), z.literal(''), z.null()]).optional(),
   reimbursementRequired: z.boolean().optional(),
   status: expenseStatusEnum.optional(),
+  company: z.string().nullable().optional(),
+  /** @deprecated alias of `company`. */
+  zohoEntity: z.string().nullable().optional(),
 });
 
 router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(async (req, res) => {
@@ -464,6 +522,9 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
     ...(body.sourceLabel !== undefined ? { sourceLabel: body.sourceLabel } : {}),
     ...(body.sourceUrl !== undefined ? { sourceUrl: body.sourceUrl } : {}),
     ...(body.status !== undefined ? { status: body.status } : {}),
+    ...(body.company !== undefined || body.zohoEntity !== undefined
+      ? { zohoEntity: body.company ?? body.zohoEntity ?? null }
+      : {}),
     ...(body.reimbursementRequired !== undefined
       ? { reimbursementStatus: mapImportReimbursementStatus(undefined, body.reimbursementRequired) }
       : {}),
@@ -641,6 +702,8 @@ const importItemSchema = z.object({
   status: z.string().optional(),
   reimbursementRequired: z.boolean().optional(),
   reimbursementStatus: z.string().optional().nullable(),
+  company: z.string().optional().nullable(),
+  /** @deprecated alias of `company`. */
   zohoEntity: z.string().optional().nullable(),
   zohoExpenseId: z.string().optional().nullable(),
   ocrText: z.string().optional().nullable(),
@@ -750,7 +813,7 @@ router.post('/expenses/import', requireScope('expenses:import'), asyncHandler(as
           ?? (body.sourceApp === 'trade_show' ? 'trade_show_event' : 'imported'),
         externalUserId: item.externalUserId ?? null,
         sourceContext,
-        zohoEntity: item.zohoEntity ?? null,
+        zohoEntity: item.company ?? item.zohoEntity ?? null,
         zohoExpenseId: item.zohoExpenseId ?? null,
         attachments,
         notes: item.comments

@@ -88,6 +88,9 @@ export function toExtExpenseDto(row: ExpenseRow) {
       contentPath: `/api/v1/ext/expenses/${row.id}/receipts/${r.id}/content`,
       sha256: r.sha256 ?? null,
     })),
+    // Company that paid. `company` is the preferred name; `zohoEntity` is kept
+    // as a deprecated alias so existing consumers keep working.
+    company: row.zohoEntity,
     zohoEntity: row.zohoEntity,
     zohoExpenseId: row.zohoExpenseId,
     zohoSyncedAt: row.zohoSyncedAt?.toISOString() ?? null,
