@@ -13,8 +13,9 @@ import type { User } from '../types';
 import { flattenTree, descendantIdSet, type CategoryTreeNode } from '../lib/categoryTree';
 import { useCollapsibleTree } from '../lib/useCollapsibleTree';
 import { ChartOfAccountsSection } from './settings/ChartOfAccountsSection';
+import { ClosedPeriodsSection } from './settings/ClosedPeriodsSection';
 
-type Section = 'account' | 'companies' | 'users' | 'categories' | 'chart-of-accounts' | 'payment-methods' | 'budgets' | 'connections' | 'audit';
+type Section = 'account' | 'companies' | 'users' | 'categories' | 'chart-of-accounts' | 'payment-methods' | 'budgets' | 'closed-periods' | 'connections' | 'audit';
 
 interface AdminUser extends User {
   hasPassword: boolean;
@@ -32,6 +33,7 @@ const EXPENSES_GROUP: NavGroup = {
     { id: 'chart-of-accounts', label: 'Chart of Accounts' },
     { id: 'payment-methods', label: 'Payment Methods' },
     { id: 'budgets', label: 'Budgets' },
+    { id: 'closed-periods', label: 'Closed Periods' },
   ],
 };
 
@@ -126,6 +128,7 @@ export function Admin() {
           {activeSection === 'chart-of-accounts' && <ChartOfAccountsSection />}
           {activeSection === 'payment-methods' && <PaymentMethodsSection />}
           {activeSection === 'budgets' && <BudgetsSection />}
+          {activeSection === 'closed-periods' && <ClosedPeriodsSection />}
           {activeSection === 'connections' && <ConnectionsTab />}
           {activeSection === 'audit' && <AuditTab />}
         </div>
