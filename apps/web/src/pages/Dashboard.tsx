@@ -70,7 +70,7 @@ function AccountantDashboard({ name }: { name: string }) {
 
       {/* Queue overview */}
       <div className="mb-6 rounded-xl border border-ink/10 bg-white shadow-panel">
-        <div className="border-b border-ink/10 px-6 py-4">
+        <div className="border-b border-gold-400/60 px-6 py-4">
           <h2 className="font-display text-lg font-semibold text-ink">Review Queues</h2>
         </div>
         {isLoading ? (
@@ -224,7 +224,7 @@ function EmployeeDashboard() {
 
       {/* Recent expenses */}
       <div className="rounded-xl border border-ink/10 bg-white shadow-panel">
-        <div className="flex items-center justify-between border-b border-ink/10 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-gold-400/60 px-6 py-4">
           <h2 className="font-display text-lg font-semibold text-ink">Recent expenses</h2>
           <Link to="/expenses" className="text-sm font-medium text-brand-700 hover:text-brand-800">View all</Link>
         </div>
