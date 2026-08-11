@@ -1,173 +1,161 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
-import { partnerExpenseApi } from '../api/partnerExpenses';
-import type { PartnerExpenseCategory } from '../types';
+import { useQuery } from '@tanstack/react-query';
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  PieChart, Pie, Cell,
+} from 'recharts';
+import client from '../api/client';
 
-function CategoryBadge({ category }: { category: PartnerExpenseCategory }) {
-  return category === 'business' ? (
-    <span className="inline-block rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">Business</span>
-  ) : (
-    <span className="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Personal</span>
+/** Same fixed-slot palette as the Reports page so both read as one system. */
+const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
+const GRID = '#f3f4f6';
+const INK_MUTED = '#6b7280';
+
+interface PartnerRow {
+  id: string;
+  date: string;
+  merchant: string;
+  amount: string;
+  user?: { name: string } | null;
+  category?: { name: string } | null;
+  paymentMethod?: { label: string; lastFour: string | null } | null;
+}
+
+interface Summary {
+  totals: { spend: number; count: number };
+  granularity: string;
+  byCategory: Array<{ name: string; spend: number; count: number }>;
+  byPeriod: Array<{ period: string; label: string; spend: number; count: number }>;
+  byPerson: Array<{ name: string; spend: number; count: number }>;
+}
+
+const money = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-ink/10 bg-white p-5 shadow-panel">
+      <h2 className="mb-4 border-b border-gold-400/60 pb-2.5 text-sm font-semibold text-charcoal/80">{title}</h2>
+      {children}
+    </div>
   );
 }
 
 export function PartnerExpenses() {
-  const qc = useQueryClient();
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['partner-expenses'],
-    queryFn: () => partnerExpenseApi.list(),
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const params = useMemo(() => {
+    const p: Record<string, string> = {};
+    if (from) p.from = from;
+    if (to) p.to = to;
+    return p;
+  }, [from, to]);
+
+  const { data: rows = [], isLoading } = useQuery<PartnerRow[]>({
+    queryKey: ['partner-expenses', params],
+    queryFn: () => client.get('/partner-expenses', { params }).then((r) => r.data.expenses),
   });
-
-  const [formOpen, setFormOpen] = useState(false);
-  const [amount, setAmount] = useState('');
-  const [itemLocation, setItemLocation] = useState('');
-  const [category, setCategory] = useState<PartnerExpenseCategory>('business');
-  const [error, setError] = useState<string | null>(null);
-
-  const createMutation = useMutation({
-    mutationFn: () =>
-      partnerExpenseApi.create({ amount: Number(amount), itemLocation: itemLocation.trim(), category }),
-    onSuccess: () => {
-      setAmount('');
-      setItemLocation('');
-      setCategory('business');
-      setFormOpen(false);
-      setError(null);
-      void qc.invalidateQueries({ queryKey: ['partner-expenses'] });
-    },
-    onError: () => setError('Could not save the expense. Check the fields and try again.'),
+  const { data: summary } = useQuery<Summary>({
+    queryKey: ['partner-expenses-summary', params],
+    queryFn: () => client.get('/partner-expenses/summary', { params }).then((r) => r.data),
   });
-
-  const total = useMemo(() => rows.reduce((sum, r) => sum + Number(r.amount || 0), 0), [rows]);
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const parsed = Number(amount);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      setError('Enter an amount greater than 0.');
-      return;
-    }
-    if (!itemLocation.trim()) {
-      setError('Enter an item or location.');
-      return;
-    }
-    setError(null);
-    createMutation.mutate();
-  }
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">Partner Expenses</h1>
-        <button
-          type="button"
-          onClick={() => setFormOpen((o) => !o)}
-          className="flex shrink-0 items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          <Plus className="h-4 w-4" />
-          New Partner Expense
-        </button>
+    <div className="p-4 lg:p-8">
+      <div className="mb-6">
+        <h1 className="font-display text-3xl font-semibold text-ink">Partner Expenses</h1>
+        <p className="mt-1 text-sm text-charcoal/55">
+          Spend marked as partner expenses. Not sent to accounting or Zoho.
+        </p>
       </div>
 
-      {!isLoading && rows.length > 0 && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-            <p className="text-xs font-medium text-gray-500">Total logged</p>
-            <p className="mt-0.5 text-xl font-bold text-gray-900">
-              ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-            <p className="text-xs font-medium text-gray-500">Entries</p>
-            <p className="mt-0.5 text-xl font-bold text-gray-900">{rows.length}</p>
-          </div>
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-charcoal/60" htmlFor="pe-from">From</label>
+          <input id="pe-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+            className="rounded-lg border border-ink/15 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-charcoal/60" htmlFor="pe-to">To</label>
+          <input id="pe-to" type="date" value={to} onChange={(e) => setTo(e.target.value)}
+            className="rounded-lg border border-ink/15 px-3 py-2 text-sm" />
+        </div>
+        {summary && (
+          <p className="ml-auto text-sm text-charcoal/60">
+            <span className="font-display text-2xl font-semibold text-ink">{money(summary.totals.spend)}</span>
+            <span className="ml-2">across {summary.totals.count} expense{summary.totals.count === 1 ? '' : 's'}</span>
+          </p>
+        )}
+      </div>
+
+      {summary && summary.totals.count > 0 && (
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card title="Spend by category">
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart>
+                <Pie data={summary.byCategory} dataKey="spend" nameKey="name" innerRadius={50} outerRadius={90}>
+                  {summary.byCategory.map((_, i) => <Cell key={i} fill={SERIES[i % SERIES.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v: number) => money(v)} />
+              </PieChart>
+            </ResponsiveContainer>
+          </Card>
+
+          <Card title="Spend over time">
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={summary.byPeriod} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+                <CartesianGrid stroke={GRID} vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: INK_MUTED, fontSize: 12 }} tickLine={false} />
+                <YAxis tick={{ fill: INK_MUTED, fontSize: 12 }} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(v: number) => money(v)} />
+                <Bar dataKey="spend" fill={SERIES[0]} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+
+          <Card title="Spend by individual">
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={summary.byPerson} layout="vertical" margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+                <CartesianGrid stroke={GRID} horizontal={false} />
+                <XAxis type="number" tick={{ fill: INK_MUTED, fontSize: 12 }} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={100} tick={{ fill: INK_MUTED, fontSize: 12 }} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(v: number) => money(v)} />
+                <Bar dataKey="spend" fill={SERIES[2]} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
         </div>
       )}
 
-      {formOpen && (
-        <form onSubmit={submit} className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="w-full sm:w-40">
-              <label className="mb-1 block text-xs font-medium text-gray-500">Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                required
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="mb-1 block text-xs font-medium text-gray-500">Item / Location</label>
-              <input
-                type="text"
-                value={itemLocation}
-                onChange={(e) => setItemLocation(e.target.value)}
-                placeholder="e.g. Dinner — Las Vegas"
-                required
-                maxLength={300}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">Category</label>
-              <div className="flex rounded-lg border border-gray-200 bg-gray-100 p-1">
-                {(['business', 'personal'] as const).map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCategory(c)}
-                    className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors ${
-                      category === c ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={createMutation.isPending}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {createMutation.isPending ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-        </form>
-      )}
-
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-ink/10 bg-white shadow-panel">
         {isLoading ? (
-          <div className="px-6 py-12 text-center text-sm text-gray-400">Loading…</div>
+          <p className="px-6 py-8 text-center text-sm text-charcoal/40">Loading…</p>
         ) : rows.length === 0 ? (
-          <div className="px-6 py-12 text-center text-sm text-gray-500">
-            No partner expenses yet. Log the first one with “New Partner Expense”.
-          </div>
+          <p className="px-6 py-8 text-center text-sm text-charcoal/40">
+            No partner expenses yet. Submit an expense and choose “Partner expense”.
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                <th className="px-6 py-3">User</th>
-                <th className="px-6 py-3 text-right">Amount</th>
-                <th className="px-6 py-3">Item / Location</th>
+              <tr className="border-b border-ink/10 text-left text-xs font-semibold uppercase tracking-wider text-charcoal/45">
+                <th className="px-6 py-3">Date</th>
+                <th className="px-6 py-3">Individual</th>
+                <th className="px-6 py-3">Merchant</th>
                 <th className="px-6 py-3">Category</th>
-                <th className="px-6 py-3">Logged</th>
+                <th className="px-6 py-3">Payment</th>
+                <th className="px-6 py-3 text-right">Amount</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{r.userName}</td>
-                  <td className="px-6 py-4 text-right font-medium text-gray-900">${Number(r.amount).toFixed(2)}</td>
-                  <td className="px-6 py-4 text-gray-600">{r.itemLocation}</td>
-                  <td className="px-6 py-4"><CategoryBadge category={r.category} /></td>
-                  <td className="px-6 py-4 text-gray-600">{new Date(r.createdAt).toLocaleDateString()}</td>
+                <tr key={r.id} className="border-b border-ink/5 last:border-0">
+                  <td className="px-6 py-3 text-charcoal/70">{r.date}</td>
+                  <td className="px-6 py-3 text-ink">{r.user?.name ?? '—'}</td>
+                  <td className="px-6 py-3 text-ink">{r.merchant}</td>
+                  <td className="px-6 py-3 text-charcoal/70">{r.category?.name ?? '—'}</td>
+                  <td className="px-6 py-3 text-charcoal/70">
+                    {r.paymentMethod ? `${r.paymentMethod.label}${r.paymentMethod.lastFour ? ` ····${r.paymentMethod.lastFour}` : ''}` : '—'}
+                  </td>
+                  <td className="px-6 py-3 text-right font-semibold text-ink">{money(Number(r.amount))}</td>
                 </tr>
               ))}
             </tbody>

@@ -29,6 +29,7 @@ export const expenseApi = {
     zohoEntity?: string;
     zohoExpenseAccountId?: string;
     zohoExpenseAccountName?: string;
+    expenseKind?: 'business' | 'partner';
   }) =>
     client.post<{ expense: Expense }>('/expenses', data).then((r) => r.data.expense),
 
@@ -42,6 +43,7 @@ export const expenseApi = {
     zohoEntity: string;
     zohoExpenseAccountId: string;
     zohoExpenseAccountName: string;
+    expenseKind: 'business' | 'partner';
   }>) =>
     client.patch<{ expense: Expense }>(`/expenses/${id}`, data).then((r) => r.data.expense),
 

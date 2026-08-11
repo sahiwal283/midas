@@ -53,6 +53,7 @@ export function ExpenseNew() {
     company: '',
     categoryId: '',
     description: '',
+    expenseKind: 'business' as 'business' | 'partner',
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -249,6 +250,7 @@ export function ExpenseNew() {
         zohoEntity: form.company || undefined,
         categoryId: form.categoryId || undefined,
         description: form.description || undefined,
+        expenseKind: form.expenseKind,
       };
 
       let id = expenseId;
@@ -546,6 +548,30 @@ export function ExpenseNew() {
               <p className="mt-1 text-xs text-charcoal/40">Suggested from the receipt — change if wrong.</p>
             )}
           </Field>
+
+          {(user?.role === 'partner' || user?.role === 'developer') && (
+            <Field label="Expense type">
+              <div className="flex gap-2">
+                {(['business', 'partner'] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => set('expenseKind', kind)}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      form.expenseKind === kind
+                        ? 'border-brand-500 bg-brand-500/10 text-ink'
+                        : 'border-ink/15 text-charcoal/60 hover:bg-ink/[0.03]'
+                    }`}
+                  >
+                    {kind === 'business' ? 'Business expense' : 'Partner expense'}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-charcoal/40">
+                Partner expenses are tracked on the Partner Expenses tab and are not sent to accounting.
+              </p>
+            </Field>
+          )}
 
           <Field label="Notes (optional)">
             <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={2} placeholder="Anything the accountant should know" className={`${inputCls} resize-none`} />
