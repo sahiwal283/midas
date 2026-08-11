@@ -88,7 +88,12 @@ async function main() {
         });
       } else {
         const [created] = await tx.insert(users).values({
-          email: tsUser.email, name: tsUser.name, role, passwordHash: null, isActive: true,
+          username: tsUser.email.split('@')[0].toLowerCase(),
+          email: tsUser.email,
+          name: tsUser.name,
+          role,
+          passwordHash: null,
+          isActive: true,
         }).returning();
         console.log(`user created: ${tsUser.email} (${tsUser.name}, ${role}) — no password, SSO/invite login`);
         await audit('user', created.id, 'sync.tradeshow.user_created', {

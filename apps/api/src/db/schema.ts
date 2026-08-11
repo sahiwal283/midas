@@ -43,7 +43,18 @@ export const integrationStatusEnum = pgEnum('integration_status', [
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').unique().notNull(),
+  /**
+   * Identity key. Stored lowercase and unique. Username — not email — is what a
+   * user signs in with and what SSO auto-provisioning needs, so an Authentik
+   * account with no email address can still be onboarded.
+   */
+  username: text('username').unique().notNull(),
+  /**
+   * Optional. Postgres allows many NULLs in a unique index, so several users may
+   * have no email while the emails that do exist stay unique. Required only by
+   * features that actually deliver mail (invites, notification email).
+   */
+  email: text('email').unique(),
   name: text('name').notNull(),
   role: userRoleEnum('role').default('user').notNull(),
   passwordHash: text('password_hash'),

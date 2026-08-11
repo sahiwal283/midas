@@ -2,7 +2,7 @@ import { Router, type Response } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { eq } from 'drizzle-orm';
+import { eq, or, sql } from 'drizzle-orm';
 import { db } from '../db/index';
 import { users } from '../db/schema';
 import { env } from '../config/env';
@@ -13,9 +13,15 @@ import { inviteState } from '../lib/invites';
 
 const router = Router();
 
+// Accepts a username or an email. `email` is kept as an alias so existing
+// clients keep working; identity is the username now, and email is optional.
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1).optional(),
+  email: z.string().min(1).optional(),
   password: z.string().min(1),
+}).refine((v) => Boolean(v.identifier ?? v.email), {
+  message: 'identifier (username or email) is required',
+  path: ['identifier'],
 });
 
 // Sliding 30-day sessions — shared with OIDC and the auth middleware refresh.
@@ -27,17 +33,24 @@ router.post('/login', asyncHandler(async (req, res) => {
     return;
   }
 
-  const { email, password } = loginSchema.parse(req.body);
+  const body = loginSchema.parse(req.body);
+  const identifier = (body.identifier ?? body.email ?? '').trim();
 
-  const user = await db.query.users.findFirst({ where: eq(users.email, email) });
+  // Username first, then email — a user without an email can still sign in.
+  const user = await db.query.users.findFirst({
+    where: or(
+      sql`lower(${users.username}) = ${identifier.toLowerCase()}`,
+      eq(users.email, identifier.toLowerCase()),
+    ),
+  });
   if (!user || !user.isActive || !user.passwordHash) {
-    res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
+    res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid username or password' } });
     return;
   }
 
-  const valid = await bcrypt.compare(password, user.passwordHash);
+  const valid = await bcrypt.compare(body.password, user.passwordHash);
   if (!valid) {
-    res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
+    res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid username or password' } });
     return;
   }
 
@@ -67,7 +80,7 @@ router.post('/logout', (_req, res) => {
 // Shared shape for GET /me and PATCH /me. hasPassword is a boolean-only signal
 // (the hash never leaves the API) so the UI can detect SSO-only accounts.
 const ME_COLUMNS = {
-  id: true, email: true, name: true, role: true,
+  id: true, username: true, email: true, name: true, role: true,
   department: true, costCenter: true,
   defaultZohoEntity: true, defaultPaymentMethodId: true,
   passwordHash: true,
@@ -79,7 +92,7 @@ function meShape(user: { passwordHash: string | null } & Record<string, unknown>
 }
 
 router.get('/me', authenticate, asyncHandler(async (req, res) => {
-  // req.user only carries id/email/name/role — fetch the wizard defaults too.
+  // req.user only carries id/username/email/name/role — fetch the wizard defaults too.
   const user = await db.query.users.findFirst({
     where: eq(users.id, req.user!.id),
     columns: ME_COLUMNS,

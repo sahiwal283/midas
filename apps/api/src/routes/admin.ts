@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lte, or } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
@@ -111,24 +111,38 @@ router.get('/users', adminOnly, asyncHandler(async (_req, res) => {
   res.json({ users: out });
 }));
 
+const usernameSchema = z.string().min(2).max(50).regex(
+  /^[a-zA-Z0-9._-]+$/,
+  'Username may contain only letters, numbers, dot, underscore or hyphen',
+);
+
 const createUserSchema = z.object({
   name: z.string().min(1).max(100),
-  email: z.string().email(),
+  username: usernameSchema,
+  /** Optional — identity is the username. Needed only for email-delivered features. */
+  email: z.string().email().nullable().optional(),
   role: z.enum(['user', 'accountant', 'admin', 'partner', 'developer']),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 router.post('/users', adminOnly, asyncHandler(async (req, res) => {
-  const { name, email, role, password } = createUserSchema.parse(req.body);
+  const { name, username, email, role, password } = createUserSchema.parse(req.body);
 
-  const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
-  if (existing) throw createError('Email already in use', 409, 'CONFLICT');
+  const takenName = await db.query.users.findFirst({
+    where: sql`lower(${users.username}) = ${username.toLowerCase()}`,
+  });
+  if (takenName) throw createError('Username already in use', 409, 'CONFLICT');
+  if (email) {
+    const takenEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
+    if (takenEmail) throw createError('Email already in use', 409, 'CONFLICT');
+  }
 
   const passwordHash = await bcrypt.hash(password, 12);
   const [user] = await db.insert(users)
-    .values({ name, email, role, passwordHash })
+    .values({ name, username: username.toLowerCase(), email: email ?? null, role, passwordHash })
     .returning({
       id: users.id,
+      username: users.username,
       email: users.email,
       name: users.name,
       role: users.role,
@@ -169,6 +183,7 @@ const patchUserSchema = profileFieldsSchema.extend({
 
 const userReturningColumns = {
   id: users.id,
+  username: users.username,
   email: users.email,
   name: users.name,
   role: users.role,
@@ -369,8 +384,10 @@ function inviteUrlFor(token: string): string {
   return `${webBase}/invite/${token}`;
 }
 
+// Invitations are delivered by email, so email stays required here.
 const inviteUserSchema = profileFieldsSchema.extend({
   name: z.string().min(1).max(100),
+  username: usernameSchema,
   email: z.string().email(),
   role: z.enum(['user', 'accountant', 'admin', 'partner', 'developer']),
 });
@@ -385,7 +402,14 @@ router.post('/users/invite', adminOnly, asyncHandler(async (req, res) => {
 
   const { token, expiresAt } = issueInvite(new Date());
   const [user] = await db.insert(users)
-    .values({ ...body, passwordHash: null, isActive: true, inviteToken: token, inviteExpiresAt: expiresAt })
+    .values({
+      ...body,
+      username: body.username.toLowerCase(),
+      passwordHash: null,
+      isActive: true,
+      inviteToken: token,
+      inviteExpiresAt: expiresAt,
+    })
     .returning(userReturningColumns);
 
   await auditLog({

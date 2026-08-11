@@ -72,6 +72,14 @@ function actorEmail(req: { body?: { submitterEmail?: string }; headers: Record<s
   return undefined;
 }
 
+/** X-Actor-Username header or body submitterUsername. Preferred over email. */
+function actorUsername(req: { body?: { submitterUsername?: string }; headers: Record<string, unknown> }): string | undefined {
+  const header = req.headers['x-actor-username'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
+  if (typeof req.body?.submitterUsername === 'string') return req.body.submitterUsername.trim();
+  return undefined;
+}
+
 function actorExternalUserId(req: { body?: { externalUserId?: string }; headers: Record<string, unknown> }): string | null {
   const header = req.headers['x-actor-external-user-id'];
   if (typeof header === 'string' && header.trim()) return header.trim();
@@ -343,6 +351,8 @@ const createSchema = z.object({
   sourceApp: z.string().min(1),
   sourceRefId: z.string().min(1),
   submitterEmail: z.string().email().optional(),
+  /** Preferred over submitterEmail — works for users with no email address. */
+  submitterUsername: z.string().min(1).optional(),
   externalUserId: z.string().min(1).optional(),
   eventId: z.string().min(1).optional(),
   sourceLabel: z.string().min(1).optional(),
@@ -385,10 +395,13 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
     return;
   }
 
+  const username = actorUsername(req) ?? body.submitterUsername;
   const email = actorEmail(req) ?? body.submitterEmail;
-  if (!email) throw createError('submitterEmail or X-Actor-Email is required', 400, 'VALIDATION_ERROR');
+  if (!username && !email) {
+    throw createError('submitterUsername or submitterEmail is required', 400, 'VALIDATION_ERROR');
+  }
 
-  const user = await resolveExtUser({ email, displayName: actorName(req) });
+  const user = await resolveExtUser({ username, email, displayName: actorName(req) });
   const externalUserId = actorExternalUserId(req);
 
   const resolvedCat = await resolveCategoryId({
@@ -685,6 +698,7 @@ router.get(
 const importItemSchema = z.object({
   sourceRefId: z.string().min(1),
   submitterEmail: z.string().email(),
+  submitterUsername: z.string().min(1).optional(),
   externalUserId: z.string().optional(),
   eventId: z.string().optional(),
   sourceLabel: z.string().optional().nullable(),

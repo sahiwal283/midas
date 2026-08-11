@@ -1,35 +1,61 @@
 import { createHash, randomBytes } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { env } from '../../config/env';
 import { db } from '../../db/index';
 import { users } from '../../db/schema';
 import { auditLog } from '../audit';
 import { createError } from '../../middleware/error';
 
+/**
+ * Resolve the acting Midas user for an /ext call.
+ *
+ * Username is the identity key, but `email` keeps working exactly as before so
+ * existing consumers (Trade Show sends `submitterEmail`) need no change. At
+ * least one of the two must be supplied.
+ */
 export async function resolveExtUser(opts: {
-  email: string;
+  email?: string | null;
+  username?: string | null;
   displayName?: string | null;
-}): Promise<{ id: string; email: string; name: string; provisioned: boolean }> {
-  const email = opts.email.trim().toLowerCase();
-  if (!email || !email.includes('@')) {
+}): Promise<{ id: string; username: string; email: string | null; name: string; provisioned: boolean }> {
+  const email = opts.email?.trim().toLowerCase() || null;
+  const username = opts.username?.trim().toLowerCase() || null;
+
+  if (!email && !username) {
+    throw createError('submitterUsername or submitterEmail is required', 422, 'MISSING_SUBMITTER');
+  }
+  if (email && !email.includes('@')) {
     throw createError('Invalid submitter email', 422, 'INVALID_EMAIL');
   }
 
-  const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
+  // Username first — it is the identity key and always present on a Midas user.
+  const existing = username
+    ? await db.query.users.findFirst({ where: sql`lower(${users.username}) = ${username}` })
+    : await db.query.users.findFirst({ where: eq(users.email, email!) });
+
   if (existing) {
     if (!existing.isActive) throw createError('User is inactive', 422, 'USER_INACTIVE');
-    return { id: existing.id, email: existing.email, name: existing.name, provisioned: false };
+    return {
+      id: existing.id,
+      username: existing.username,
+      email: existing.email,
+      name: existing.name,
+      provisioned: false,
+    };
   }
 
+  const label = username ?? email;
   if (!env.EXT_AUTO_PROVISION_USERS) {
-    throw createError(`No Midas user found for email ${email}`, 422, 'USER_NOT_FOUND');
+    throw createError(`No Midas user found for ${label}`, 422, 'USER_NOT_FOUND');
   }
 
-  const name = (opts.displayName?.trim() || email.split('@')[0] || 'User').slice(0, 200);
+  const newUsername = username ?? email!.split('@')[0].toLowerCase();
+  const name = (opts.displayName?.trim() || newUsername || 'User').slice(0, 200);
   // Unusable local password — SSO / break-glass later
   const passwordHash = createHash('sha256').update(randomBytes(32)).digest('hex');
 
   const [created] = await db.insert(users).values({
+    username: newUsername,
     email,
     name,
     role: 'user',
@@ -41,9 +67,15 @@ export async function resolveExtUser(opts: {
     entityType: 'user',
     entityId: created.id,
     action: 'ext.user_provisioned',
-    metadata: { email },
-    after: { id: created.id, email: created.email, role: created.role },
+    metadata: { username: created.username, email },
+    after: { id: created.id, username: created.username, email: created.email, role: created.role },
   });
 
-  return { id: created.id, email: created.email, name: created.name, provisioned: true };
+  return {
+    id: created.id,
+    username: created.username,
+    email: created.email,
+    name: created.name,
+    provisioned: true,
+  };
 }
