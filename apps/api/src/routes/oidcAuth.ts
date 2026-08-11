@@ -300,9 +300,27 @@ async function resolveLocalUser(
     return user ? { user, wasCreated: false, wasLinkedByEmail: false } : null;
   }
 
-  // Step 2: username match → auto-link. Username is the identity key, so this
-  // works for accounts that have no email address in the IdP.
   const idpUsername = claims.preferred_username?.trim().toLowerCase() || null;
+
+  // Step 2: explicit pre-link — an admin recorded this IdP username on the Midas
+  // user, so linking does not depend on username or email happening to agree.
+  if (idpUsername) {
+    const preLinked = await db.query.users.findFirst({
+      where: sql`lower(${users.ssoUsername}) = ${idpUsername}`,
+    });
+    if (preLinked) {
+      await db.insert(ssoLinks).values({
+        provider: 'authentik',
+        subject: claims.sub,
+        userId: preLinked.id,
+        metadata: { linkedBy: 'sso_username', ssoUsername: idpUsername },
+      });
+      return { user: preLinked, wasCreated: false, wasLinkedByEmail: true };
+    }
+  }
+
+  // Step 3: username match → auto-link. Username is the identity key, so this
+  // works for accounts that have no email address in the IdP.
   if (idpUsername) {
     const matched = await db.query.users.findFirst({
       where: sql`lower(${users.username}) = ${idpUsername}`,
@@ -318,7 +336,7 @@ async function resolveLocalUser(
     }
   }
 
-  // Step 3: email match → auto-link, when the token carries one.
+  // Step 4: email match → auto-link, when the token carries one.
   if (claims.email) {
     const matched = await db.query.users.findFirst({ where: eq(users.email, claims.email) });
     if (matched) {
@@ -332,7 +350,7 @@ async function resolveLocalUser(
     }
   }
 
-  // Step 4: auto-create. Needs a username, not an email — an IdP account with no
+  // Step 5: auto-create. Needs a username, not an email — an IdP account with no
   // email address still onboards, and email is stored only when present.
   const username = idpUsername ?? (claims.email ? claims.email.split('@')[0].toLowerCase() : null);
   if (!autoCreate || !username) return null;
