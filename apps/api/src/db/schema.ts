@@ -28,6 +28,7 @@ export const reimbursementStatusEnum = pgEnum('reimbursement_status', [
 export const ocrStatusEnum = pgEnum('ocr_status', ['pending', 'processing', 'done', 'failed']);
 export const captureSourceEnum = pgEnum('capture_source', ['extension', 'manual']);
 export const partnerExpenseCategoryEnum = pgEnum('partner_expense_category', ['business', 'personal']);
+export const expenseKindEnum = pgEnum('expense_kind', ['business', 'partner']);
 export const captureStatusEnum = pgEnum('capture_status', ['draft', 'linked', 'discarded']);
 
 /** Shared financial root: expense | purchase_order */
@@ -189,6 +190,12 @@ export const expenses = pgTable('expenses', {
   sourceUrl: text('source_url'),
   // Open vocabulary: 'online_receipt' | 'manual' | 'trade_show_event' | …
   sourceType: text('source_type'),
+  /**
+   * 'partner' marks personal/partner spend: tracked and charted, but excluded
+   * from the accountant queue and the Zoho pipeline. Set only by partner-role
+   * submitters; the API coerces everyone else to 'business'.
+   */
+  expenseKind: expenseKindEnum('expense_kind').default('business').notNull(),
   // Opaque embedder context — eventId, location, cardUsed, etc. (no app-specific columns)
   sourceContext: jsonb('source_context').$type<ExpenseSourceContext>().default({}).notNull(),
   // Embedder's user id (e.g. Trade Show users.id) — filterable independently of Midas userId
