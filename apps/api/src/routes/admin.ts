@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
 import {
-  users, expenseCategories, categoryZohoAccounts, appConnections, ssoLinks,
+  users, expenseCategories, categoryZohoAccounts, appConnections, appConnectionCategories, ssoLinks,
   expenses, expenseMessages, captures, partnerExpenses, companies,
   paymentMethods, auditLogs,
 } from '../db/schema';
@@ -651,6 +651,54 @@ router.get('/connections', adminOnly, asyncHandler(async (_req, res) => {
     orderBy: (c, { asc }) => [asc(c.appName)],
   });
   res.json({ connections: conns });
+}));
+
+// ── Per-connection category vocabulary ─────────────────────────────────────
+// Controls what GET /ext/categories returns for a consuming app. An empty list
+// means unrestricted (the app sees every active category).
+
+router.get('/connections/:id/categories', adminOnly, asyncHandler(async (req, res) => {
+  const conn = await db.query.appConnections.findFirst({ where: eq(appConnections.id, req.params.id) });
+  if (!conn) throw notFound('Connection not found');
+
+  const rows = await db.select({ categoryId: appConnectionCategories.categoryId })
+    .from(appConnectionCategories)
+    .where(eq(appConnectionCategories.connectionId, conn.id));
+
+  res.json({ categoryIds: rows.map((r) => r.categoryId), unrestricted: rows.length === 0 });
+}));
+
+router.put('/connections/:id/categories', adminOnly, asyncHandler(async (req, res) => {
+  const { categoryIds } = z.object({
+    categoryIds: z.array(z.string().uuid()),
+  }).parse(req.body);
+
+  const conn = await db.query.appConnections.findFirst({ where: eq(appConnections.id, req.params.id) });
+  if (!conn) throw notFound('Connection not found');
+
+  const before = await db.select({ categoryId: appConnectionCategories.categoryId })
+    .from(appConnectionCategories)
+    .where(eq(appConnectionCategories.connectionId, conn.id));
+
+  await db.transaction(async (tx) => {
+    await tx.delete(appConnectionCategories).where(eq(appConnectionCategories.connectionId, conn.id));
+    if (categoryIds.length > 0) {
+      await tx.insert(appConnectionCategories)
+        .values(categoryIds.map((categoryId) => ({ connectionId: conn.id, categoryId })));
+    }
+  });
+
+  await auditLog({
+    entityType: 'app_connection',
+    entityId: conn.id,
+    userId: req.user!.id,
+    action: 'admin.connection.categories_set',
+    before: { categoryIds: before.map((b) => b.categoryId) },
+    after: { categoryIds },
+    metadata: { appName: conn.appName, unrestricted: categoryIds.length === 0 },
+  });
+
+  res.json({ categoryIds, unrestricted: categoryIds.length === 0 });
 }));
 
 router.post('/connections', adminOnly, asyncHandler(async (req, res) => {

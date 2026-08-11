@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -1306,6 +1306,7 @@ function ConnectionsTab() {
   const [scopes, setScopes] = useState<string[]>([...TRADE_SHOW_DEFAULT_SCOPES]);
   const [newKey, setNewKey] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [vocabFor, setVocabFor] = useState<string | null>(null);
   const { data: connections = [] } = useQuery({
     queryKey: ['admin-connections'],
     queryFn: () => client.get('/admin/connections').then((r) => r.data.connections),
@@ -1391,6 +1392,13 @@ function ConnectionsTab() {
               </span>
               <button
                 type="button"
+                onClick={() => setVocabFor(vocabFor === c.id ? null : c.id)}
+                className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+              >
+                Categories
+              </button>
+              <button
+                type="button"
                 disabled={patchMutation.isPending}
                 onClick={() => patchMutation.mutate({ id: c.id, isActive: !c.isActive })}
                 className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-60"
@@ -1400,6 +1408,116 @@ function ConnectionsTab() {
             </div>
           </div>
         ))}
+      </div>
+
+      {vocabFor && (
+        <ConnectionCategories
+          connectionId={vocabFor}
+          appName={connections.find((c: { id: string; appName: string }) => c.id === vocabFor)?.appName ?? ''}
+          onClose={() => setVocabFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Which categories a consuming app sees from GET /ext/categories.
+ * Selecting none means unrestricted — the app sees every active category.
+ */
+function ConnectionCategories({ connectionId, appName, onClose }: {
+  connectionId: string;
+  appName: string;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [error, setError] = useState('');
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+
+  const { data: categories = [] } = useQuery<AdminCategory[]>({
+    queryKey: ['admin-categories'],
+    queryFn: () => client.get('/admin/categories').then((r) => r.data.categories),
+  });
+  const { data: vocab } = useQuery<{ categoryIds: string[]; unrestricted: boolean }>({
+    queryKey: ['connection-categories', connectionId],
+    queryFn: () => client.get(`/admin/connections/${connectionId}/categories`).then((r) => r.data),
+  });
+
+  useEffect(() => {
+    if (vocab && selected === null) setSelected(new Set(vocab.categoryIds));
+  }, [vocab, selected]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => client.put(`/admin/connections/${connectionId}/categories`, {
+      categoryIds: [...(selected ?? [])],
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['connection-categories', connectionId] });
+      setError('');
+      onClose();
+    },
+    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not save'),
+  });
+
+  const ordered = useMemo(() => flattenTree(categories), [categories]);
+  const chosen = selected ?? new Set<string>();
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev ?? []);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="font-medium text-gray-900">Categories visible to {appName}</h3>
+          <p className="mt-0.5 text-xs text-gray-500">
+            {chosen.size === 0
+              ? 'None selected — this app sees every active category.'
+              : `${chosen.size} selected — this app sees only these.`}
+          </p>
+        </div>
+        <button onClick={onClose} className="text-xs text-gray-400 underline hover:text-gray-600">Close</button>
+      </div>
+
+      <ErrorPanel message={error} onDismiss={() => setError('')} />
+
+      <div className="max-h-80 overflow-y-auto rounded-lg border border-gray-100">
+        {ordered.map(({ cat, depth }) => (
+          <label
+            key={cat.id}
+            className="flex cursor-pointer items-center gap-2 border-b border-gray-50 px-3 py-1.5 text-sm last:border-0 hover:bg-gray-50"
+            style={{ paddingLeft: 12 + depth * 18 }}
+          >
+            <input
+              type="checkbox"
+              checked={chosen.has(cat.id)}
+              onChange={() => toggle(cat.id)}
+              className="h-3.5 w-3.5"
+            />
+            <span className={cat.isActive ? 'text-gray-800' : 'text-gray-400 line-through'}>{cat.name}</span>
+          </label>
+        ))}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+        >
+          Save
+        </button>
+        <button
+          onClick={() => setSelected(new Set())}
+          className="text-xs text-gray-500 underline hover:text-gray-700"
+        >
+          Clear all (unrestricted)
+        </button>
       </div>
     </div>
   );
