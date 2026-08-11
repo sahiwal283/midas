@@ -110,7 +110,13 @@ async function seed() {
     const existing = await db.query.users.findFirst({ where: eq(users.email, u.email) });
     if (!existing) {
       const passwordHash = await bcrypt.hash(u.password, 12);
-      await db.insert(users).values({ email: u.email, name: u.name, role: u.role, passwordHash });
+      await db.insert(users).values({
+        username: u.email.split('@')[0],
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        passwordHash,
+      });
       console.log(`  + user: ${u.email} (${u.role}) — password: ${u.password}`);
     }
   }

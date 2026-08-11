@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { db } from '../db/index';
 import { users, ssoLinks } from '../db/schema';
 import { env } from '../config/env';
@@ -142,8 +142,8 @@ router.get('/oidc/callback', asyncHandler(async (req, res) => {
     // Auto-provisioning cannot create a user without an email: users.email is the
     // unique identity key (notifications, reimbursements, ext actor resolution).
     // Distinguish that from "auto-create is off" so the message is actionable.
-    const missingEmail = !claims.email;
-    const reason = missingEmail ? 'denied_no_email' : 'denied_no_match';
+    const noIdentity = !claims.preferred_username && !claims.email;
+    const reason = noIdentity ? 'denied_no_identity' : 'denied_no_match';
     console.error(`[oidc:callback] ${reason} — sub:`, claims.sub, '| emailDomain:', claims.email?.split('@')[1] ?? 'no-email');
     await auditLog({
       entityType: 'sso',
@@ -300,7 +300,25 @@ async function resolveLocalUser(
     return user ? { user, wasCreated: false, wasLinkedByEmail: false } : null;
   }
 
-  // Step 2: email match → auto-link to existing Midas user
+  // Step 2: username match → auto-link. Username is the identity key, so this
+  // works for accounts that have no email address in the IdP.
+  const idpUsername = claims.preferred_username?.trim().toLowerCase() || null;
+  if (idpUsername) {
+    const matched = await db.query.users.findFirst({
+      where: sql`lower(${users.username}) = ${idpUsername}`,
+    });
+    if (matched) {
+      await db.insert(ssoLinks).values({
+        provider: 'authentik',
+        subject: claims.sub,
+        userId: matched.id,
+        metadata: { linkedBy: 'username', username: idpUsername },
+      });
+      return { user: matched, wasCreated: false, wasLinkedByEmail: true };
+    }
+  }
+
+  // Step 3: email match → auto-link, when the token carries one.
   if (claims.email) {
     const matched = await db.query.users.findFirst({ where: eq(users.email, claims.email) });
     if (matched) {
@@ -314,19 +332,28 @@ async function resolveLocalUser(
     }
   }
 
-  // Step 3: auto-create if enabled (only reachable when user is in an approved group)
-  if (!autoCreate || !claims.email) return null;
+  // Step 4: auto-create. Needs a username, not an email — an IdP account with no
+  // email address still onboards, and email is stored only when present.
+  const username = idpUsername ?? (claims.email ? claims.email.split('@')[0].toLowerCase() : null);
+  if (!autoCreate || !username) return null;
 
   const name = resolveDisplayName(claims);
   const [newUser] = await db.insert(users)
-    .values({ email: claims.email, name, role, passwordHash: null, isActive: true })
+    .values({
+      username,
+      email: claims.email ?? null,
+      name,
+      role,
+      passwordHash: null,
+      isActive: true,
+    })
     .returning();
 
   await db.insert(ssoLinks).values({
     provider: 'authentik',
     subject: claims.sub,
     userId: newUser.id,
-    metadata: { linkedBy: 'auto_provision', email: claims.email },
+    metadata: { linkedBy: 'auto_provision', username, email: claims.email ?? null },
   });
 
   return { user: newUser, wasCreated: true, wasLinkedByEmail: false };

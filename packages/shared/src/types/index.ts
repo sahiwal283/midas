@@ -6,7 +6,10 @@ export type UserRole = 'user' | 'accountant' | 'admin' | 'partner' | 'developer'
 
 export interface User {
   id: string;
-  email: string;
+  /** Identity key — what the user signs in with. */
+  username: string;
+  /** Optional; required only by email-delivered features (invites, notifications). */
+  email: string | null;
   name: string;
   role: UserRole;
   isActive: boolean;

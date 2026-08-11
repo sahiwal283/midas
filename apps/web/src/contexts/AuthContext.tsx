@@ -5,7 +5,7 @@ import type { User } from '../types';
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Directly set the session user (e.g. after invite acceptance issues the cookie). */
   setUser: (user: User | null) => void;
@@ -24,8 +24,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  async function login(email: string, password: string) {
-    const res = await client.post<{ user: User }>('/auth/login', { email, password });
+  async function login(identifier: string, password: string) {
+    // Username or email — the API matches username first.
+    const res = await client.post<{ user: User }>('/auth/login', { identifier, password });
     setUser(res.data.user);
   }
 

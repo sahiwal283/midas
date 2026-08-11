@@ -299,11 +299,11 @@ function UsersTab() {
   const { user: currentUser } = useAuth();
 
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: '', email: '', role: 'user', password: '' });
+  const [createForm, setCreateForm] = useState({ name: '', username: '', email: '', role: 'user', password: '' });
   const [createError, setCreateError] = useState('');
 
   const [showInvite, setShowInvite] = useState(false);
-  const [inviteForm, setInviteForm] = useState({ name: '', email: '', role: 'user' });
+  const [inviteForm, setInviteForm] = useState({ name: '', username: '', email: '', role: 'user' });
   const [inviteError, setInviteError] = useState('');
   const [newInvite, setNewInvite] = useState<{ name: string; url: string } | null>(null);
 
@@ -328,7 +328,7 @@ function UsersTab() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-users'] });
       setShowCreate(false);
-      setCreateForm({ name: '', email: '', role: 'user', password: '' });
+      setCreateForm({ name: '', username: '', email: '', role: 'user', password: '' });
       setCreateError('');
     },
     onError: (err: any) => {
@@ -342,7 +342,7 @@ function UsersTab() {
       qc.invalidateQueries({ queryKey: ['admin-users'] });
       setNewInvite({ name: inviteForm.name, url: res.data.inviteUrl });
       setShowInvite(false);
-      setInviteForm({ name: '', email: '', role: 'user' });
+      setInviteForm({ name: '', username: '', email: '', role: 'user' });
       setInviteError('');
     },
     onError: (err: any) => {
@@ -500,6 +500,15 @@ function UsersTab() {
               />
             </div>
             <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Username</label>
+              <input
+                value={inviteForm.username}
+                onChange={(e) => setInviteForm((f) => ({ ...f, username: e.target.value }))}
+                placeholder="jsmith"
+                className={inputCls}
+              />
+            </div>
+            <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Email</label>
               <input
                 value={inviteForm.email}
@@ -548,7 +557,18 @@ function UsersTab() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Email</label>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Username</label>
+              <input
+                value={createForm.username}
+                onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))}
+                placeholder="jsmith"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                Email <span className="font-normal text-gray-400">(optional)</span>
+              </label>
               <input
                 value={createForm.email}
                 onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}

@@ -27,7 +27,7 @@ type ExpenseRow = {
   reviewedAt: Date | null;
   category?: { id: string; name: string } | null;
   paymentMethod?: { id: string; label: string } | null;
-  user?: { id: string; name: string; email: string } | null;
+  user?: { id: string; name: string; email: string | null; username?: string } | null;
   receipts?: Array<{
     id: string;
     filename: string;
@@ -78,7 +78,7 @@ export function toExtExpenseDto(row: ExpenseRow) {
       ? { id: row.paymentMethod.id, label: row.paymentMethod.label }
       : null,
     user: row.user
-      ? { id: row.user.id, name: row.user.name, email: row.user.email }
+      ? { id: row.user.id, name: row.user.name, email: row.user.email, username: row.user.username ?? null }
       : null,
     receipts: (row.receipts ?? []).map((r) => ({
       id: r.id,
@@ -104,7 +104,7 @@ export function toExtExpenseDto(row: ExpenseRow) {
 export const EXT_EXPENSE_WITH = {
   category: { columns: { id: true, name: true } },
   paymentMethod: { columns: { id: true, label: true } },
-  user: { columns: { id: true, name: true, email: true } },
+  user: { columns: { id: true, name: true, email: true, username: true } },
   receipts: {
     columns: {
       id: true,

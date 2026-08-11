@@ -664,6 +664,12 @@ Actor headers on mutating calls: `X-Actor-Email` / body `submitterEmail`, `X-Act
 | `GET` | `/expenses/:id/receipts/:receiptId/content` | `expenses:read` | Byte stream |
 | `POST` | `/expenses/import` | `expenses:import` | Bulk; `dryRun`; `skipOcr` on receipts |
 
+**Identity is the username.** `users.email` is optional; `users.username` is the unique
+identity key, so an IdP account with no email address can be onboarded. `POST /auth/login`
+takes `{ identifier, password }` where identifier is a username *or* an email (`email` is
+still accepted as an alias). On `/ext`, `submitterUsername` is preferred and
+`submitterEmail` keeps working unchanged.
+
 **Company (formerly "entity").** Expense payloads accept `company`; the older
 `zohoEntity` is a deprecated alias that still works, and `company` wins when both
 are sent. Responses return both. Applies to `POST /expenses`, `PATCH /expenses/:id`

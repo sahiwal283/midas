@@ -11,7 +11,9 @@ import { issueSessionCookie, shouldRefreshSession } from '../lib/session';
 
 export interface AuthenticatedUser {
   id: string;
-  email: string;
+  username: string;
+  /** Optional — identity is the username. */
+  email: string | null;
   name: string;
   role: UserRole;
 }
@@ -29,7 +31,7 @@ declare global {
 
 interface JwtPayload {
   sub: string;
-  email: string;
+  email: string | null;
   role: UserRole;
   iat?: number;
 }
@@ -50,7 +52,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       res.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'User not found or inactive' } });
       return;
     }
-    req.user = { id: user.id, email: user.email, name: user.name, role: user.role };
+    req.user = { id: user.id, username: user.username, email: user.email, name: user.name, role: user.role };
 
     // Sliding session: any use of a day-old token re-issues a fresh 30-day
     // cookie, so active users (web + extension) stay signed in.

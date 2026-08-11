@@ -12,7 +12,7 @@ interface AuthConfig {
 export function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,7 +31,7 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
+      await login(identifier, password);
       navigate('/dashboard');
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: { message?: string } }; status?: number } };
@@ -54,7 +54,7 @@ export function Login() {
       case 'token_error': return 'SSO sign-in failed. Please contact an administrator.';
       case 'invalid_state': return 'SSO session expired. Please try again.';
       case 'denied_no_group': return 'Your account is not assigned to a Midas access group.';
-      case 'denied_no_email': return 'Your Authentik account has no email address, so Midas could not create your account. Ask an admin to add an email to your Authentik profile, then sign in again.';
+      case 'denied_no_identity': return 'Your SSO account has neither a username nor an email address, so Midas could not create your account. Contact an administrator.';
       case 'denied_no_match': return 'Your SSO account is not linked to a Midas account. Contact an administrator.';
       case 'denied_inactive': return 'Your account has been deactivated. Contact an administrator.';
       case 'missing_params': return 'SSO callback was incomplete. Please try again.';
@@ -115,8 +115,8 @@ export function Login() {
               </p>
               <form onSubmit={handleSubmit} className="mt-3 space-y-3">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="email">Email</label>
-                  <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder="you@company.com" autoComplete="email" />
+                  <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="identifier">Username or email</label>
+                  <input id="identifier" type="text" required value={identifier} onChange={(e) => setIdentifier(e.target.value)} className={inputCls} placeholder="username" autoComplete="username" />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="password">Password</label>
@@ -133,8 +133,8 @@ export function Login() {
           {!isAuthentikMode && authConfig.showLocalLogin && (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="email">Email</label>
-                <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder="you@company.com" autoComplete="email" />
+                <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="identifier">Username or email</label>
+                <input id="identifier" type="text" required value={identifier} onChange={(e) => setIdentifier(e.target.value)} className={inputCls} placeholder="username" autoComplete="username" />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-charcoal" htmlFor="password">Password</label>
