@@ -10,7 +10,7 @@
  */
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../db/index';
-import { users } from '../db/schema';
+import { users, userEmailAliases } from '../db/schema';
 
 /** Every column that points at users.id, plus the soft manager_id reference. */
 const REFERENCES: Array<{ table: string; column: string }> = [
@@ -80,6 +80,16 @@ async function main() {
     if (dryRun) {
       console.log('\nDry run complete — rolling back.');
       throw new DryRunAbort();
+    }
+
+    // Preserve the source email as an alias. External systems keep sending it
+    // (Trade Show posts expenses by submitterEmail), and without this the merge
+    // silently breaks their submissions.
+    if (from.email) {
+      await tx.insert(userEmailAliases)
+        .values({ userId: to.id, email: from.email, note: `merged from ${from.username}` })
+        .onConflictDoNothing();
+      console.log(`  kept ${from.email} as an alias of ${to.username}`);
     }
 
     // Audit before deleting, so the record survives the source row.

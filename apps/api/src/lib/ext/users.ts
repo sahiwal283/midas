@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'crypto';
 import { eq, sql } from 'drizzle-orm';
 import { env } from '../../config/env';
 import { db } from '../../db/index';
-import { users } from '../../db/schema';
+import { users, userEmailAliases } from '../../db/schema';
 import { auditLog } from '../audit';
 import { createError } from '../../middleware/error';
 
@@ -29,9 +29,20 @@ export async function resolveExtUser(opts: {
   }
 
   // Username first — it is the identity key and always present on a Midas user.
-  const existing = username
+  let existing = username
     ? await db.query.users.findFirst({ where: sql`lower(${users.username}) = ${username}` })
     : await db.query.users.findFirst({ where: eq(users.email, email!) });
+
+  // Then retired/alternate addresses, so a consumer still sending a pre-merge
+  // email resolves to the surviving account instead of failing or duplicating.
+  if (!existing && email) {
+    const alias = await db.query.userEmailAliases.findFirst({
+      where: sql`lower(${userEmailAliases.email}) = ${email}`,
+    });
+    if (alias) {
+      existing = await db.query.users.findFirst({ where: eq(users.id, alias.userId) });
+    }
+  }
 
   if (existing) {
     if (!existing.isActive) throw createError('User is inactive', 422, 'USER_INACTIVE');

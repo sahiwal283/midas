@@ -81,6 +81,21 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// ── Alternate / retired emails ────────────────────────────────────────────────
+// External systems keep sending an address after a merge or an email change.
+// These resolve to the owning user so their submissions are never orphaned.
+
+export const userEmailAliases = pgTable('user_email_aliases', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  email: text('email').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('user_email_aliases_email_idx').on(t.email),
+  index('user_email_aliases_user_idx').on(t.userId),
+]);
+
 // ── Expense Categories ────────────────────────────────────────────────────────
 
 export const expenseCategories = pgTable('expense_categories', {
