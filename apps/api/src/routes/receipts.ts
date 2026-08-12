@@ -12,6 +12,7 @@ import { runReceiptOcr } from '../lib/runReceiptOcr';
 import { toJpegIfHeic } from '../lib/receiptImage';
 import { auditLog } from '../lib/audit';
 import { env } from '../config/env';
+import { roleAllowed } from '../lib/roles';
 
 const router = Router({ mergeParams: true });
 router.use(authenticate);
@@ -85,7 +86,7 @@ router.get('/:receiptId/content', asyncHandler(async (req, res) => {
   const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.expenseId) });
   if (!expense) throw notFound('Expense not found');
   const isOwner = expense.userId === req.user!.id;
-  const isPrivileged = req.user!.role === 'accountant' || req.user!.role === 'admin';
+  const isPrivileged = roleAllowed(req.user!.role, ['accountant', 'admin']);
   if (!isOwner && !isPrivileged) throw forbidden();
 
   const receipt = await db.query.receipts.findFirst({

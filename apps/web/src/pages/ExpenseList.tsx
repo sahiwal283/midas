@@ -9,6 +9,7 @@ import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 import { flattenTree, descendantIdSet } from '../lib/categoryTree';
+import { roleAllowed } from '../lib/roles';
 
 const PAGE_SIZE = 10;
 
@@ -112,8 +113,8 @@ export function ExpenseList() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [quickViewId, setQuickViewId] = useState<string | null>(null);
   const [forceZoho, setForceZoho] = useState(false);
-  const isAdmin = user?.role === 'admin';
-  const canBulkDelete = user?.role === 'admin' || user?.role === 'accountant' || user?.role === 'user';
+  const isAdmin = roleAllowed(user?.role, ['admin']);
+  const canBulkDelete = roleAllowed(user?.role, ['admin', 'accountant', 'user']);
 
   const monthOptions = useMemo(() => {
     const keys = new Set<string>();

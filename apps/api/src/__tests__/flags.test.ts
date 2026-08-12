@@ -200,6 +200,39 @@ describe('computeFlags — combined scenarios', () => {
   });
 });
 
+describe('computeFlags — non-Zoho companies', () => {
+  const readyRow = {
+    sourceApp: 'trade_show',
+    categoryId: 'cat-1',
+    paymentMethodId: 'pm-1',
+    receipts: [{ id: 'r-1' }],
+    zohoEntity: 'Summitt Labs',
+    zohoExpenseId: null,
+    reimbursementStatus: 'not_requested',
+    status: 'approved',
+  };
+
+  it('does not mark an expense ready for Zoho when its company has Zoho disabled', () => {
+    expect(computeFlags({ ...readyRow, companyZohoEnabled: false })).not.toContain('ready_for_zoho');
+  });
+
+  it('still marks it ready when the company has Zoho enabled', () => {
+    expect(computeFlags({ ...readyRow, companyZohoEnabled: true })).toContain('ready_for_zoho');
+  });
+
+  it('treats an unknown companyZohoEnabled as enabled, preserving today behaviour', () => {
+    expect(computeFlags(readyRow)).toContain('ready_for_zoho');
+  });
+
+  it('leaves the other flags untouched for a non-Zoho company', () => {
+    const flags = computeFlags({
+      ...readyRow, companyZohoEnabled: false, receipts: [], paymentMethodId: null,
+    });
+    expect(flags).toContain('missing_receipt');
+    expect(flags).toContain('needs_payment_method');
+  });
+});
+
 describe('computeFlags — return type contains only known flags', () => {
   const KNOWN_FLAGS = new Set([
     'from_extension', 'needs_category', 'missing_receipt',

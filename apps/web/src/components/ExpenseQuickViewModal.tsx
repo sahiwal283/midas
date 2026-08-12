@@ -12,6 +12,8 @@ import {
 import { ReceiptPreview } from './ReceiptPreview';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ReimbursementStatus } from '../types';
+import type { UserRole } from '@midas/shared';
+import { roleAllowed } from '../lib/roles';
 
 function canDeleteExpense(expense: Expense, role: string | undefined, userId: string | undefined): {
   allowed: boolean;
@@ -19,11 +21,11 @@ function canDeleteExpense(expense: Expense, role: string | undefined, userId: st
 } {
   if (!role || !userId) return { allowed: false, needsForce: false };
   const isOwner = expense.userId === userId;
-  const isPrivileged = role === 'accountant' || role === 'admin';
+  const isPrivileged = roleAllowed(role as UserRole, ['accountant', 'admin']);
   if (!isOwner && !isPrivileged) return { allowed: false, needsForce: false };
 
   if (expense.zohoExpenseId) {
-    return { allowed: role === 'admin', needsForce: true };
+    return { allowed: roleAllowed(role as UserRole, ['admin']), needsForce: true };
   }
   if (isPrivileged) return { allowed: true, needsForce: false };
   if (expense.status === 'draft') return { allowed: true, needsForce: false };
@@ -45,7 +47,7 @@ export function ExpenseQuickViewModal({
   const [showReceipt, setShowReceipt] = useState(true);
   const [receiptIndex, setReceiptIndex] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const isPrivileged = user?.role === 'accountant' || user?.role === 'admin';
+  const isPrivileged = roleAllowed(user?.role, ['accountant', 'admin']);
 
   const { data: expense, isLoading, error } = useQuery({
     queryKey: ['expense', expenseId],

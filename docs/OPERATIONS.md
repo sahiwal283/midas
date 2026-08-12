@@ -187,6 +187,66 @@ pct exec 3120 -- cat /root/midas-credentials.json
 
 ---
 
+## Ext API app connections (consumer apps, e.g. Trade Show)
+
+Each consuming app (Trade Show, etc.) authenticates to `/api/v1/ext/*` with a
+Bearer API key tied to a row in `app_connections`. A single Midas app (e.g.
+Trade Show) can have more than one connection — for example a `trade_show`
+sandbox connection and a separate `trade_show_prod` connection — so that
+rotating or scoping one environment's key never touches the other's.
+
+**Issue or rotate a connection's key:**
+
+```bash
+cd apps/api
+npx tsx src/scripts/create-ext-connection.ts <connection_name>
+# e.g.: npx tsx src/scripts/create-ext-connection.ts trade_show_prod
+```
+
+- If no connection with that name exists, this **creates** one with the
+  Trade Show B4 scopes (`expenses:create`, `expenses:read`,
+  `expenses:update`, `expenses:delete`, `receipts:create`,
+  `expenses:import`, `ocr:process`) and prints the plaintext API key.
+- If a connection with that name **already exists**, this **rotates** its
+  key — the old key stops working immediately. Only re-run it against a
+  name when you intend to rotate that connection's key.
+- **The plaintext API key is printed exactly once and is never recoverable
+  afterward** — only its SHA-256 hash (`api_key_hash`) is stored. Copy it
+  into the consumer app's secret store (e.g. Trade Show's `MIDAS_API_KEY`)
+  immediately, or you will have to rotate again to get a usable key.
+- Creating a **new**, differently-named connection does **not** rotate or
+  otherwise touch any existing connection's key — verified by comparing
+  `api_key_hash` for `trade_show` before and after issuing a sibling
+  `trade_show_prod` connection.
+
+**Scope a connection's category vocabulary:**
+
+```bash
+npx tsx src/scripts/seed-trade-show-vocabulary.ts <connection_name>
+# defaults to "trade_show" if the name is omitted
+```
+
+Restricts which of Midas's active expense categories the named connection
+can see via `GET /ext/categories`, to the 15-entry flat vocabulary Trade
+Show's own UI already uses. Idempotent (safe to re-run — already-present
+rows are skipped) and fails loudly (throws) if no connection with the given
+name exists. Apply it to every Trade Show connection you create (sandbox,
+prod, or any future one) so all of them stay scoped identically.
+
+**`sourceApp` is independent of the connection name — do not change it.**
+`category_mappings` rows are keyed on `source_app = 'trade_show'`. The
+connection *name* (`trade_show`, `trade_show_prod`, ...) only identifies
+*which API key/scope* is making the call — it is not the same field, and
+Midas never derives one from the other. A production Trade Show connection
+must still send `sourceApp: 'trade_show'` in its request bodies. If a
+consumer instead sent `trade_show_prod` as `sourceApp`, all 26 existing
+`category_mappings` rows for `trade_show` would silently stop matching and
+every OCR suggestion would fail to map to a category. Only the connection
+name changes between environments; `sourceApp` in request payloads never
+does.
+
+---
+
 ## Backup operations
 
 See `docs/BACKUP_RESTORE.md` for full details.

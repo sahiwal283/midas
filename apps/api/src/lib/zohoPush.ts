@@ -8,6 +8,7 @@ import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
 import { resolveCategoryEntityAccountId } from './categoryZohoAccounts';
 import { classifyZohoError } from './zohoErrors';
 import { syncExpenseToTransaction } from './syncExpenseTransaction';
+import { isCompanyZohoEnabled } from './companies';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -50,6 +51,12 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
   }
   if (!expense.zohoEntity) {
     return { ok: false, status: 409, code: 'MISSING_ZOHO_ENTITY', message: 'zohoEntity must be set before pushing to Zoho' };
+  }
+  if (!(await isCompanyZohoEnabled(expense.zohoEntity))) {
+    return {
+      ok: false, status: 409, code: 'COMPANY_ZOHO_DISABLED',
+      message: `Company "${expense.zohoEntity}" does not post to Zoho`,
+    };
   }
   if (!expense.categoryId && !expense.zohoExpenseAccountId) {
     return { ok: false, status: 409, code: 'MISSING_CATEGORY', message: 'Category must be set before pushing to Zoho' };

@@ -6,6 +6,7 @@ import { SearchableSelect } from '../components/SearchableSelect';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { useAuth } from '../contexts/AuthContext';
 import type { Transaction } from '@midas/shared';
+import { roleAllowed } from '../lib/roles';
 
 type ZohoVendor = { vendorId: string; vendorName: string; companyName?: string | null };
 type ZohoItem = { itemId: string; name: string; unit?: string | null };
@@ -15,7 +16,7 @@ export function PurchaseOrderDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const isPrivileged = user?.role === 'accountant' || user?.role === 'admin' || user?.role === 'developer';
+  const isPrivileged = roleAllowed(user?.role, ['accountant', 'admin']);
   const [pushError, setPushError] = useState<string | null>(null);
 
   const q = useQuery({

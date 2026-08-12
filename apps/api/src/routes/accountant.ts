@@ -18,7 +18,8 @@ import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { notifyUser } from '../lib/notify';
 import { syncExpenseToTransaction } from '../lib/syncExpenseTransaction';
 import { pushPurchaseOrderToZoho } from '../lib/zohoPoPush';
-import { assertActiveCompany } from '../lib/companies';
+import { assertActiveCompany, isCompanyZohoEnabled } from '../lib/companies';
+import { zohoEnabledByCompanyName } from '../lib/companyZoho';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -122,8 +123,12 @@ router.get('/queue', asyncHandler(async (req, res) => {
     offset: (page - 1) * pageSize,
   });
 
+  const zohoByCompany = await zohoEnabledByCompanyName();
   const expensesWithFlags = rows.map((row) => {
-    const flags = computeFlags(row);
+    const flags = computeFlags({
+      ...row,
+      companyZohoEnabled: row.zohoEntity ? zohoByCompany.get(row.zohoEntity) : undefined,
+    });
     const wireStatus = row.integrationStatus === 'failed' && row.status === 'approved'
       ? 'zoho_sync_failed'
       : row.status;
@@ -194,6 +199,8 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
     },
   });
 
+  const zohoByCompany = await zohoEnabledByCompanyName();
+
   function tally(subset: typeof rows) {
     const counts: Record<string, number> = {
       pending: 0,
@@ -218,7 +225,10 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
         ? 'zoho_sync_failed'
         : row.status;
       counts[wireStatus] = (counts[wireStatus] ?? 0) + 1;
-      const flags = computeFlags(row as Parameters<typeof computeFlags>[0]);
+      const flags = computeFlags({
+        ...row,
+        companyZohoEnabled: row.zohoEntity ? zohoByCompany.get(row.zohoEntity) : undefined,
+      } as Parameters<typeof computeFlags>[0]);
       for (const flag of flags) {
         if (flag in counts) counts[flag]++;
       }
@@ -267,8 +277,12 @@ router.get('/expenses', asyncHandler(async (req, res) => {
     },
     orderBy: [desc(expenses.createdAt)],
   });
+  const zohoByCompany = await zohoEnabledByCompanyName();
   const expensesWithFlags = rows.map((row) => {
-    const flags = computeFlags(row);
+    const flags = computeFlags({
+      ...row,
+      companyZohoEnabled: row.zohoEntity ? zohoByCompany.get(row.zohoEntity) : undefined,
+    });
     return { ...row, flags, zohoReady: flags.includes('ready_for_zoho') };
   });
   res.json({ expenses: expensesWithFlags });
@@ -304,6 +318,7 @@ router.post('/expenses/bulk-review', asyncHandler(async (req, res) => {
   const approved: string[] = [];
   const now = new Date();
   const closed = await getClosedPeriods();
+  const zohoByCompany = await zohoEnabledByCompanyName();
   for (const id of approvable) {
     const expense = rows.find((r) => r.id === id)!;
     if (isInClosedPeriods(expense.date, closed)) {
@@ -317,7 +332,9 @@ router.post('/expenses/bulk-review', asyncHandler(async (req, res) => {
     await db.update(expenses)
       .set({
         status: 'approved',
-        integrationStatus: expense.zohoEntity ? 'pending' : 'not_required',
+        integrationStatus: expense.zohoEntity && zohoByCompany.get(expense.zohoEntity) !== false
+          ? 'pending'
+          : 'not_required',
         reviewedById: req.user!.id,
         reviewedAt: now,
         reimbursementStatus,
@@ -431,19 +448,26 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
     if (next) reimbursementStatus = next as typeof expense.reimbursementStatus;
   }
 
+  let validatedZohoEntity: string | null = null;
+  if (action === 'approve' && 'zohoEntity' in parsed && parsed.zohoEntity) {
+    validatedZohoEntity = await assertActiveCompany(parsed.zohoEntity);
+  }
+
+  const effectiveCompany = validatedZohoEntity || expense.zohoEntity;
+  const companyPostsToZoho = effectiveCompany ? await isCompanyZohoEnabled(effectiveCompany) : false;
+
   const now = new Date();
   const [updated] = await db.update(expenses)
     .set({
       status: newStatus,
       integrationStatus: action === 'approve'
-        ? ((('zohoEntity' in parsed && parsed.zohoEntity) || expense.zohoEntity) ? 'pending' : 'not_required')
+        ? (companyPostsToZoho ? 'pending' : 'not_required')
         : expense.integrationStatus,
       reviewedById: req.user!.id,
       reviewedAt: now,
       reimbursementStatus,
       updatedAt: now,
-      ...(action === 'approve' && 'zohoEntity' in parsed && parsed.zohoEntity
-        ? { zohoEntity: parsed.zohoEntity } : {}),
+      ...(validatedZohoEntity ? { zohoEntity: validatedZohoEntity } : {}),
     })
     .where(eq(expenses.id, req.params.id))
     .returning();

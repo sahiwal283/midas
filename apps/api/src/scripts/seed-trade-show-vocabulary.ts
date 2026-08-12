@@ -1,18 +1,26 @@
 /**
- * Scope the trade_show connection to the exact category vocabulary that app
+ * Scope an app connection to the exact category vocabulary that Trade Show
  * already had (its own app_settings.categoryOptions), so it never inherits
  * Midas-only categories such as the tree parents.
  *
  * Idempotent and name-matched. Leaves-only: no parent categories, because the
  * Trade Show picker is a flat dropdown.
  *
- * Run: npx tsx src/scripts/seed-trade-show-vocabulary.ts
+ * Applies to whichever connection name is given — e.g. the sandbox
+ * `trade_show` connection or a sibling `trade_show_prod` connection issued
+ * later via create-ext-connection.ts. Both share the same 15-entry
+ * vocabulary because both consumers send the same `sourceApp` value
+ * ('trade_show') in request bodies; the connection name is purely an
+ * API-key/scoping identity and never appears in category_mappings.
+ *
+ * Run: npx tsx src/scripts/seed-trade-show-vocabulary.ts [connectionName]
+ *   (defaults to "trade_show" if no argument is given)
  */
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/index';
 import { appConnections, appConnectionCategories, expenseCategories } from '../db/schema';
 
-const APP_NAME = 'trade_show';
+const APP_NAME = process.argv[2] || 'trade_show';
 
 /** Verbatim from Trade Show's app_settings.categoryOptions (15 entries). */
 const VOCABULARY = [

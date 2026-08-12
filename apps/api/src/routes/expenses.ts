@@ -51,7 +51,7 @@ const updateExpenseSchema = createExpenseSchema.partial();
 // search/date filters and pagination: when `page` is present the response is
 // { expenses, total, page, pageSize }; otherwise the legacy full array.
 router.get('/', asyncHandler(async (req, res) => {
-  const isPrivileged = req.user!.role === 'accountant' || req.user!.role === 'admin';
+  const isPrivileged = roleAllowed(req.user!.role, ['accountant', 'admin']);
   const { status, categoryId, search, from, to, page, pageSize } = req.query as Record<string, string>;
 
   const conditions = [];
@@ -125,7 +125,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   if (!expense) throw notFound('Expense not found');
 
   const isOwner = expense.userId === req.user!.id;
-  const isPrivileged = req.user!.role === 'accountant' || req.user!.role === 'admin';
+  const isPrivileged = roleAllowed(req.user!.role, ['accountant', 'admin']);
   if (!isOwner && !isPrivileged) throw forbidden();
 
   // Strip accountant-only fields from responses for regular users.

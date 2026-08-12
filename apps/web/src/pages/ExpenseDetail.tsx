@@ -11,6 +11,7 @@ import { ReceiptPreview } from '../components/ReceiptPreview';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, MessageRequestType, AuditLogEntry } from '../types';
+import { roleAllowed } from '../lib/roles';
 
 // ── Status banner — human language per workflow state ─────────────────────────
 
@@ -564,9 +565,8 @@ export function ExpenseDetail() {
   if (!expense) return <div className="p-8 text-red-600">Expense not found</div>;
 
   const isOwner = expense.userId === user?.id;
-  const isPrivileged = user?.role === 'accountant' || user?.role === 'admin';
-  const canSeeZohoSync =
-    user?.role === 'accountant' || user?.role === 'admin' || user?.role === 'developer';
+  const isPrivileged = roleAllowed(user?.role, ['accountant', 'admin']);
+  const canSeeZohoSync = roleAllowed(user?.role, ['accountant', 'admin']);
   const isDraft = expense.status === 'draft';
   const isAwaiting = expense.status === 'awaiting_info';
   const isRejected = expense.status === 'rejected';
@@ -592,7 +592,7 @@ export function ExpenseDetail() {
     (m) => m.requestType && !m.isResolved,
   ) ?? false;
   const canDelete = (() => {
-    if (expense.zohoExpenseId) return user?.role === 'admin';
+    if (expense.zohoExpenseId) return roleAllowed(user?.role, ['admin']);
     if (isPrivileged) return true;
     if (!isOwner) return false;
     return expense.status === 'draft' || (expense.status === 'pending' && !expense.reviewedAt);
