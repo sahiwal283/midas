@@ -11,6 +11,7 @@ import { getClosedPeriods } from '../lib/closedPeriodsDb';
 import { roleAllowed } from '../lib/roles';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
+import { parseQueueScope, scopeCondition } from '../lib/queueScope';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { notifyUser } from '../lib/notify';
@@ -69,6 +70,9 @@ router.get('/queue', asyncHandler(async (req, res) => {
     inArray(expenses.status, queueStatuses),
     eq(expenses.expenseKind, 'business'),
   ];
+  // Event and daily are separate pages; the split is enforced in SQL so neither
+  // page can ever receive the other's rows.
+  if (f.scope) conds.push(scopeCondition(f.scope));
   if (f.status === 'zoho_sync_failed') conds.push(eq(expenses.integrationStatus, 'failed'));
   if (f.userId) conds.push(eq(expenses.userId, f.userId));
   if (f.search) {
@@ -231,10 +235,14 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
   });
 }));
 
-router.get('/expenses', asyncHandler(async (_req, res) => {
+router.get('/expenses', asyncHandler(async (req, res) => {
+  const scope = parseQueueScope(typeof req.query.scope === 'string' ? req.query.scope : undefined);
+  const where = scope
+    ? and(eq(expenses.expenseKind, 'business'), scopeCondition(scope))
+    : eq(expenses.expenseKind, 'business');
   const rows = await db.query.expenses.findMany({
     // Partner spend is tracked on its own tab and never enters review.
-    where: eq(expenses.expenseKind, 'business'),
+    where,
     with: {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
