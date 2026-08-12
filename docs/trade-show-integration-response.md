@@ -9,6 +9,10 @@ Midas that is not true today, it is called out as **Correction**.
 Midas at the time of writing: v0.43.0, CT 3120, database CT 3220.
 376 expenses, all `source_app = 'trade_show'`. One app connection, `trade_show`.
 
+**Update, 2026-08-12 — shipped as v0.44.0.** All six pre-cutover items below are
+live in production. See "What we are building" for the per-item status and the
+correction to the D2 row count (it was 70, not 13 — see that section).
+
 ---
 
 ## Decisions on the blocking items
@@ -145,13 +149,20 @@ and simply never pushed. Retained, yes. Never pushed, no — not today:
 - `pushExpenseToZoho` has no `zohoEnabled` guard, so a bulk push from that lane
   would genuinely attempt to send it.
 
-This is not hypothetical: **70 of the 376 expenses are on Summitt Labs, and 13 of
-those are already `approved` + `integration_status = 'pending'`.** Nothing has
-been pushed because pushes are only ever triggered by an explicit accountant
-action, but the lane is armed.
+This is not hypothetical: **70 of the 376 expenses are on Summitt Labs.** At the
+time of writing 13 of those were already `approved` + `integration_status =
+'pending'`; the rest were sitting in other statuses but the underlying gate was
+the same for all of them. Nothing had been pushed because pushes are only ever
+triggered by an explicit accountant action, but the lane was armed.
 
-We are fixing all three points and correcting the 13 rows to `not_required`.
-After that, the behaviour will be exactly what you asked to confirm.
+**Correction, 2026-08-12:** by the time the production repair actually ran, all
+70 Summitt Labs expenses — not just the 13 approved ones — carried
+`integration_status = 'pending'`. The repair script fixes the condition
+(`zoho_enabled = false AND integration_status = 'pending'`), not a fixed count,
+so it caught and corrected all 70. Re-running it now reports `0`. Behaviour is
+exactly what you asked to confirm: `computeFlags`, approve, and
+`pushExpenseToZoho` all now consult `zohoEnabled` and refuse a non-Zoho company
+with `COMPANY_ZOHO_DISABLED`.
 
 **D3. Zoho ownership — confirmed.**
 Midas owns all Zoho Books posting for `source_app = 'trade_show'`, including the
@@ -197,15 +208,52 @@ adapter, so it would break if Midas moved to `STORAGE_MODE=s3`. Production is
 
 ## What we are building
 
-**Before cutover**
+**Before cutover — all six shipped in v0.44.0, 2026-08-12**
 
-1. `zohoEnabled` respected end to end — flags, approve, and push — plus the
-   13-row data fix. (D2)
-2. Unknown category → `Other` + warning on create and update. (C-2)
-3. Company validated on `/ext` write, and the 3 bad rows cleaned. (C-3)
-4. `trade_show_prod` connection and key, scoped to the same 15 categories. (A1)
-5. Duplicate warnings on create and update. (B2)
-6. A decision and a roster reconciliation for user provisioning. (C-1)
+1. **Done.** `zohoEnabled` respected end to end — flags, approve, and push —
+   plus the production data fix (70 rows, not 13; see the D2 correction above).
+   A non-Zoho company is refused with `400 COMPANY_ZOHO_DISABLED` at every
+   `integration_status` write in `routes/transactions.ts` and inside
+   `pushExpenseToZoho`. (D2)
+2. **Done.** Unknown category on `POST /ext/expenses` and
+   `PATCH /ext/expenses/:id` now falls back to `Other` and returns a warning
+   with code `CATEGORY_FALLBACK` in the response `warnings[]` array, instead of
+   silently storing `null`. (C-2)
+3. **Done.** Company is validated on `/ext` write: an unrecognised company name
+   returns `400 UNKNOWN_COMPANY` instead of being stored verbatim. The 3 bad
+   rows (`zoho_entity = 'undefined'`, 2 rows; and a null case) were cleaned by
+   the same repair script — see D2's numbers above. (C-3)
+4. **Done.** `trade_show_prod` connection and key issued in production, scoped
+   to the same 15 categories as sandbox `trade_show` (verified: both
+   connections `is_active = true`, 15 categories each). Sandbox `trade_show`
+   and its key were left untouched. (A1)
+5. **Done.** Duplicate warnings on create and update: `POST /ext/expenses` and
+   `PATCH /ext/expenses/:id` return a warning with code `POSSIBLE_DUPLICATE`
+   (non-blocking — the write still succeeds) when `isLikelyDuplicate` matches
+   another expense from the same submitter within the date/amount/merchant
+   rule in B2. (B2)
+6. **Done.** Decision: auto-provisioning is now **on**
+   (`EXT_AUTO_PROVISION_USERS=true`), verified inside the running production
+   container, not just in `.env`. Roster reconciliation against Trade Show's
+   live database (read-only query, CT 2600) found all 8 active submitters
+   resolve to an existing Midas account — no unmatched user. Two things worth
+   your attention before you rely on that: (a) three Trade Show usernames
+   (`Salesguru`, `sahil`, `seri`) don't match their Midas counterpart's
+   username (`brett`, `sahilk`, `seriv`) — they only resolve because the email
+   matches (directly, or via `user_email_aliases` for `sahil` /
+   `tech@cooliohcandy.com`). If a submission ever carries `submitterUsername` without
+   `submitterEmail` for these three people, it will provision a **new**
+   duplicate account instead of resolving to the existing one — always send
+   both fields for them. (b) Trade Show's `admin` user
+   (`admin@company.com`) shares the literal username `admin` with Midas's own
+   admin account (`admin@midas.local`), which is a different identity. Because
+   username resolution runs before email, any submission with
+   `submitterUsername: "admin"` will attribute the expense to Midas's admin
+   account, not create or match a distinct Trade Show admin identity. Sending
+   `submitterEmail` alone will not route around it — the username match wins
+   whenever a username is present. Rename that Trade Show account to something
+   that isn't `admin` before cutover if that submitter's expenses need to be
+   attributed correctly. (C-1)
 
 **Soon after**
 
