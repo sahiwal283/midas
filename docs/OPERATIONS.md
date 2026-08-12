@@ -127,6 +127,16 @@ ssh root@192.168.1.190 "pct exec 3120 -- docker logs --tail 5 midas-api-1"
 
 New source files added to `apps/api/src/lib/` or `apps/web/src/` also hot-reload — no Docker rebuild needed.
 
+> **A file-push deploy never deletes.** `tar xzf` extracts over the existing tree, so a
+> file removed in git still exists on CT 3120 and will break the build (observed
+> 2026-08-12: a deleted `apps/web/src/api/partnerExpenses.ts` failed `tsc` in the web
+> image). After any branch that deletes files, remove them explicitly:
+>
+> ```bash
+> git diff --diff-filter=D --name-only <merge-base> HEAD   # list deletions
+> ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && rm -f <paths>'"
+> ```
+
 ### Changes requiring rebuild (Dockerfile, package.json, node_modules)
 
 ```bash
