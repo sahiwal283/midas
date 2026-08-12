@@ -20,6 +20,14 @@ function fmtMoney(n: number): string {
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/**
+ * Web-side mirror of apps/api/src/lib/queueScope.ts#isDailyExpense.
+ * Only one call site needs this, so it lives inline rather than in a shared module.
+ */
+function isDailyExpense(sourceApp: string | null | undefined): boolean {
+  return sourceApp == null || sourceApp === 'browser_extension';
+}
+
 // ── Receipt viewer (left pane) ────────────────────────────────────────────────
 
 function ReceiptPane({ expense }: { expense: Expense }) {
@@ -227,6 +235,8 @@ export function AccountantReview() {
     enabled: !!id,
   });
 
+  const queueBackTo = isDailyExpense(expense?.sourceApp) ? '/accountant/daily' : '/accountant/events';
+
   const reviewMutation = useMutation({
     mutationFn: ({ action, note, requestType, internalNote }: {
       action: 'approve' | 'reject' | 'request_info';
@@ -239,7 +249,7 @@ export function AccountantReview() {
       qc.invalidateQueries({ queryKey: ['accountant-queue-summary'] });
       qc.invalidateQueries({ queryKey: ['expense', id] });
       if (variables.action === 'approve' || variables.action === 'reject') {
-        navigate('/accountant');
+        navigate(queueBackTo);
       } else {
         setShowAskForm(false);
         setAskNote('');
@@ -295,7 +305,7 @@ export function AccountantReview() {
       {/* Sticky header */}
       <div className="sticky top-0 z-10 border-b border-ink/10 bg-white/95 px-4 py-3 backdrop-blur lg:px-8">
         <div className="flex flex-wrap items-center gap-3">
-          <Link to="/accountant" className="rounded p-1 text-charcoal/40 hover:bg-ink/[0.04]" aria-label="Back to queue">
+          <Link to={queueBackTo} className="rounded p-1 text-charcoal/40 hover:bg-ink/[0.04]" aria-label="Back to queue">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">

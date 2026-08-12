@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Link } from 'react-router-dom';
+import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, Camera, X, ClipboardList, BarChart3,
   Briefcase, Settings, LogOut, Upload, Activity,
@@ -14,7 +14,11 @@ const itemCls = ({ isActive }: { isActive: boolean }) =>
 
 export function MobileNav() {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  // Both scoped review pages share one bottom-bar tab, so match either instead
+  // of relying on NavLink's own (single-path) active check.
+  const queueActive = location.pathname.startsWith('/accountant');
 
   const role = user?.role;
   const isDeveloper = role === 'developer';
@@ -77,7 +81,7 @@ export function MobileNav() {
         </NavLink>
 
         {isPrivileged ? (
-          <NavLink to="/accountant/daily" className={itemCls}>
+          <NavLink to="/accountant/daily" className={() => itemCls({ isActive: queueActive })}>
             <ClipboardList className="h-5 w-5" />
             Queue
           </NavLink>

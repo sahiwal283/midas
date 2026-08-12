@@ -132,9 +132,11 @@ export function PurchaseOrderDetail() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <Link to={isPrivileged ? '/accountant/purchase-orders' : '/expenses/new'} className="text-sm font-medium text-brand-700">
-        ← {isPrivileged ? 'PO queue' : 'New transaction'}
-      </Link>
+      {!isPrivileged && (
+        <Link to="/expenses/new" className="text-sm font-medium text-brand-700">
+          ← New transaction
+        </Link>
+      )}
       <h1 className="mt-2 mb-1 font-display text-3xl font-semibold text-ink">Purchase Order</h1>
       <p className="mb-6 text-sm text-charcoal/55">
         {tx.vendorName} · {tx.transactionDate} · <span className="uppercase tracking-wide">{tx.status}</span>
