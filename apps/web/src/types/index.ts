@@ -3,7 +3,6 @@ export type {
   Expense, ExpenseStatus, ReimbursementStatus,
   ExpenseCategory,
   PaymentMethod,
-  PartnerExpense, PartnerExpenseCategory,
   Company,
   Receipt, OcrStatus,
   ExpenseMessage, MessageRequestType,

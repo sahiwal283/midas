@@ -50,9 +50,9 @@ describe('canChangeRole', () => {
 
 describe('hasOwnedData', () => {
   it('false when all counts are zero', () => {
-    expect(hasOwnedData({ expenses: 0, receipts: 0, messages: 0, captures: 0, partnerExpenses: 0 })).toBe(false);
+    expect(hasOwnedData({ expenses: 0, receipts: 0, messages: 0, captures: 0 })).toBe(false);
   });
   it('true when any count is nonzero', () => {
-    expect(hasOwnedData({ expenses: 0, receipts: 0, messages: 1, captures: 0, partnerExpenses: 0 })).toBe(true);
+    expect(hasOwnedData({ expenses: 0, receipts: 0, messages: 1, captures: 0 })).toBe(true);
   });
 });

@@ -62,21 +62,6 @@ export interface Budget {
   updatedAt: string;
 }
 
-// ── Partner Expenses ─────────────────────────────────────────────────────────
-
-export type PartnerExpenseCategory = 'business' | 'personal';
-
-export interface PartnerExpense {
-  id: string;
-  userId: string;
-  userName: string;
-  /** numeric comes back from the API as a string, e.g. "42.50" */
-  amount: string;
-  itemLocation: string;
-  category: PartnerExpenseCategory;
-  createdAt: string;
-}
-
 // ── Payment Methods ───────────────────────────────────────────────────────────
 
 export interface PaymentMethod {
