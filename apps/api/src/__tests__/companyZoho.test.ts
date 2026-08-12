@@ -1,4 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Mock env so importing this module's `db` import doesn't require real
+// DATABASE_URL/JWT_SECRET — same pattern as zohoReadiness.test.ts / zohoService.test.ts.
+vi.mock('../config/env', () => ({
+  env: {
+    DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+  },
+}));
+
 import { buildZohoEnabledMap } from '../lib/companyZoho';
 
 describe('buildZohoEnabledMap', () => {

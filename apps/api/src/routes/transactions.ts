@@ -111,10 +111,14 @@ router.post('/bulk-review', requireRole('accountant', 'admin'), asyncHandler(asy
   const now = new Date();
   for (const id of approvable) {
     const tx = rows.find((r) => r.id === id)!;
+    const txCompany = tx.zohoEntity
+      ? await db.query.companies.findFirst({ where: eq(companies.name, tx.zohoEntity) })
+      : undefined;
+    const txZohoOn = txCompany?.zohoEnabled !== false && !!tx.zohoEntity;
     await db.update(transactions)
       .set({
         status: 'approved',
-        integrationStatus: tx.zohoEntity ? 'pending' : 'not_required',
+        integrationStatus: txZohoOn ? 'pending' : 'not_required',
         reviewedById: req.user!.id,
         reviewedAt: now,
         updatedAt: now,
@@ -219,6 +223,10 @@ router.post('/purchase-orders', asyncHandler(async (req, res) => {
   const total = body.total ?? sumLineTotals(lineItems);
   const zohoEntity = await assertActiveCompany(body.zohoEntity ?? null);
   const vendor = await upsertVendorByName(body.vendorName, zohoEntity);
+  const createCompany = zohoEntity
+    ? await db.query.companies.findFirst({ where: eq(companies.name, zohoEntity) })
+    : undefined;
+  const createZohoOn = createCompany?.zohoEnabled !== false && !!zohoEntity;
 
   const [tx] = await db.insert(transactions).values({
     type: 'purchase_order',
@@ -231,7 +239,7 @@ router.post('/purchase-orders', asyncHandler(async (req, res) => {
     taxTotal: String(body.taxTotal ?? 0),
     description: body.description ?? null,
     status: 'draft',
-    integrationStatus: zohoEntity ? 'pending' : 'not_required',
+    integrationStatus: createZohoOn ? 'pending' : 'not_required',
     zohoEntity,
     sourceType: normalizeSourceType('purchase_order'),
   }).returning();
@@ -433,10 +441,15 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
     return;
   }
 
+  const submitCompany = existing.zohoEntity
+    ? await db.query.companies.findFirst({ where: eq(companies.name, existing.zohoEntity) })
+    : undefined;
+  const submitZohoOn = submitCompany?.zohoEnabled !== false && !!existing.zohoEntity;
+
   const [updated] = await db.update(transactions)
     .set({
       status: 'submitted',
-      integrationStatus: existing.zohoEntity ? 'pending' : existing.integrationStatus,
+      integrationStatus: submitZohoOn ? 'pending' : existing.integrationStatus,
       updatedAt: new Date(),
     })
     .where(eq(transactions.id, existing.id))
@@ -521,12 +534,18 @@ router.post('/:id/review', requireRole('accountant', 'admin'), asyncHandler(asyn
     : body.action === 'reject' ? 'rejected'
     : 'awaiting_info';
 
+  const reviewEffectiveCompany = body.zohoEntity ?? existing.zohoEntity;
+  const reviewCompany = reviewEffectiveCompany
+    ? await db.query.companies.findFirst({ where: eq(companies.name, reviewEffectiveCompany) })
+    : undefined;
+  const reviewZohoOn = reviewCompany?.zohoEnabled !== false && !!reviewEffectiveCompany;
+
   const [updated] = await db.update(transactions)
     .set({
       status: newStatus,
       zohoEntity: body.zohoEntity ?? existing.zohoEntity,
       integrationStatus: body.action === 'approve'
-        ? ((body.zohoEntity ?? existing.zohoEntity) ? 'pending' : 'not_required')
+        ? (reviewZohoOn ? 'pending' : 'not_required')
         : existing.integrationStatus,
       reviewedById: req.user!.id,
       reviewedAt: new Date(),
