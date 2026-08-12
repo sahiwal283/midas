@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, Camera, X, ClipboardList, BarChart3,
-  Briefcase, Settings, LogOut, Upload, FileSpreadsheet, Activity, Banknote,
+  Briefcase, Settings, LogOut, Upload, Activity,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -35,9 +35,8 @@ export function MobileNav() {
             )}
             {isPrivileged && (
               <>
-                <SheetLink to="/accountant" icon={<ClipboardList className="h-4 w-4" />} label="Review Queue" onNavigate={() => setMoreOpen(false)} />
-                <SheetLink to="/accountant/purchase-orders" icon={<FileSpreadsheet className="h-4 w-4" />} label="Purchase Orders" onNavigate={() => setMoreOpen(false)} />
-                <SheetLink to="/accountant?reimbursementStatus=pending" icon={<Banknote className="h-4 w-4" />} label="Reimbursements" onNavigate={() => setMoreOpen(false)} />
+                <SheetLink to="/accountant/events" icon={<ClipboardList className="h-4 w-4" />} label="Event Review" onNavigate={() => setMoreOpen(false)} />
+                <SheetLink to="/accountant/daily" icon={<ReceiptText className="h-4 w-4" />} label="Daily Review" onNavigate={() => setMoreOpen(false)} />
                 <SheetLink to="/reports" icon={<BarChart3 className="h-4 w-4" />} label="Reports" onNavigate={() => setMoreOpen(false)} />
               </>
             )}
@@ -78,7 +77,7 @@ export function MobileNav() {
         </NavLink>
 
         {isPrivileged ? (
-          <NavLink to="/accountant" className={itemCls}>
+          <NavLink to="/accountant/daily" className={itemCls}>
             <ClipboardList className="h-5 w-5" />
             Queue
           </NavLink>
