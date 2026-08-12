@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { and, desc, eq, gte, lte, max, min, sum, count } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte, max, min, not, sum, count } from 'drizzle-orm';
 import { db } from '../db/index';
 import { expenses } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
@@ -13,9 +13,17 @@ router.use(authenticate, requireRole('partner', 'accountant', 'admin'));
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Partner spend is shared across partners — everyone permitted sees all of it. */
+/**
+ * Partner spend is shared across partners — everyone permitted sees all of it.
+ * Excludes draft (not yet submitted), rejected and cancelled — the same
+ * "committed spend" bar Reports holds business expenses to — so an abandoned
+ * draft doesn't inflate the header total or any of the three charts.
+ */
 function scope(from?: string, to?: string) {
-  const conds = [eq(expenses.expenseKind, 'partner')];
+  const conds = [
+    eq(expenses.expenseKind, 'partner'),
+    not(inArray(expenses.status, ['draft', 'rejected', 'cancelled'])),
+  ];
   if (from) conds.push(gte(expenses.date, from));
   if (to) conds.push(lte(expenses.date, to));
   return and(...conds);
@@ -33,6 +41,15 @@ function range(req: { query: Record<string, unknown> }) {
 
 router.get('/', asyncHandler(async (req, res) => {
   const { from, to } = range(req);
+  if (from !== undefined && !DATE_RE.test(from)) {
+    throw createError('from must be YYYY-MM-DD', 400, 'INVALID_RANGE');
+  }
+  if (to !== undefined && !DATE_RE.test(to)) {
+    throw createError('to must be YYYY-MM-DD', 400, 'INVALID_RANGE');
+  }
+  if (from !== undefined && to !== undefined && from > to) {
+    throw createError('from must be <= to', 400, 'INVALID_RANGE');
+  }
   const rows = await db.query.expenses.findMany({
     where: scope(from, to),
     with: {
@@ -62,7 +79,7 @@ router.get('/summary', asyncHandler(async (req, res) => {
   // table. Zero partner expenses is a real state (e.g. first deploy) — not
   // an error — so it resolves to an empty, zeroed-out summary below.
   const [bounds] = await db.select({ min: min(expenses.date), max: max(expenses.date) })
-    .from(expenses).where(eq(expenses.expenseKind, 'partner'));
+    .from(expenses).where(scope());
   const resolved = effectiveDateRange(from, to, { min: bounds?.min ?? null, max: bounds?.max ?? null });
 
   if (!resolved) {

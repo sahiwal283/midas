@@ -233,6 +233,8 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
 
 router.get('/expenses', asyncHandler(async (_req, res) => {
   const rows = await db.query.expenses.findMany({
+    // Partner spend is tracked on its own tab and never enters review.
+    where: eq(expenses.expenseKind, 'business'),
     with: {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
@@ -371,6 +373,11 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
     with: { paymentMethod: true },
   });
   if (!expense) throw notFound('Expense not found');
+
+  // Partner spend never enters review — it is recorded final on submit.
+  if (expense.expenseKind === 'partner') {
+    throw createError('Partner expenses are not reviewable', 409, 'CONFLICT');
+  }
 
   const parsed = reviewSchema.parse(req.body);
   const { action } = parsed;

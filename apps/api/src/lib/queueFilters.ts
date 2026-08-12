@@ -49,10 +49,11 @@ export function parseQueueFilters(q: Record<string, string | undefined>): QueueF
   return f;
 }
 
-export type BulkReviewRow = { id: string; status: string };
+export type BulkReviewRow = { id: string; status: string; expenseKind?: string | null };
 
 /** Safe bulk approval: only pending/in_review are approvable; everything else
- *  is skipped with a reason — never blind-approve. */
+ *  is skipped with a reason — never blind-approve. Partner-kind expenses are
+ *  never reviewable, regardless of status — they never enter the queue. */
 export function partitionBulkReview(rows: BulkReviewRow[], requestedIds: string[]): {
   approvable: string[];
   skipped: Array<{ id: string; reason: string }>;
@@ -64,6 +65,8 @@ export function partitionBulkReview(rows: BulkReviewRow[], requestedIds: string[
     const row = byId.get(id);
     if (!row) {
       skipped.push({ id, reason: 'not found' });
+    } else if (row.expenseKind === 'partner') {
+      skipped.push({ id, reason: 'partner expenses are not reviewable' });
     } else if (row.status === 'pending' || row.status === 'in_review') {
       approvable.push(id);
     } else {

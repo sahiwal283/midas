@@ -229,6 +229,7 @@ export const expenses = pgTable('expenses', {
   index('expenses_created_at_idx').on(t.createdAt),
   index('expenses_source_app_idx').on(t.sourceApp),
   index('expenses_external_user_id_idx').on(t.externalUserId),
+  index('expenses_expense_kind_idx').on(t.expenseKind),
   index('expenses_source_context_event_id_idx').using(
     'btree',
     sql`(${t.sourceContext}->>'eventId')`,

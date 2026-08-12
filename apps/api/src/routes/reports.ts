@@ -27,6 +27,8 @@ router.get('/summary', asyncHandler(async (req, res) => {
   if (spanDays > 366) throw createError('Range must be at most 366 days', 400, 'INVALID_RANGE');
 
   const scope = and(
+    // Company-wide Reports is business spend only — partner spend has its own tab.
+    eq(expenses.expenseKind, 'business'),
     not(inArray(expenses.status, ['draft', 'rejected'])),
     gte(expenses.date, from),
     lte(expenses.date, to),
@@ -143,7 +145,10 @@ router.get('/summary', asyncHandler(async (req, res) => {
   const [opsZohoFailed] = await db.select({ n: count() }).from(expenses)
     .where(and(eq(expenses.status, 'approved'), eq(expenses.integrationStatus, 'failed'), eq(expenses.expenseKind, 'business')));
   const [opsOcrReview] = await db.select({ n: count() }).from(expenses)
-    .where(sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id} and r.ocr_needs_review = true)`);
+    .where(and(
+      eq(expenses.expenseKind, 'business'),
+      sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id} and r.ocr_needs_review = true)`,
+    ));
   const [opsPoQueue] = await db.select({ n: count() }).from(transactions)
     .where(and(
       eq(transactions.type, 'purchase_order'),
