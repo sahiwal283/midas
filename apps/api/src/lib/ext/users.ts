@@ -5,13 +5,16 @@ import { db } from '../../db/index';
 import { users, userEmailAliases } from '../../db/schema';
 import { auditLog } from '../audit';
 import { createError } from '../../middleware/error';
+import { decideExtUserResolution, normalizeProvisionedUsername } from './userResolution';
 
 /**
  * Resolve the acting Midas user for an /ext call.
  *
- * Username is the identity key, but `email` keeps working exactly as before so
- * existing consumers (Trade Show sends `submitterEmail`) need no change. At
- * least one of the two must be supplied.
+ * Lookup order: username -> users.email (direct) -> user_email_aliases.
+ * When BOTH username and email are supplied, each is resolved independently
+ * (see decideExtUserResolution) so a mismatch between the two never silently
+ * picks one side — that would misattribute the expense to the wrong human.
+ * At least one of username/email must be supplied.
  */
 export async function resolveExtUser(opts: {
   email?: string | null;
@@ -28,23 +31,39 @@ export async function resolveExtUser(opts: {
     throw createError('Invalid submitter email', 422, 'INVALID_EMAIL');
   }
 
-  // Username first — it is the identity key and always present on a Midas user.
-  let existing = username
-    ? await db.query.users.findFirst({ where: sql`lower(${users.username}) = ${username}` })
-    : await db.query.users.findFirst({ where: eq(users.email, email!) });
+  const byUsername = username
+    ? (await db.query.users.findFirst({ where: sql`lower(${users.username}) = ${username}` })) ?? null
+    : null;
 
-  // Then retired/alternate addresses, so a consumer still sending a pre-merge
-  // email resolves to the surviving account instead of failing or duplicating.
-  if (!existing && email) {
+  // Email side: direct users.email match first, then retired/alternate
+  // addresses via the alias table, so a consumer sending a pre-merge email
+  // resolves to the surviving account instead of failing or duplicating.
+  let byEmail = email
+    ? (await db.query.users.findFirst({ where: eq(users.email, email) })) ?? null
+    : null;
+  if (!byEmail && email) {
     const alias = await db.query.userEmailAliases.findFirst({
       where: sql`lower(${userEmailAliases.email}) = ${email}`,
     });
     if (alias) {
-      existing = await db.query.users.findFirst({ where: eq(users.id, alias.userId) });
+      byEmail = (await db.query.users.findFirst({ where: eq(users.id, alias.userId) })) ?? null;
     }
   }
 
-  if (existing) {
+  const decision = decideExtUserResolution({ byUsername, byEmail });
+
+  if (decision.kind === 'ambiguous') {
+    const [fromUsername, fromEmail] = decision.usernames;
+    throw createError(
+      `Submitter is ambiguous: username "${fromUsername}" and email resolve to a different Midas user `
+      + `("${fromEmail}"). Fix the payload so submitterUsername and submitterEmail point to the same account.`,
+      409,
+      'SUBMITTER_AMBIGUOUS',
+    );
+  }
+
+  if (decision.kind === 'existing') {
+    const existing = decision.user;
     if (!existing.isActive) throw createError('User is inactive', 422, 'USER_INACTIVE');
     return {
       id: existing.id,
@@ -60,7 +79,7 @@ export async function resolveExtUser(opts: {
     throw createError(`No Midas user found for ${label}`, 422, 'USER_NOT_FOUND');
   }
 
-  const newUsername = username ?? email!.split('@')[0].toLowerCase();
+  const newUsername = normalizeProvisionedUsername(username ?? email!.split('@')[0]);
   const name = (opts.displayName?.trim() || newUsername || 'User').slice(0, 200);
   // Unusable local password — SSO / break-glass later
   const passwordHash = createHash('sha256').update(randomBytes(32)).digest('hex');

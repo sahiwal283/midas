@@ -5,6 +5,7 @@ import { auditLog } from './audit';
 import { zoho, ZohoServiceError, type ZohoPoPushResult } from './zoho';
 import { buildZohoPoServicePayload, type PayloadPurchaseOrder } from './zohoPoPayload';
 import { classifyZohoError } from './zohoErrors';
+import { isCompanyZohoEnabled } from './companies';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -54,6 +55,12 @@ export async function pushPurchaseOrderToZoho(
   }
   if (!tx.zohoEntity) {
     return { ok: false, status: 409, code: 'MISSING_ZOHO_ENTITY', message: 'zohoEntity must be set before pushing to Zoho' };
+  }
+  if (!(await isCompanyZohoEnabled(tx.zohoEntity))) {
+    return {
+      ok: false, status: 409, code: 'COMPANY_ZOHO_DISABLED',
+      message: `Company "${tx.zohoEntity}" does not post to Zoho`,
+    };
   }
   if (!tx.lineItems?.length) {
     return { ok: false, status: 409, code: 'MISSING_LINE_ITEMS', message: 'PO must have at least one line item' };

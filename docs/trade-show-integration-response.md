@@ -212,9 +212,11 @@ adapter, so it would break if Midas moved to `STORAGE_MODE=s3`. Production is
 
 1. **Done.** `zohoEnabled` respected end to end — flags, approve, and push —
    plus the production data fix (70 rows, not 13; see the D2 correction above).
-   A non-Zoho company is refused with `400 COMPANY_ZOHO_DISABLED` at every
-   `integration_status` write in `routes/transactions.ts` and inside
-   `pushExpenseToZoho`. (D2)
+   For a non-Zoho company, every `integration_status` write in
+   `routes/transactions.ts` silently downgrades to `not_required` instead of
+   queueing a push — there is no error response there. `pushExpenseToZoho`
+   (and, as of this fix wave, `pushPurchaseOrderToZoho`) instead refuse the
+   push outright, returning **409 `COMPANY_ZOHO_DISABLED`** (not 400). (D2)
 2. **Done.** Unknown category on `POST /ext/expenses` and
    `PATCH /ext/expenses/:id` now falls back to `Other` and returns a warning
    with code `CATEGORY_FALLBACK` in the response `warnings[]` array, instead of
@@ -246,14 +248,15 @@ adapter, so it would break if Midas moved to `STORAGE_MODE=s3`. Production is
    duplicate account instead of resolving to the existing one — always send
    both fields for them. (b) Trade Show's `admin` user
    (`admin@company.com`) shares the literal username `admin` with Midas's own
-   admin account (`admin@midas.local`), which is a different identity. Because
-   username resolution runs before email, any submission with
-   `submitterUsername: "admin"` will attribute the expense to Midas's admin
-   account, not create or match a distinct Trade Show admin identity. Sending
-   `submitterEmail` alone will not route around it — the username match wins
-   whenever a username is present. Rename that Trade Show account to something
-   that isn't `admin` before cutover if that submitter's expenses need to be
-   attributed correctly. (C-1)
+   admin account (`admin@midas.local`), which is a different identity.
+   `submitterUsername: "admin"` alone therefore attributes the expense to
+   Midas's admin. Send `submitterEmail` as well and Midas will not guess:
+   if the username and the email resolve to two different Midas accounts you
+   get a `409 SUBMITTER_AMBIGUOUS` naming both, rather than a silently
+   misattributed expense. Renaming that Trade Show account to something other
+   than `admin` before cutover is still the clean fix — the 409 stops the
+   wrong attribution, it does not give that submitter a working identity.
+   (C-1)
 
 **Soon after**
 
