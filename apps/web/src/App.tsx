@@ -18,7 +18,6 @@ import { PartnerExpenses } from './pages/PartnerExpenses';
 import { PurchaseOrderNew } from './pages/PurchaseOrderNew';
 import { PurchaseOrderDetail } from './pages/PurchaseOrderDetail';
 import { Reports } from './pages/Reports';
-import { PurchaseOrderQueue } from './pages/PurchaseOrderQueue';
 import { IntegrationHealth } from './pages/IntegrationHealth';
 
 const queryClient = new QueryClient({
@@ -72,19 +71,20 @@ export default function App() {
                 }
               />
 
+              <Route path="/accountant" element={<Navigate to="/accountant/daily" replace />} />
               <Route
-                path="/accountant"
+                path="/accountant/daily"
                 element={
                   <ProtectedRoute roles={['accountant', 'admin']}>
-                    <AccountantQueue />
+                    <AccountantQueue scope="daily" />
                   </ProtectedRoute>
                 }
               />
               <Route
-                path="/accountant/purchase-orders"
+                path="/accountant/events"
                 element={
                   <ProtectedRoute roles={['accountant', 'admin']}>
-                    <PurchaseOrderQueue />
+                    <AccountantQueue scope="event" />
                   </ProtectedRoute>
                 }
               />
