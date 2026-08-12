@@ -32,7 +32,7 @@ import { resolveCategoryIdOrOther } from '../lib/ext/categories';
 import { applyVocabulary } from '../lib/ext/categoryVocabulary';
 import { allowedCategoryIds } from '../lib/ext/categoryVocabularyDb';
 import { EXT_EXPENSE_WITH, toExtExpenseDto } from '../lib/ext/dto';
-import { findDuplicateMatches, type ExtWarning } from '../lib/ext/extWarnings';
+import { duplicateDateWindow, findDuplicateMatches, type ExtWarning } from '../lib/ext/extWarnings';
 import { ExtImportTargetPort } from '../lib/ext/importTarget';
 import { mapImportExpenseStatus, mapImportReimbursementStatus } from '../lib/ext/maps';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
@@ -422,13 +422,19 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
 
   const company = await assertActiveCompany(body.company ?? body.zohoEntity);
 
+  // Bounded by date rather than row count: isLikelyDuplicate can only match
+  // within DUPLICATE_DATE_TOLERANCE_DAYS, so a row outside this window can
+  // never be a candidate, and the window keeps the result set small without
+  // risking an arbitrary, unordered truncation of a large history.
+  const dupWindow = duplicateDateWindow(body.date);
   const candidates = await db.query.expenses.findMany({
     columns: { id: true, merchant: true, amount: true, date: true },
     where: and(
       eq(expenses.userId, user.id),
       notInArray(expenses.status, ['draft', 'rejected', 'cancelled']),
+      gte(expenses.date, dupWindow.from),
+      lte(expenses.date, dupWindow.to),
     ),
-    limit: 500,
   });
   const matches = findDuplicateMatches(
     { merchant: body.merchant, amount: body.amount, date: body.date },
@@ -571,13 +577,18 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
     const candidateMerchant = body.merchant ?? existing.merchant;
     const candidateAmount = body.amount ?? Number(existing.amount);
     const candidateDate = body.date ?? existing.date;
+    // Same date-window rationale as the create path — bounded by the merged
+    // (patch-or-existing) date rather than an unordered row-count cap, so
+    // self-exclusion below can never shrink the effective set below complete.
+    const dupWindow = duplicateDateWindow(candidateDate);
     const candidateRows = await db.query.expenses.findMany({
       columns: { id: true, merchant: true, amount: true, date: true },
       where: and(
         eq(expenses.userId, existing.userId),
         notInArray(expenses.status, ['draft', 'rejected', 'cancelled']),
+        gte(expenses.date, dupWindow.from),
+        lte(expenses.date, dupWindow.to),
       ),
-      limit: 500,
     });
     const matches = findDuplicateMatches(
       { merchant: candidateMerchant, amount: candidateAmount, date: candidateDate },

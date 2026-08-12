@@ -1,4 +1,6 @@
-import { isLikelyDuplicate } from '../duplicates';
+import { isLikelyDuplicate, DUPLICATE_DATE_TOLERANCE_DAYS } from '../duplicates';
+
+const DAY_MS = 86_400_000;
 
 export interface DuplicateMatch {
   id: string;
@@ -25,4 +27,19 @@ export function findDuplicateMatches(
   return existing
     .filter((e) => isLikelyDuplicate(candidate, { merchant: e.merchant, amount: e.amount, date: e.date }))
     .map((e) => ({ id: e.id, merchant: e.merchant, amount: Number(e.amount), date: e.date }));
+}
+
+/**
+ * Inclusive [from, to] date-string window (YYYY-MM-DD) around `date` within
+ * which a row could possibly satisfy isLikelyDuplicate's date check — rows
+ * outside it can never match, so a DB query can filter on this window
+ * instead of an arbitrary row-count cap and still see every real candidate.
+ * Derived from DUPLICATE_DATE_TOLERANCE_DAYS so the window can never drift
+ * out of sync with the matcher's own tolerance.
+ */
+export function duplicateDateWindow(date: string): { from: string; to: string } {
+  const base = Date.parse(`${date}T00:00:00Z`);
+  const from = new Date(base - DUPLICATE_DATE_TOLERANCE_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const to = new Date(base + DUPLICATE_DATE_TOLERANCE_DAYS * DAY_MS).toISOString().slice(0, 10);
+  return { from, to };
 }

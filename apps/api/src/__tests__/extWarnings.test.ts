@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findDuplicateMatches } from '../lib/ext/extWarnings';
+import { findDuplicateMatches, duplicateDateWindow } from '../lib/ext/extWarnings';
 
 const candidate = { merchant: 'Starbucks #123', amount: 12.5, date: '2026-08-10' };
 
@@ -39,5 +39,39 @@ describe('findDuplicateMatches', () => {
 
   it('returns nothing for an empty candidate set', () => {
     expect(findDuplicateMatches(candidate, [])).toHaveLength(0);
+  });
+});
+
+describe('duplicateDateWindow', () => {
+  it('spans exactly 3 days on each side of the candidate date, inclusive', () => {
+    expect(duplicateDateWindow('2026-08-10')).toEqual({ from: '2026-08-07', to: '2026-08-13' });
+  });
+
+  it('includes a row exactly 3 days earlier as a match against the window bounds', () => {
+    const { from } = duplicateDateWindow(candidate.date);
+    expect(findDuplicateMatches(candidate, [
+      { id: 'e1', merchant: 'Starbucks', amount: '12.50', date: from },
+    ])).toHaveLength(1);
+  });
+
+  it('includes a row exactly 3 days later as a match against the window bounds', () => {
+    const { to } = duplicateDateWindow(candidate.date);
+    expect(findDuplicateMatches(candidate, [
+      { id: 'e1', merchant: 'Starbucks', amount: '12.50', date: to },
+    ])).toHaveLength(1);
+  });
+
+  it('excludes a row one day outside the window on each side', () => {
+    const { from, to } = duplicateDateWindow(candidate.date);
+    const dayBeforeFrom = new Date(Date.parse(`${from}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    const dayAfterTo = new Date(Date.parse(`${to}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    expect(findDuplicateMatches(candidate, [
+      { id: 'e1', merchant: 'Starbucks', amount: '12.50', date: dayBeforeFrom },
+      { id: 'e2', merchant: 'Starbucks', amount: '12.50', date: dayAfterTo },
+    ])).toHaveLength(0);
+  });
+
+  it('handles year/month boundaries correctly', () => {
+    expect(duplicateDateWindow('2026-01-01')).toEqual({ from: '2025-12-29', to: '2026-01-04' });
   });
 });
