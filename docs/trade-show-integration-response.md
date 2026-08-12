@@ -212,9 +212,11 @@ adapter, so it would break if Midas moved to `STORAGE_MODE=s3`. Production is
 
 1. **Done.** `zohoEnabled` respected end to end — flags, approve, and push —
    plus the production data fix (70 rows, not 13; see the D2 correction above).
-   A non-Zoho company is refused with `400 COMPANY_ZOHO_DISABLED` at every
-   `integration_status` write in `routes/transactions.ts` and inside
-   `pushExpenseToZoho`. (D2)
+   For a non-Zoho company, every `integration_status` write in
+   `routes/transactions.ts` silently downgrades to `not_required` instead of
+   queueing a push — there is no error response there. `pushExpenseToZoho`
+   (and, as of this fix wave, `pushPurchaseOrderToZoho`) instead refuse the
+   push outright, returning **409 `COMPANY_ZOHO_DISABLED`** (not 400). (D2)
 2. **Done.** Unknown category on `POST /ext/expenses` and
    `PATCH /ext/expenses/:id` now falls back to `Other` and returns a warning
    with code `CATEGORY_FALLBACK` in the response `warnings[]` array, instead of
