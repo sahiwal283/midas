@@ -27,7 +27,7 @@ export const reimbursementStatusEnum = pgEnum('reimbursement_status', [
 ]);
 export const ocrStatusEnum = pgEnum('ocr_status', ['pending', 'processing', 'done', 'failed']);
 export const captureSourceEnum = pgEnum('capture_source', ['extension', 'manual']);
-export const partnerExpenseCategoryEnum = pgEnum('partner_expense_category', ['business', 'personal']);
+export const expenseKindEnum = pgEnum('expense_kind', ['business', 'partner']);
 export const captureStatusEnum = pgEnum('capture_status', ['draft', 'linked', 'discarded']);
 
 /** Shared financial root: expense | purchase_order */
@@ -189,6 +189,12 @@ export const expenses = pgTable('expenses', {
   sourceUrl: text('source_url'),
   // Open vocabulary: 'online_receipt' | 'manual' | 'trade_show_event' | …
   sourceType: text('source_type'),
+  /**
+   * 'partner' marks personal/partner spend: tracked and charted, but excluded
+   * from the accountant queue and the Zoho pipeline. Set only by partner-role
+   * submitters; the API coerces everyone else to 'business'.
+   */
+  expenseKind: expenseKindEnum('expense_kind').default('business').notNull(),
   // Opaque embedder context — eventId, location, cardUsed, etc. (no app-specific columns)
   sourceContext: jsonb('source_context').$type<ExpenseSourceContext>().default({}).notNull(),
   // Embedder's user id (e.g. Trade Show users.id) — filterable independently of Midas userId
@@ -223,6 +229,7 @@ export const expenses = pgTable('expenses', {
   index('expenses_created_at_idx').on(t.createdAt),
   index('expenses_source_app_idx').on(t.sourceApp),
   index('expenses_external_user_id_idx').on(t.externalUserId),
+  index('expenses_expense_kind_idx').on(t.expenseKind),
   index('expenses_source_context_event_id_idx').using(
     'btree',
     sql`(${t.sourceContext}->>'eventId')`,
@@ -498,19 +505,6 @@ export const categoryMappings = pgTable('category_mappings', {
   index('category_mappings_category_id_idx').on(t.categoryId),
 ]);
 
-// ── Partner Expenses ──────────────────────────────────────────────────────────
-// Standalone tracker for partner-related spend. Deliberately decoupled from the
-// normal expense flow: no receipts, no review queue, no reimbursement, no Zoho.
-
-export const partnerExpenses = pgTable('partner_expenses', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'restrict' }).notNull(),
-  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
-  itemLocation: text('item_location').notNull(),
-  category: partnerExpenseCategoryEnum('category').default('business').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
-
 // ── Notifications ─────────────────────────────────────────────────────────────
 // In-app notification feed. Email delivery is best-effort (emailed_at on success).
 
@@ -573,10 +567,6 @@ export const capturesRelations = relations(captures, ({ one }) => ({
 
 export const closedPeriodsRelations = relations(closedPeriods, ({ one }) => ({
   closedBy: one(users, { fields: [closedPeriods.closedById], references: [users.id] }),
-}));
-
-export const partnerExpensesRelations = relations(partnerExpenses, ({ one }) => ({
-  user: one(users, { fields: [partnerExpenses.userId], references: [users.id] }),
 }));
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({

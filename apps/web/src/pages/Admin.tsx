@@ -887,7 +887,6 @@ function UsersTab() {
             receipts: 'receipt(s)',
             messages: 'message(s)',
             captures: 'capture(s)',
-            partnerExpenses: 'partner expense(s)',
           }).map(([key, label]) => {
             const n = purgeTarget?.counts?.[key] ?? 0;
             return n > 0 ? <li key={key}>{n} {label}</li> : null;

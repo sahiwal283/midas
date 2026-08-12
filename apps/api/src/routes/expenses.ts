@@ -16,6 +16,7 @@ import { evaluateZohoReadiness } from '../lib/zohoReadiness';
 import { editableFields, editRefusalMessage } from '../lib/expenseEdit';
 import { isLikelyDuplicate } from '../lib/duplicates';
 import { isAutoPushEligible } from '../lib/autoApprove';
+import { resolveExpenseKind } from '../lib/expenseKind';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { syncExpenseToTransaction, removeSyncedTransaction } from '../lib/syncExpenseTransaction';
 import { effectivelyActiveIds, descendantIds } from '../lib/categoryTree';
@@ -40,6 +41,8 @@ const createExpenseSchema = z.object({
   /** Live Zoho expense COA account_id for this entity. */
   zohoExpenseAccountId: z.string().min(1).optional(),
   zohoExpenseAccountName: z.string().min(1).optional(),
+  /** Partner-role only; coerced to 'business' for every other role. */
+  expenseKind: z.enum(['business', 'partner']).optional(),
 });
 
 const updateExpenseSchema = createExpenseSchema.partial();
@@ -147,13 +150,17 @@ router.post('/', asyncHandler(async (req, res) => {
     throw createError('merchant, amount, and date are required', 400, 'VALIDATION_ERROR');
   }
 
+  const expenseKind = resolveExpenseKind(body.expenseKind, req.user!.role);
+
   let reimbursementStatus: 'not_requested' | 'pending' = 'not_requested';
   let zohoEntity = body.zohoEntity ?? null;
   if (body.paymentMethodId) {
     const pm = await db.query.paymentMethods.findFirst({
       where: eq(paymentMethods.id, body.paymentMethodId),
     });
-    const next = nextReimbursementOnCardLink('not_requested', pm);
+    // Partner spend never carries a reimbursement liability, even on a
+    // reimbursable card — a partner paying personally isn't owed by the company.
+    const next = expenseKind === 'partner' ? null : nextReimbursementOnCardLink('not_requested', pm);
     if (next === 'pending') reimbursementStatus = 'pending';
     if (!zohoEntity && pm?.defaultZohoEntity) zohoEntity = pm.defaultZohoEntity;
   }
@@ -176,6 +183,7 @@ router.post('/', asyncHandler(async (req, res) => {
     zohoEntity,
     zohoExpenseAccountId: body.zohoExpenseAccountId ?? null,
     zohoExpenseAccountName: body.zohoExpenseAccountName ?? null,
+    expenseKind,
     status: 'draft',
     reimbursementStatus,
   }).returning();
@@ -223,8 +231,14 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     body = { ...body, zohoEntity: (await assertActiveCompany(body.zohoEntity)) ?? undefined };
   }
 
+  // The effective kind after this patch — an explicit expenseKind in the body
+  // wins, otherwise the expense keeps whatever kind it already had.
+  const effectiveKind = body.expenseKind !== undefined
+    ? resolveExpenseKind(body.expenseKind, req.user!.role)
+    : expense.expenseKind;
+
   let reimbursementPatch: { reimbursementStatus?: 'pending' } = {};
-  if (body.paymentMethodId) {
+  if (body.paymentMethodId && effectiveKind !== 'partner') {
     const pm = await db.query.paymentMethods.findFirst({
       where: eq(paymentMethods.id, body.paymentMethodId),
     });
@@ -236,6 +250,9 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     .set({
       ...body,
       ...reimbursementPatch,
+      ...(body.expenseKind !== undefined
+        ? { expenseKind: resolveExpenseKind(body.expenseKind, req.user!.role) }
+        : {}),
       amount: body.amount !== undefined ? String(body.amount) : undefined,
       updatedAt: new Date(),
     })
@@ -272,6 +289,7 @@ router.post('/:id/clone', asyncHandler(async (req, res) => {
     zohoEntity: source.zohoEntity,
     zohoExpenseAccountId: source.zohoExpenseAccountId,
     zohoExpenseAccountName: source.zohoExpenseAccountName,
+    expenseKind: source.expenseKind,
     status: 'draft',
     reimbursementStatus: 'not_requested',
   }).returning();
@@ -340,6 +358,26 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
   const closedPeriods = await getClosedPeriods();
   if (isInClosedPeriods(expense.date, closedPeriods)) {
     throw createError(closedPeriodMessage(periodOf(expense.date)), 409, 'PERIOD_CLOSED');
+  }
+
+  // Partner spend never enters the accountant queue or the Zoho pipeline — it
+  // is simply recorded as final on submit. No readiness check, no auto-push,
+  // no reimbursement liability.
+  if (expense.expenseKind === 'partner') {
+    const [recorded] = await db.update(expenses)
+      .set({ status: 'approved', integrationStatus: 'not_required', updatedAt: new Date() })
+      .where(eq(expenses.id, expense.id))
+      .returning();
+    await auditLog({
+      entityType: 'expense',
+      entityId: expense.id,
+      userId: req.user!.id,
+      action: 'partner_expense_recorded',
+      before: { status: 'draft' },
+      after: { status: 'approved' },
+    });
+    res.json({ expense: recorded });
+    return;
   }
 
   // Daily auto-push: complete staff-entered expenses skip accountant approval.

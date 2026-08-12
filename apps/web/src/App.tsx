@@ -57,7 +57,7 @@ export default function App() {
               <Route
                 path="/partner-expenses"
                 element={
-                  <ProtectedRoute roles={['partner', 'developer']}>
+                  <ProtectedRoute roles={['partner', 'accountant', 'admin', 'developer']}>
                     <PartnerExpenses />
                   </ProtectedRoute>
                 }

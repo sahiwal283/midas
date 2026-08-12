@@ -64,7 +64,11 @@ router.get('/queue', asyncHandler(async (req, res) => {
         ? [f.status as StatusValue]
         : QUEUE_STATUSES;
 
-  const conds = [inArray(expenses.status, queueStatuses)];
+  // Partner spend is tracked on its own tab and never enters review.
+  const conds = [
+    inArray(expenses.status, queueStatuses),
+    eq(expenses.expenseKind, 'business'),
+  ];
   if (f.status === 'zoho_sync_failed') conds.push(eq(expenses.integrationStatus, 'failed'));
   if (f.userId) conds.push(eq(expenses.userId, f.userId));
   if (f.search) {
@@ -166,7 +170,7 @@ router.post('/purchase-orders/:id/zoho-push', asyncHandler(async (req, res) => {
 
 router.get('/queue/summary', asyncHandler(async (_req, res) => {
   const rows = await db.query.expenses.findMany({
-    where: inArray(expenses.status, QUEUE_STATUSES),
+    where: and(inArray(expenses.status, QUEUE_STATUSES), eq(expenses.expenseKind, 'business')),
     with: {
       receipts: { columns: { id: true } },
     },
@@ -229,6 +233,8 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
 
 router.get('/expenses', asyncHandler(async (_req, res) => {
   const rows = await db.query.expenses.findMany({
+    // Partner spend is tracked on its own tab and never enters review.
+    where: eq(expenses.expenseKind, 'business'),
     with: {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
@@ -250,7 +256,7 @@ router.get('/employees', asyncHandler(async (_req, res) => {
   const rows = await db.selectDistinct({ id: users.id, name: users.name })
     .from(expenses)
     .innerJoin(users, eq(expenses.userId, users.id))
-    .where(inArray(expenses.status, QUEUE_STATUSES));
+    .where(and(inArray(expenses.status, QUEUE_STATUSES), eq(expenses.expenseKind, 'business')));
   res.json({ employees: rows.sort((a, b) => a.name.localeCompare(b.name)) });
 }));
 
@@ -367,6 +373,11 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
     with: { paymentMethod: true },
   });
   if (!expense) throw notFound('Expense not found');
+
+  // Partner spend never enters review — it is recorded final on submit.
+  if (expense.expenseKind === 'partner') {
+    throw createError('Partner expenses are not reviewable', 409, 'CONFLICT');
+  }
 
   const parsed = reviewSchema.parse(req.body);
   const { action } = parsed;

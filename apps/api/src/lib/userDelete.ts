@@ -9,7 +9,6 @@ export interface OwnedCounts {
   receipts: number;
   messages: number;
   captures: number;
-  partnerExpenses: number;
 }
 
 export function canDeleteUser(i: {
@@ -49,5 +48,5 @@ export function canChangeRole(i: {
 }
 
 export function hasOwnedData(c: OwnedCounts): boolean {
-  return c.expenses > 0 || c.receipts > 0 || c.messages > 0 || c.captures > 0 || c.partnerExpenses > 0;
+  return c.expenses > 0 || c.receipts > 0 || c.messages > 0 || c.captures > 0;
 }

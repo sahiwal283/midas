@@ -22,7 +22,6 @@ const REFERENCES: Array<{ table: string; column: string }> = [
   { table: 'expenses', column: 'user_id' },
   { table: 'expenses', column: 'reviewed_by_id' },
   { table: 'notifications', column: 'user_id' },
-  { table: 'partner_expenses', column: 'user_id' },
   { table: 'payment_methods', column: 'assigned_user_id' },
   { table: 'sso_links', column: 'user_id' },
   { table: 'transactions', column: 'user_id' },

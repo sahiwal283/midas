@@ -16,6 +16,7 @@ export function canCancelOrDeleteTransaction(input: {
     reviewedAt: Date | null;
     zohoRecordId: string | null;
     integrationStatus: string;
+    expenseKind?: string | null;
   };
   force?: boolean;
 }): CancelDecision {
@@ -57,6 +58,24 @@ export function canCancelOrDeleteTransaction(input: {
     }
   }
 
+  // Partner-kind submit lands directly on 'approved' — there's no accountant
+  // review step to pass through, so it never satisfies the 'submitted'/
+  // 'pending' branch above. It's still a fresh, un-reviewed, un-synced record;
+  // without this the owner would have no way to correct a fat-fingered amount.
+  // Gated narrowly to this exact shape (partner kind + never reviewed + no
+  // Zoho integration) so a business expense that reaches 'approved' through
+  // accountant review — which always sets reviewedAt — keeps its existing
+  // rules untouched.
+  if (
+    transaction.expenseKind === 'partner'
+    && transaction.reviewedAt == null
+    && transaction.integrationStatus === 'not_required'
+  ) {
+    if (isOwner || isPrivileged) {
+      return { ok: true, mode: 'soft_cancel' };
+    }
+  }
+
   if (isPrivileged) {
     return { ok: true, mode: 'soft_cancel' };
   }
@@ -79,6 +98,7 @@ export function canSessionDeleteExpense(input: {
     reviewedAt: Date | null;
     zohoExpenseId: string | null;
     integrationStatus?: string | null;
+    expenseKind?: string | null;
   };
   force?: boolean;
 }): CancelDecision {
@@ -95,6 +115,7 @@ export function canSessionDeleteExpense(input: {
       reviewedAt: input.expense.reviewedAt,
       zohoRecordId: input.expense.zohoExpenseId,
       integrationStatus: input.expense.integrationStatus ?? (input.expense.zohoExpenseId ? 'synced' : 'not_required'),
+      expenseKind: input.expense.expenseKind,
     },
   });
 }

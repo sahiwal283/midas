@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
 import {
   users, expenseCategories, categoryZohoAccounts, appConnections, appConnectionCategories, ssoLinks,
-  expenses, expenseMessages, captures, partnerExpenses, companies,
+  expenses, expenseMessages, captures, companies,
   paymentMethods, auditLogs,
 } from '../db/schema';
 import { env } from '../config/env';
@@ -304,15 +304,12 @@ router.delete('/users/:id', adminOnly, asyncHandler(async (req, res) => {
     .where(eq(expenseMessages.senderId, target.id));
   const [capRow] = await db.select({ n: count() }).from(captures)
     .where(eq(captures.userId, target.id));
-  const [peRow] = await db.select({ n: count() }).from(partnerExpenses)
-    .where(eq(partnerExpenses.userId, target.id));
 
   const counts: OwnedCounts = {
     expenses: owned.length,
     receipts: owned.reduce((n, e) => n + e.receipts.length, 0),
     messages: Number(msgRow?.n ?? 0),
     captures: Number(capRow?.n ?? 0),
-    partnerExpenses: Number(peRow?.n ?? 0),
   };
 
   if (hasOwnedData(counts) && !purge) {
@@ -335,7 +332,6 @@ router.delete('/users/:id', adminOnly, asyncHandler(async (req, res) => {
     }
     await db.delete(expenseMessages).where(eq(expenseMessages.senderId, target.id));
     await db.delete(captures).where(eq(captures.userId, target.id));
-    await db.delete(partnerExpenses).where(eq(partnerExpenses.userId, target.id));
   }
 
   await db.delete(users).where(eq(users.id, target.id));

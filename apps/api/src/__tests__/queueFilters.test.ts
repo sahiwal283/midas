@@ -40,4 +40,18 @@ describe('partitionBulkReview', () => {
       { id: 'e', reason: 'not found' },
     ]);
   });
+
+  it('never approves partner-kind expenses, regardless of status', () => {
+    const partnerRows = [
+      { id: 'p1', status: 'pending', expenseKind: 'partner' },
+      { id: 'p2', status: 'in_review', expenseKind: 'partner' },
+      { id: 'b1', status: 'pending', expenseKind: 'business' },
+    ];
+    const r = partitionBulkReview(partnerRows, ['p1', 'p2', 'b1']);
+    expect(r.approvable).toEqual(['b1']);
+    expect(r.skipped).toEqual([
+      { id: 'p1', reason: 'partner expenses are not reviewable' },
+      { id: 'p2', reason: 'partner expenses are not reviewable' },
+    ]);
+  });
 });
