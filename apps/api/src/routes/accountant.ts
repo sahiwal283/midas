@@ -12,6 +12,7 @@ import { roleAllowed } from '../lib/roles';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
 import { parseQueueScope, scopeCondition } from '../lib/queueScope';
+import { splitRowsByScope } from '../lib/queueSummaryBuckets';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { notifyUser } from '../lib/notify';
@@ -193,45 +194,55 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
     },
   });
 
-  const counts: Record<string, number> = {
-    pending: 0,
-    in_review: 0,
-    awaiting_info: 0,
-    zoho_sync_failed: 0,
-    approved: 0,
-    needs_category: 0,
-    missing_receipt: 0,
-    needs_payment_method: 0,
-    needs_entity: 0,
-    ready_for_zoho: 0,
-    reimbursement_pending: 0,
-  };
+  function tally(subset: typeof rows) {
+    const counts: Record<string, number> = {
+      pending: 0,
+      in_review: 0,
+      awaiting_info: 0,
+      zoho_sync_failed: 0,
+      approved: 0,
+      needs_category: 0,
+      missing_receipt: 0,
+      needs_payment_method: 0,
+      needs_entity: 0,
+      ready_for_zoho: 0,
+      reimbursement_pending: 0,
+    };
 
-  let readyForZohoAmount = 0;
-  let reimbursementPendingAmount = 0;
-  const reimbursementEmployeeIds = new Set<string>();
+    let readyForZohoAmount = 0;
+    let reimbursementPendingAmount = 0;
+    const reimbursementEmployeeIds = new Set<string>();
 
-  for (const row of rows) {
-    const wireStatus = row.integrationStatus === 'failed' && row.status === 'approved'
-      ? 'zoho_sync_failed'
-      : row.status;
-    counts[wireStatus] = (counts[wireStatus] ?? 0) + 1;
-    const flags = computeFlags(row as Parameters<typeof computeFlags>[0]);
-    for (const flag of flags) {
-      if (flag in counts) counts[flag]++;
+    for (const row of subset) {
+      const wireStatus = row.integrationStatus === 'failed' && row.status === 'approved'
+        ? 'zoho_sync_failed'
+        : row.status;
+      counts[wireStatus] = (counts[wireStatus] ?? 0) + 1;
+      const flags = computeFlags(row as Parameters<typeof computeFlags>[0]);
+      for (const flag of flags) {
+        if (flag in counts) counts[flag]++;
+      }
+      if (flags.includes('ready_for_zoho')) readyForZohoAmount += Number(row.amount || 0);
+      if (row.reimbursementStatus === 'pending') {
+        reimbursementPendingAmount += Number(row.amount || 0);
+        reimbursementEmployeeIds.add(row.userId);
+      }
     }
-    if (flags.includes('ready_for_zoho')) readyForZohoAmount += Number(row.amount || 0);
-    if (row.reimbursementStatus === 'pending') {
-      reimbursementPendingAmount += Number(row.amount || 0);
-      reimbursementEmployeeIds.add(row.userId);
-    }
+
+    return {
+      counts,
+      readyForZohoAmount,
+      reimbursementPendingAmount,
+      reimbursementEmployees: reimbursementEmployeeIds.size,
+    };
   }
 
+  const overall = tally(rows);
+  const { event, daily } = splitRowsByScope(rows);
+
   res.json({
-    counts,
-    readyForZohoAmount,
-    reimbursementPendingAmount,
-    reimbursementEmployees: reimbursementEmployeeIds.size,
+    ...overall,
+    byScope: { event: tally(event), daily: tally(daily) },
   });
 }));
 
