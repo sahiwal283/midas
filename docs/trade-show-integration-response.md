@@ -248,14 +248,15 @@ adapter, so it would break if Midas moved to `STORAGE_MODE=s3`. Production is
    duplicate account instead of resolving to the existing one — always send
    both fields for them. (b) Trade Show's `admin` user
    (`admin@company.com`) shares the literal username `admin` with Midas's own
-   admin account (`admin@midas.local`), which is a different identity. Because
-   username resolution runs before email, any submission with
-   `submitterUsername: "admin"` will attribute the expense to Midas's admin
-   account, not create or match a distinct Trade Show admin identity. Sending
-   `submitterEmail` alone will not route around it — the username match wins
-   whenever a username is present. Rename that Trade Show account to something
-   that isn't `admin` before cutover if that submitter's expenses need to be
-   attributed correctly. (C-1)
+   admin account (`admin@midas.local`), which is a different identity.
+   `submitterUsername: "admin"` alone therefore attributes the expense to
+   Midas's admin. Send `submitterEmail` as well and Midas will not guess:
+   if the username and the email resolve to two different Midas accounts you
+   get a `409 SUBMITTER_AMBIGUOUS` naming both, rather than a silently
+   misattributed expense. Renaming that Trade Show account to something other
+   than `admin` before cutover is still the clean fix — the 409 stops the
+   wrong attribution, it does not give that submitter a working identity.
+   (C-1)
 
 **Soon after**
 
