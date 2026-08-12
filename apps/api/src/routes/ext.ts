@@ -10,7 +10,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import {
-  and, asc, eq, gt, gte, ilike, lte, or, sql,
+  and, asc, eq, gt, gte, ilike, lte, notInArray, or, sql,
 } from 'drizzle-orm';
 import { ImportService, type ImportRecord } from '@midas/import';
 import { db } from '../db/index';
@@ -27,10 +27,12 @@ import { authenticateApiKey } from '../middleware/auth';
 import { requireScope } from '../middleware/requireScope';
 import { asyncHandler, createError, notFound } from '../middleware/error';
 import { auditLog } from '../lib/audit';
-import { resolveCategoryId, resolveCategoryIdOrOther } from '../lib/ext/categories';
+import { assertActiveCompany } from '../lib/companies';
+import { resolveCategoryIdOrOther } from '../lib/ext/categories';
 import { applyVocabulary } from '../lib/ext/categoryVocabulary';
 import { allowedCategoryIds } from '../lib/ext/categoryVocabularyDb';
 import { EXT_EXPENSE_WITH, toExtExpenseDto } from '../lib/ext/dto';
+import { findDuplicateMatches, type ExtWarning } from '../lib/ext/extWarnings';
 import { ExtImportTargetPort } from '../lib/ext/importTarget';
 import { mapImportExpenseStatus, mapImportReimbursementStatus } from '../lib/ext/maps';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
@@ -391,7 +393,9 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
   });
   if (existing) {
     const expense = toExtExpenseDto(existing);
-    res.status(200).json({ expense, midasUrl: expense.midasUrl, created: false });
+    res.status(200).json({
+      expense, midasUrl: expense.midasUrl, created: false, warnings: [],
+    });
     return;
   }
 
@@ -404,12 +408,39 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
   const user = await resolveExtUser({ username, email, displayName: actorName(req) });
   const externalUserId = actorExternalUserId(req);
 
-  const resolvedCat = await resolveCategoryId({
+  const warnings: ExtWarning[] = [];
+
+  const resolvedCat = await resolveCategoryIdOrOther({
     sourceApp: body.sourceApp,
     categoryId: body.categoryId,
     categoryName: body.categoryName,
   });
   const categoryId = resolvedCat.categoryId;
+  if (resolvedCat.warning) {
+    warnings.push({ code: 'CATEGORY_FALLBACK', message: resolvedCat.warning });
+  }
+
+  const company = await assertActiveCompany(body.company ?? body.zohoEntity);
+
+  const candidates = await db.query.expenses.findMany({
+    columns: { id: true, merchant: true, amount: true, date: true },
+    where: and(
+      eq(expenses.userId, user.id),
+      notInArray(expenses.status, ['draft', 'rejected', 'cancelled']),
+    ),
+    limit: 500,
+  });
+  const matches = findDuplicateMatches(
+    { merchant: body.merchant, amount: body.amount, date: body.date },
+    candidates,
+  );
+  if (matches.length) {
+    warnings.push({
+      code: 'POSSIBLE_DUPLICATE',
+      message: `${matches.length} existing expense(s) look like this one`,
+      matches,
+    });
+  }
 
   const sourceContext: ExpenseSourceContext = {
     ...(body.metadata ?? {}),
@@ -447,7 +478,7 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
     externalUserId,
     status: body.status ?? 'pending',
     reimbursementStatus,
-    zohoEntity: body.company ?? body.zohoEntity ?? null,
+    zohoEntity: company,
   }).returning();
 
   await auditLog({
@@ -464,7 +495,9 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
   });
 
   const expense = await loadExpenseDto(inserted.id);
-  res.status(201).json({ expense, midasUrl: expense!.midasUrl, created: true });
+  res.status(201).json({
+    expense, midasUrl: expense!.midasUrl, created: true, warnings,
+  });
 }));
 
 // ── Get / Patch / Delete by id ───────────────────────────────────────────────
@@ -506,13 +539,23 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
     throw createError(`Expense status ${existing.status} is not editable`, 409, 'CONFLICT');
   }
 
+  const warnings: ExtWarning[] = [];
+
   let categoryId = body.categoryId;
   if (categoryId === undefined && body.categoryName !== undefined) {
-    const resolved = await resolveCategoryId({
+    const resolved = await resolveCategoryIdOrOther({
       sourceApp: existing.sourceApp,
       categoryName: body.categoryName,
     });
     categoryId = resolved.categoryId;
+    if (resolved.warning) {
+      warnings.push({ code: 'CATEGORY_FALLBACK', message: resolved.warning });
+    }
+  }
+
+  let company: string | null | undefined;
+  if (body.company !== undefined || body.zohoEntity !== undefined) {
+    company = await assertActiveCompany(body.company ?? body.zohoEntity);
   }
 
   const ctx: ExpenseSourceContext = { ...(existing.sourceContext ?? {}) };
@@ -523,6 +566,31 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
   if (body.location !== undefined) ctx.location = body.location;
   if (body.cardUsed !== undefined) ctx.cardUsed = body.cardUsed;
   if (body.sourceLabel !== undefined && body.sourceLabel) ctx.eventName = body.sourceLabel;
+
+  if (body.merchant !== undefined || body.amount !== undefined || body.date !== undefined) {
+    const candidateMerchant = body.merchant ?? existing.merchant;
+    const candidateAmount = body.amount ?? Number(existing.amount);
+    const candidateDate = body.date ?? existing.date;
+    const candidateRows = await db.query.expenses.findMany({
+      columns: { id: true, merchant: true, amount: true, date: true },
+      where: and(
+        eq(expenses.userId, existing.userId),
+        notInArray(expenses.status, ['draft', 'rejected', 'cancelled']),
+      ),
+      limit: 500,
+    });
+    const matches = findDuplicateMatches(
+      { merchant: candidateMerchant, amount: candidateAmount, date: candidateDate },
+      candidateRows.filter((c) => c.id !== existing.id),
+    );
+    if (matches.length) {
+      warnings.push({
+        code: 'POSSIBLE_DUPLICATE',
+        message: `${matches.length} existing expense(s) look like this one`,
+        matches,
+      });
+    }
+  }
 
   const [updated] = await db.update(expenses).set({
     ...(body.merchant !== undefined ? { merchant: body.merchant } : {}),
@@ -535,9 +603,7 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
     ...(body.sourceLabel !== undefined ? { sourceLabel: body.sourceLabel } : {}),
     ...(body.sourceUrl !== undefined ? { sourceUrl: body.sourceUrl } : {}),
     ...(body.status !== undefined ? { status: body.status } : {}),
-    ...(body.company !== undefined || body.zohoEntity !== undefined
-      ? { zohoEntity: body.company ?? body.zohoEntity ?? null }
-      : {}),
+    ...(company !== undefined ? { zohoEntity: company } : {}),
     ...(body.reimbursementRequired !== undefined
       ? { reimbursementStatus: mapImportReimbursementStatus(undefined, body.reimbursementRequired) }
       : {}),
@@ -555,7 +621,7 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
   });
 
   const expense = await loadExpenseDto(updated.id);
-  res.json({ expense, midasUrl: expense!.midasUrl });
+  res.json({ expense, midasUrl: expense!.midasUrl, warnings });
 }));
 
 router.delete('/expenses/:id', requireScope('expenses:delete'), asyncHandler(async (req, res) => {

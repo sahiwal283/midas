@@ -448,7 +448,12 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
     if (next) reimbursementStatus = next as typeof expense.reimbursementStatus;
   }
 
-  const effectiveCompany = ('zohoEntity' in parsed && parsed.zohoEntity) || expense.zohoEntity;
+  let validatedZohoEntity: string | null = null;
+  if (action === 'approve' && 'zohoEntity' in parsed && parsed.zohoEntity) {
+    validatedZohoEntity = await assertActiveCompany(parsed.zohoEntity);
+  }
+
+  const effectiveCompany = validatedZohoEntity || expense.zohoEntity;
   const companyPostsToZoho = effectiveCompany ? await isCompanyZohoEnabled(effectiveCompany) : false;
 
   const now = new Date();
@@ -462,8 +467,7 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
       reviewedAt: now,
       reimbursementStatus,
       updatedAt: now,
-      ...(action === 'approve' && 'zohoEntity' in parsed && parsed.zohoEntity
-        ? { zohoEntity: parsed.zohoEntity } : {}),
+      ...(validatedZohoEntity ? { zohoEntity: validatedZohoEntity } : {}),
     })
     .where(eq(expenses.id, req.params.id))
     .returning();
