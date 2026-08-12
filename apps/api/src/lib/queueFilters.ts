@@ -20,6 +20,7 @@ export interface QueueFilters {
   missingPayment?: boolean;
   /** expense | purchase_order — Phase 1 type filter */
   transactionType?: 'expense' | 'purchase_order';
+  scope?: 'event' | 'daily';
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -43,6 +44,7 @@ export function parseQueueFilters(q: Record<string, string | undefined>): QueueF
   if (q.transactionType === 'expense' || q.transactionType === 'purchase_order') {
     f.transactionType = q.transactionType;
   }
+  if (q.scope === 'event' || q.scope === 'daily') f.scope = q.scope;
   for (const key of BOOL_KEYS) {
     if (q[key] === 'true' || q[key] === '1') f[key] = true;
   }
