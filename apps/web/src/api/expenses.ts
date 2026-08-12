@@ -149,26 +149,6 @@ export const accountantApi = {
       params: params && Object.keys(params).length > 0 ? params : undefined,
     }).then((r) => r.data),
 
-  purchaseOrders: () =>
-    client.get<{ purchaseOrders: Array<Record<string, unknown>> }>('/accountant/purchase-orders')
-      .then((r) => r.data.purchaseOrders),
-
-  pushPurchaseOrder: (id: string) =>
-    client.post<{ transaction: unknown }>(`/accountant/purchase-orders/${id}/zoho-push`)
-      .then((r) => r.data),
-
-  bulkPoReview: (ids: string[]) =>
-    client.post<{
-      approved: string[];
-      skipped: Array<{ id: string; reason: string }>;
-    }>('/transactions/bulk-review', { ids, action: 'approve' }).then((r) => r.data),
-
-  bulkPoZohoPush: (ids: string[]) =>
-    client.post<{
-      pushed: string[];
-      failed: Array<{ id: string; code: string; message: string }>;
-    }>('/transactions/bulk-zoho-push', { ids }).then((r) => r.data),
-
   employees: () =>
     client.get<{ employees: Array<{ id: string; name: string }> }>('/accountant/employees')
       .then((r) => r.data.employees),

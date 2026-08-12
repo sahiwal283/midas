@@ -470,12 +470,16 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     : [];
   const readyTotal = readyRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
-  // Source app options for the filter — fixed set plus anything seen in the data
+  // Source app options for the filter — scoped so this page never offers a
+  // value that is guaranteed to return zero rows here. `browser_extension`
+  // only exists in the daily bucket; every other sourceApp lives in the
+  // event bucket (see lib/queueScope.ts isDailyExpense).
   const sourceAppOptions = useMemo(() => {
-    const set = new Set<string>(['trade_show', 'browser_extension']);
+    const seed = scope === 'daily' ? ['browser_extension'] : [];
+    const set = new Set<string>(seed);
     for (const e of queue) if (e.sourceApp) set.add(e.sourceApp);
     return [...set].sort();
-  }, [queue]);
+  }, [queue, scope]);
 
   function clearFilters() {
     setFilters(EMPTY_FILTERS);
@@ -655,12 +659,14 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
             <option value="not_synced">Not synced</option>
             <option value="sync_failed">Sync failed</option>
           </select>
-          <select value={filters.sourceApp} onChange={(e) => setFilter('sourceApp', e.target.value)} className={filterSelectClass}>
-            <option value="">Source: any</option>
-            {sourceAppOptions.map((app) => (
-              <option key={app} value={app}>{humanizeSourceApp(app)}</option>
-            ))}
-          </select>
+          {sourceAppOptions.length > 1 && (
+            <select value={filters.sourceApp} onChange={(e) => setFilter('sourceApp', e.target.value)} className={filterSelectClass}>
+              <option value="">Source: any</option>
+              {sourceAppOptions.map((app) => (
+                <option key={app} value={app}>{humanizeSourceApp(app)}</option>
+              ))}
+            </select>
+          )}
           <div className="flex items-center gap-1.5">
             <input
               type="date"

@@ -1,5 +1,7 @@
 /** Parses /accountant/queue query params into a normalized filter object. */
 
+import { requireQueueScope } from './queueScope';
+
 export interface QueueFilters {
   status?: string;
   userId?: string;
@@ -44,7 +46,8 @@ export function parseQueueFilters(q: Record<string, string | undefined>): QueueF
   if (q.transactionType === 'expense' || q.transactionType === 'purchase_order') {
     f.transactionType = q.transactionType;
   }
-  if (q.scope === 'event' || q.scope === 'daily') f.scope = q.scope;
+  const scope = requireQueueScope(q.scope);
+  if (scope) f.scope = scope;
   for (const key of BOOL_KEYS) {
     if (q[key] === 'true' || q[key] === '1') f[key] = true;
   }

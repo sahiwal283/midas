@@ -76,7 +76,7 @@ export default function App() {
                 path="/accountant/daily"
                 element={
                   <ProtectedRoute roles={['accountant', 'admin']}>
-                    <AccountantQueue scope="daily" />
+                    <AccountantQueue key="daily" scope="daily" />
                   </ProtectedRoute>
                 }
               />
@@ -84,7 +84,7 @@ export default function App() {
                 path="/accountant/events"
                 element={
                   <ProtectedRoute roles={['accountant', 'admin']}>
-                    <AccountantQueue scope="event" />
+                    <AccountantQueue key="events" scope="event" />
                   </ProtectedRoute>
                 }
               />

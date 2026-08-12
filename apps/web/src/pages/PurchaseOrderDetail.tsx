@@ -132,9 +132,13 @@ export function PurchaseOrderDetail() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      {!isPrivileged && (
+      {!isPrivileged ? (
         <Link to="/expenses/new" className="text-sm font-medium text-brand-700">
           ← New transaction
+        </Link>
+      ) : (
+        <Link to="/dashboard" className="text-sm font-medium text-brand-700">
+          ← Dashboard
         </Link>
       )}
       <h1 className="mt-2 mb-1 font-display text-3xl font-semibold text-ink">Purchase Order</h1>

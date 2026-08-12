@@ -125,10 +125,7 @@ function AccountantDashboard({ name }: { name: string }) {
 
       {/* Money-in-motion stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Link
-          to="/accountant/daily"
-          className="rounded-xl border border-success/25 bg-success/5 p-5 transition-colors hover:bg-success/10"
-        >
+        <div className="rounded-xl border border-success/25 bg-success/5 p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-success">Ready for Zoho</p>
             <CheckCircle2 className="h-5 w-5 text-success" />
@@ -139,11 +136,22 @@ function AccountantDashboard({ name }: { name: string }) {
           <p className="mt-1 text-xs text-success/80">
             {counts.ready_for_zoho ?? 0} expense{(counts.ready_for_zoho ?? 0) !== 1 ? 's' : ''} ready to push
           </p>
-        </Link>
-        <Link
-          to="/accountant/daily?reimbursementStatus=pending"
-          className="rounded-xl border border-brand-500/30 bg-brand-500/5 p-5 transition-colors hover:bg-brand-500/10"
-        >
+          <div className="mt-3 flex items-center gap-2">
+            <Link
+              to="/accountant/events?status=ready_for_zoho"
+              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+            >
+              {fmtMoney(byScope?.event.readyForZohoAmount ?? 0)} event
+            </Link>
+            <Link
+              to="/accountant/daily?status=ready_for_zoho"
+              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+            >
+              {fmtMoney(byScope?.daily.readyForZohoAmount ?? 0)} daily
+            </Link>
+          </div>
+        </div>
+        <div className="rounded-xl border border-brand-500/30 bg-brand-500/5 p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-brand-800">Awaiting Reimbursement</p>
             <Banknote className="h-5 w-5 text-brand-600" />
@@ -154,7 +162,21 @@ function AccountantDashboard({ name }: { name: string }) {
           <p className="mt-1 text-xs text-brand-700/80">
             {summary?.reimbursementEmployees ?? 0} employee{(summary?.reimbursementEmployees ?? 0) !== 1 ? 's' : ''} waiting
           </p>
-        </Link>
+          <div className="mt-3 flex items-center gap-2">
+            <Link
+              to="/accountant/events?reimbursementStatus=pending"
+              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+            >
+              {fmtMoney(byScope?.event.reimbursementPendingAmount ?? 0)} event
+            </Link>
+            <Link
+              to="/accountant/daily?reimbursementStatus=pending"
+              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+            >
+              {fmtMoney(byScope?.daily.reimbursementPendingAmount ?? 0)} daily
+            </Link>
+          </div>
+        </div>
       </div>
 
     </div>

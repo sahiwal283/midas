@@ -21,6 +21,20 @@ describe('parseQueueFilters', () => {
   it('rejects unknown zohoStatus', () => {
     expect(parseQueueFilters({ zohoStatus: 'weird' })).toEqual({});
   });
+
+  it('accepts the two valid scopes', () => {
+    expect(parseQueueFilters({ scope: 'event' })).toEqual({ scope: 'event' });
+    expect(parseQueueFilters({ scope: 'daily' })).toEqual({ scope: 'daily' });
+  });
+
+  it('leaves scope unset when absent (unscoped)', () => {
+    expect(parseQueueFilters({})).toEqual({});
+  });
+
+  it('fails closed on a present-but-unrecognised scope instead of silently returning both scopes', () => {
+    expect(() => parseQueueFilters({ scope: 'Daily' })).toThrow(/scope/i);
+    expect(() => parseQueueFilters({ scope: 'all' })).toThrow(/scope/i);
+  });
 });
 
 describe('partitionBulkReview', () => {

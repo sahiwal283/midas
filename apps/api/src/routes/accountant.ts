@@ -11,7 +11,7 @@ import { getClosedPeriods } from '../lib/closedPeriodsDb';
 import { roleAllowed } from '../lib/roles';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
-import { parseQueueScope, scopeCondition } from '../lib/queueScope';
+import { requireQueueScope, scopeCondition } from '../lib/queueScope';
 import { splitRowsByScope } from '../lib/queueSummaryBuckets';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
@@ -251,7 +251,7 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
 }));
 
 router.get('/expenses', asyncHandler(async (req, res) => {
-  const scope = parseQueueScope(typeof req.query.scope === 'string' ? req.query.scope : undefined);
+  const scope = requireQueueScope(req.query.scope);
   const where = scope
     ? and(eq(expenses.expenseKind, 'business'), scopeCondition(scope))
     : eq(expenses.expenseKind, 'business');

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseQueueScope, isDailyExpense } from '../lib/queueScope';
+import { parseQueueScope, requireQueueScope, isDailyExpense } from '../lib/queueScope';
 
 describe('parseQueueScope', () => {
   it('accepts the two valid scopes', () => {
@@ -11,6 +11,34 @@ describe('parseQueueScope', () => {
     expect(parseQueueScope('')).toBeUndefined();
     expect(parseQueueScope('EVENT')).toBeUndefined();
     expect(parseQueueScope('all')).toBeUndefined();
+  });
+});
+
+describe('requireQueueScope', () => {
+  it('accepts the two valid scopes', () => {
+    expect(requireQueueScope('event')).toBe('event');
+    expect(requireQueueScope('daily')).toBe('daily');
+  });
+  it('treats an absent scope as unscoped, exactly like parseQueueScope', () => {
+    expect(requireQueueScope(undefined)).toBeUndefined();
+  });
+  it('fails closed on a present-but-unrecognised value instead of dropping the filter', () => {
+    expect(() => requireQueueScope('EVENT')).toThrow(/scope/i);
+    expect(() => requireQueueScope('all')).toThrow(/scope/i);
+    expect(() => requireQueueScope('')).toThrow(/scope/i);
+  });
+  it('fails closed on a non-string value (e.g. a repeated ?scope= query param)', () => {
+    expect(() => requireQueueScope(['event', 'daily'])).toThrow(/scope/i);
+    expect(() => requireQueueScope({})).toThrow(/scope/i);
+  });
+  it('rejections are 400s with a stable error code', () => {
+    try {
+      requireQueueScope('Daily');
+      expect.unreachable();
+    } catch (err) {
+      expect((err as { statusCode?: number }).statusCode).toBe(400);
+      expect((err as { code?: string }).code).toBe('INVALID_SCOPE');
+    }
   });
 });
 
