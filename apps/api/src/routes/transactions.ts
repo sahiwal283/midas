@@ -20,6 +20,7 @@ import { env } from '../config/env';
 import { assertActiveCompany } from '../lib/companies';
 import { normalizeSourceType } from '../lib/sourceTypes';
 import { listItemsWithCache, listVendorsWithCache } from '../lib/zohoCatalog';
+import { roleAllowed } from '../lib/roles';
 
 const router = Router();
 router.use(authenticate);
@@ -211,7 +212,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   });
   if (!row) throw notFound('Transaction not found');
   const isOwner = row.userId === req.user!.id;
-  const isPrivileged = req.user!.role === 'accountant' || req.user!.role === 'admin';
+  const isPrivileged = roleAllowed(req.user!.role, ['accountant', 'admin']);
   if (!isOwner && !isPrivileged) throw forbidden();
   res.json({ transaction: row });
 }));
@@ -303,7 +304,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   }
 
   const body = updatePoSchema.parse(req.body);
-  const privileged = req.user!.role === 'accountant' || req.user!.role === 'admin';
+  const privileged = roleAllowed(req.user!.role, ['accountant', 'admin']);
   const ownerEditable = existing.status === 'draft' || existing.status === 'awaiting_info';
   const mappingOnly = privileged
     && existing.status === 'approved'

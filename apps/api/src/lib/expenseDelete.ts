@@ -2,6 +2,8 @@
  * Soft-cancel / delete rules for financial transactions.
  * Prefer cancelled over hard delete after submission or Zoho sync.
  */
+import type { UserRole } from '@midas/shared';
+import { roleAllowed } from './roles';
 
 export type CancelDecision =
   | { ok: true; mode: 'hard_delete' | 'soft_cancel' }
@@ -22,7 +24,7 @@ export function canCancelOrDeleteTransaction(input: {
 }): CancelDecision {
   const { role, actorUserId, transaction, force = false } = input;
   const isOwner = transaction.userId === actorUserId;
-  const isPrivileged = role === 'accountant' || role === 'admin';
+  const isPrivileged = roleAllowed(role as UserRole, ['accountant', 'admin']);
 
   if (!isOwner && !isPrivileged) {
     return { ok: false, status: 403, code: 'FORBIDDEN', message: 'Forbidden' };
@@ -32,7 +34,7 @@ export function canCancelOrDeleteTransaction(input: {
     !!transaction.zohoRecordId || transaction.integrationStatus === 'synced';
 
   if (synced) {
-    if (role === 'admin' && force) {
+    if (roleAllowed(role as UserRole, ['admin']) && force) {
       return { ok: true, mode: 'soft_cancel' };
     }
     return {
