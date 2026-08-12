@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, ClipboardList, Settings, LogOut, Briefcase,
-  BarChart3, Activity, FileSpreadsheet, PlusCircle, Upload, Banknote, Heart,
+  BarChart3, Activity, PlusCircle, Upload, Heart,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
@@ -83,19 +83,15 @@ export function Sidebar() {
           <>
             <SectionLabel>Accountant</SectionLabel>
             <div className="space-y-0.5">
-              {/* These three share the /accountant pathname space, so their
-                  active state is computed rather than left to NavLink. */}
-              <NavLink to="/accountant" className={() => linkClass({ isActive: accountantActive.reviewQueue })}>
+              {/* Active state is computed rather than left to NavLink so that
+                  an expense detail page (/accountant/<id>) lights up neither. */}
+              <NavLink to="/accountant/events" className={() => linkClass({ isActive: accountantActive.eventReview })}>
                 <ClipboardList className="h-4 w-4" />
-                Review Queue
+                Event Review
               </NavLink>
-              <NavLink to="/accountant/purchase-orders" className={() => linkClass({ isActive: accountantActive.purchaseOrders })}>
-                <FileSpreadsheet className="h-4 w-4" />
-                Purchase Orders
-              </NavLink>
-              <NavLink to="/accountant?reimbursementStatus=pending" className={() => linkClass({ isActive: accountantActive.reimbursements })}>
-                <Banknote className="h-4 w-4" />
-                Reimbursements
+              <NavLink to="/accountant/daily" className={() => linkClass({ isActive: accountantActive.dailyReview })}>
+                <ReceiptText className="h-4 w-4" />
+                Daily Review
               </NavLink>
               <NavLink to="/reports" className={linkClass}>
                 <BarChart3 className="h-4 w-4" />

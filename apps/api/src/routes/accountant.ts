@@ -11,6 +11,8 @@ import { getClosedPeriods } from '../lib/closedPeriodsDb';
 import { roleAllowed } from '../lib/roles';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
+import { requireQueueScope, scopeCondition } from '../lib/queueScope';
+import { splitRowsByScope } from '../lib/queueSummaryBuckets';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { notifyUser } from '../lib/notify';
@@ -69,6 +71,9 @@ router.get('/queue', asyncHandler(async (req, res) => {
     inArray(expenses.status, queueStatuses),
     eq(expenses.expenseKind, 'business'),
   ];
+  // Event and daily are separate pages; the split is enforced in SQL so neither
+  // page can ever receive the other's rows.
+  if (f.scope) conds.push(scopeCondition(f.scope));
   if (f.status === 'zoho_sync_failed') conds.push(eq(expenses.integrationStatus, 'failed'));
   if (f.userId) conds.push(eq(expenses.userId, f.userId));
   if (f.search) {
@@ -189,52 +194,70 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
     },
   });
 
-  const counts: Record<string, number> = {
-    pending: 0,
-    in_review: 0,
-    awaiting_info: 0,
-    zoho_sync_failed: 0,
-    approved: 0,
-    needs_category: 0,
-    missing_receipt: 0,
-    needs_payment_method: 0,
-    needs_entity: 0,
-    ready_for_zoho: 0,
-    reimbursement_pending: 0,
-  };
+  function tally(subset: typeof rows) {
+    const counts: Record<string, number> = {
+      pending: 0,
+      in_review: 0,
+      awaiting_info: 0,
+      zoho_sync_failed: 0,
+      approved: 0,
+      needs_category: 0,
+      missing_receipt: 0,
+      needs_payment_method: 0,
+      needs_entity: 0,
+      ready_for_zoho: 0,
+      reimbursement_pending: 0,
+    };
 
-  let readyForZohoAmount = 0;
-  let reimbursementPendingAmount = 0;
-  const reimbursementEmployeeIds = new Set<string>();
+    let readyForZohoAmount = 0;
+    let reimbursementPendingAmount = 0;
+    const reimbursementEmployeeIds = new Set<string>();
 
-  for (const row of rows) {
-    const wireStatus = row.integrationStatus === 'failed' && row.status === 'approved'
-      ? 'zoho_sync_failed'
-      : row.status;
-    counts[wireStatus] = (counts[wireStatus] ?? 0) + 1;
-    const flags = computeFlags(row as Parameters<typeof computeFlags>[0]);
-    for (const flag of flags) {
-      if (flag in counts) counts[flag]++;
+    for (const row of subset) {
+      const wireStatus = row.integrationStatus === 'failed' && row.status === 'approved'
+        ? 'zoho_sync_failed'
+        : row.status;
+      counts[wireStatus] = (counts[wireStatus] ?? 0) + 1;
+      const flags = computeFlags(row as Parameters<typeof computeFlags>[0]);
+      for (const flag of flags) {
+        if (flag in counts) counts[flag]++;
+      }
+      if (flags.includes('ready_for_zoho')) readyForZohoAmount += Number(row.amount || 0);
+      if (row.reimbursementStatus === 'pending') {
+        reimbursementPendingAmount += Number(row.amount || 0);
+        // Distinct employees, not a row count — see reimbursementEmployees note below.
+        reimbursementEmployeeIds.add(row.userId);
+      }
     }
-    if (flags.includes('ready_for_zoho')) readyForZohoAmount += Number(row.amount || 0);
-    if (row.reimbursementStatus === 'pending') {
-      reimbursementPendingAmount += Number(row.amount || 0);
-      reimbursementEmployeeIds.add(row.userId);
-    }
+
+    return {
+      counts,
+      readyForZohoAmount,
+      reimbursementPendingAmount,
+      // Distinct-employee count per subset. Unlike every other field here, this
+      // does NOT sum across scopes: an employee with a pending reimbursement in
+      // both the event and daily buckets is counted once in each.
+      reimbursementEmployees: reimbursementEmployeeIds.size,
+    };
   }
 
+  const overall = tally(rows);
+  const { event, daily } = splitRowsByScope(rows);
+
   res.json({
-    counts,
-    readyForZohoAmount,
-    reimbursementPendingAmount,
-    reimbursementEmployees: reimbursementEmployeeIds.size,
+    ...overall,
+    byScope: { event: tally(event), daily: tally(daily) },
   });
 }));
 
-router.get('/expenses', asyncHandler(async (_req, res) => {
+router.get('/expenses', asyncHandler(async (req, res) => {
+  const scope = requireQueueScope(req.query.scope);
+  const where = scope
+    ? and(eq(expenses.expenseKind, 'business'), scopeCondition(scope))
+    : eq(expenses.expenseKind, 'business');
   const rows = await db.query.expenses.findMany({
     // Partner spend is tracked on its own tab and never enters review.
-    where: eq(expenses.expenseKind, 'business'),
+    where,
     with: {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },

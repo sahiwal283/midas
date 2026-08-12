@@ -212,7 +212,7 @@ function humanizeSourceApp(app: string): string {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function AccountantQueue() {
+export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
@@ -241,7 +241,7 @@ export function AccountantQueue() {
   }, [activeLane, filters]);
 
   const queryParams = useMemo(() => {
-    const base = { ...filtersToParams(filters), ...laneToServerParams(activeLane) };
+    const base: Record<string, string> = { ...filtersToParams(filters), ...laneToServerParams(activeLane), scope };
     if (activeLane === 'ready_for_zoho' || activeLane === 'missing_entity') {
       // Flag-based lanes still filter client-side; pull a larger page.
       base.page = '1';
@@ -251,7 +251,7 @@ export function AccountantQueue() {
       base.pageSize = String(PAGE_SIZE);
     }
     return base;
-  }, [filters, activeLane, page]);
+  }, [filters, activeLane, page, scope]);
   const hasActiveFilters = Object.keys(filtersToParams(filters)).length > 0;
 
   // Bulk selection + result toasts
@@ -260,14 +260,18 @@ export function AccountantQueue() {
   const [toast, setToast] = useState<{ text: string; details?: string[] } | null>(null);
 
   const { data: queuePage, isLoading: queueLoading } = useQuery({
-    queryKey: ['accountant-queue', queryParams],
+    queryKey: ['accountant-queue', scope, queryParams],
     queryFn: () => accountantApi.queue(queryParams),
     enabled: activeLane !== 'all',
   });
   const queue = queuePage?.expenses ?? [];
 
+  // /accountant/queue/summary does not take a scope param — it always returns
+  // both scopes combined via `byScope`. We still key the query by scope so
+  // the two pages don't share a cached selection, and read `byScope[scope]`
+  // below for this page's lane badges.
   const { data: queueSummary } = useQuery({
-    queryKey: ['accountant-queue-summary'],
+    queryKey: ['accountant-queue-summary', scope],
     queryFn: () => accountantApi.queueSummary(),
     staleTime: 30_000,
   });
@@ -327,8 +331,8 @@ export function AccountantQueue() {
             : 'Zoho service is not ready for live push.';
 
   const { data: allExpenses = [], isLoading: allLoading } = useQuery({
-    queryKey: ['accountant-all'],
-    queryFn: () => accountantApi.all(),
+    queryKey: ['accountant-all', scope],
+    queryFn: () => accountantApi.all({ scope }),
     enabled: activeLane === 'all',
   });
 
@@ -404,8 +408,8 @@ export function AccountantQueue() {
     },
   });
 
-  // Lane counts from summary (accurate with pagination)
-  const counts = queueSummary?.counts ?? {};
+  // Lane counts from summary (accurate with pagination) — scoped to this page
+  const counts = queueSummary?.byScope?.[scope]?.counts ?? {};
   const laneCounts: Partial<Record<LaneId, number>> = {
     needs_review: (counts.pending ?? 0) + (counts.in_review ?? 0),
     awaiting_user: counts.awaiting_info ?? 0,
@@ -466,12 +470,16 @@ export function AccountantQueue() {
     : [];
   const readyTotal = readyRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
-  // Source app options for the filter — fixed set plus anything seen in the data
+  // Source app options for the filter — scoped so this page never offers a
+  // value that is guaranteed to return zero rows here. `browser_extension`
+  // only exists in the daily bucket; every other sourceApp lives in the
+  // event bucket (see lib/queueScope.ts isDailyExpense).
   const sourceAppOptions = useMemo(() => {
-    const set = new Set<string>(['trade_show', 'browser_extension']);
+    const seed = scope === 'daily' ? ['browser_extension'] : [];
+    const set = new Set<string>(seed);
     for (const e of queue) if (e.sourceApp) set.add(e.sourceApp);
     return [...set].sort();
-  }, [queue]);
+  }, [queue, scope]);
 
   function clearFilters() {
     setFilters(EMPTY_FILTERS);
@@ -493,11 +501,17 @@ export function AccountantQueue() {
   const filterSelectClass = 'rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none';
   const filterInputClass = 'rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none';
 
+  const title = scope === 'event' ? 'Event Review' : 'Daily Review';
+  const subtitle = scope === 'event'
+    ? 'Expenses submitted from trade shows and other connected apps.'
+    : 'Expenses entered in Midas or captured with the browser extension.';
+
   return (
     <div className="p-4 lg:p-8">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Accountant Workspace</h1>
+          <h1 className="font-display text-3xl font-semibold text-ink">{title}</h1>
+          <p className="mt-1 text-sm text-charcoal/55">{subtitle}</p>
           <p className="mt-1 text-sm text-charcoal/55">
             {totalActive > 0
               ? `${totalActive} item${totalActive !== 1 ? 's' : ''} need attention`
@@ -505,9 +519,6 @@ export function AccountantQueue() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
-          <Link to="/accountant/purchase-orders" className="rounded-lg border border-ink/10 bg-white px-3 py-1.5 font-medium text-ink shadow-panel hover:border-brand-500/40">
-            Purchase orders
-          </Link>
           <Link to="/integration-health" className="rounded-lg border border-ink/10 bg-white px-3 py-1.5 font-medium text-ink shadow-panel hover:border-brand-500/40">
             Integration health
           </Link>
@@ -648,12 +659,14 @@ export function AccountantQueue() {
             <option value="not_synced">Not synced</option>
             <option value="sync_failed">Sync failed</option>
           </select>
-          <select value={filters.sourceApp} onChange={(e) => setFilter('sourceApp', e.target.value)} className={filterSelectClass}>
-            <option value="">Source: any</option>
-            {sourceAppOptions.map((app) => (
-              <option key={app} value={app}>{humanizeSourceApp(app)}</option>
-            ))}
-          </select>
+          {sourceAppOptions.length > 1 && (
+            <select value={filters.sourceApp} onChange={(e) => setFilter('sourceApp', e.target.value)} className={filterSelectClass}>
+              <option value="">Source: any</option>
+              {sourceAppOptions.map((app) => (
+                <option key={app} value={app}>{humanizeSourceApp(app)}</option>
+              ))}
+            </select>
+          )}
           <div className="flex items-center gap-1.5">
             <input
               type="date"

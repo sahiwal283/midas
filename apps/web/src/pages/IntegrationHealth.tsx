@@ -65,7 +65,7 @@ export function IntegrationHealth() {
 
   return (
     <div className="mx-auto max-w-3xl p-4 lg:p-8">
-      <Link to="/accountant" className="text-sm font-medium text-brand-700 hover:text-brand-800">
+      <Link to="/accountant/daily" className="text-sm font-medium text-brand-700 hover:text-brand-800">
         ← Accountant workspace
       </Link>
       <h1 className="mt-2 font-display text-3xl font-semibold text-ink">Integration Health</h1>

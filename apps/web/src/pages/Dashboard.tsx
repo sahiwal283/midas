@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, ReceiptText, AlertCircle, CheckCircle2, Clock, RefreshCw, FileX, Banknote, ChevronRight } from 'lucide-react';
+import { Plus, ReceiptText, AlertCircle, CheckCircle2, Clock, RefreshCw, FileX, Banknote } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { expenseApi, accountantApi } from '../api/expenses';
 import { userStatusLabel } from '../components/StatusBadge';
@@ -32,29 +32,39 @@ function AccountantDashboard({ name }: { name: string }) {
   });
 
   const counts = summary?.counts ?? {};
+  const byScope = summary?.byScope;
+  const scoped = (pick: (c: Record<string, number>) => number) => ({
+    event: byScope ? pick(byScope.event.counts) : 0,
+    daily: byScope ? pick(byScope.daily.counts) : 0,
+  });
+
   const rows = [
     {
       label: 'Needs Review',
       count: (counts.pending ?? 0) + (counts.in_review ?? 0),
-      to: '/accountant?status=needs_review',
+      per: scoped((c) => (c.pending ?? 0) + (c.in_review ?? 0)),
+      query: 'status=needs_review',
       icon: <Clock className="h-4 w-4 text-yellow-600" />,
     },
     {
       label: 'Awaiting User',
       count: counts.awaiting_info ?? 0,
-      to: '/accountant?status=awaiting_user',
+      per: scoped((c) => c.awaiting_info ?? 0),
+      query: 'status=awaiting_user',
       icon: <AlertCircle className="h-4 w-4 text-amber-600" />,
     },
     {
       label: 'Zoho Failed',
       count: counts.zoho_sync_failed ?? 0,
-      to: '/accountant?status=zoho_failed',
+      per: scoped((c) => c.zoho_sync_failed ?? 0),
+      query: 'status=zoho_failed',
       icon: <RefreshCw className="h-4 w-4 text-red-600" />,
     },
     {
       label: 'Missing Fields',
       count: (counts.needs_category ?? 0) + (counts.missing_receipt ?? 0) + (counts.needs_payment_method ?? 0),
-      to: '/accountant',
+      per: scoped((c) => (c.needs_category ?? 0) + (c.missing_receipt ?? 0) + (c.needs_payment_method ?? 0)),
+      query: '',
       icon: <FileX className="h-4 w-4 text-orange-600" />,
     },
   ];
@@ -78,10 +88,9 @@ function AccountantDashboard({ name }: { name: string }) {
         ) : (
           <div className="divide-y divide-ink/5">
             {rows.map((row) => (
-              <Link
+              <div
                 key={row.label}
-                to={row.to}
-                className="flex items-center justify-between px-6 py-4 hover:bg-cream/80"
+                className="flex items-center justify-between px-6 py-4"
               >
                 <div className="flex items-center gap-3">
                   {row.icon}
@@ -93,9 +102,22 @@ function AccountantDashboard({ name }: { name: string }) {
                   }`}>
                     {row.count}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-charcoal/25" />
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/accountant/events${row.query ? `?${row.query}` : ''}`}
+                      className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+                    >
+                      {row.per.event} event
+                    </Link>
+                    <Link
+                      to={`/accountant/daily${row.query ? `?${row.query}` : ''}`}
+                      className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+                    >
+                      {row.per.daily} daily
+                    </Link>
+                  </div>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         )}
@@ -103,10 +125,7 @@ function AccountantDashboard({ name }: { name: string }) {
 
       {/* Money-in-motion stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Link
-          to="/accountant?status=ready_for_zoho"
-          className="rounded-xl border border-success/25 bg-success/5 p-5 transition-colors hover:bg-success/10"
-        >
+        <div className="rounded-xl border border-success/25 bg-success/5 p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-success">Ready for Zoho</p>
             <CheckCircle2 className="h-5 w-5 text-success" />
@@ -117,11 +136,22 @@ function AccountantDashboard({ name }: { name: string }) {
           <p className="mt-1 text-xs text-success/80">
             {counts.ready_for_zoho ?? 0} expense{(counts.ready_for_zoho ?? 0) !== 1 ? 's' : ''} ready to push
           </p>
-        </Link>
-        <Link
-          to="/accountant?reimbursementStatus=pending"
-          className="rounded-xl border border-brand-500/30 bg-brand-500/5 p-5 transition-colors hover:bg-brand-500/10"
-        >
+          <div className="mt-3 flex items-center gap-2">
+            <Link
+              to="/accountant/events?status=ready_for_zoho"
+              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+            >
+              {fmtMoney(byScope?.event.readyForZohoAmount ?? 0)} event
+            </Link>
+            <Link
+              to="/accountant/daily?status=ready_for_zoho"
+              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+            >
+              {fmtMoney(byScope?.daily.readyForZohoAmount ?? 0)} daily
+            </Link>
+          </div>
+        </div>
+        <div className="rounded-xl border border-brand-500/30 bg-brand-500/5 p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-brand-800">Awaiting Reimbursement</p>
             <Banknote className="h-5 w-5 text-brand-600" />
@@ -132,7 +162,21 @@ function AccountantDashboard({ name }: { name: string }) {
           <p className="mt-1 text-xs text-brand-700/80">
             {summary?.reimbursementEmployees ?? 0} employee{(summary?.reimbursementEmployees ?? 0) !== 1 ? 's' : ''} waiting
           </p>
-        </Link>
+          <div className="mt-3 flex items-center gap-2">
+            <Link
+              to="/accountant/events?reimbursementStatus=pending"
+              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+            >
+              {fmtMoney(byScope?.event.reimbursementPendingAmount ?? 0)} event
+            </Link>
+            <Link
+              to="/accountant/daily?reimbursementStatus=pending"
+              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+            >
+              {fmtMoney(byScope?.daily.reimbursementPendingAmount ?? 0)} daily
+            </Link>
+          </div>
+        </div>
       </div>
 
     </div>
