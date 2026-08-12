@@ -49,8 +49,13 @@ Reimbursements is already a lane, so folding it in means: delete the separate si
 ### 4. Purchase Orders
 Delete the accountant PO queue page, its route `/accountant/purchase-orders`, and its sidebar entry. **Keep** PO creation (`PurchaseOrderNew`), the PO detail page, the transactions/PO API routes, and `zohoPoPush`. Accountants no longer approve POs; nothing else changes.
 
-### 5. Entry points that must follow
-- The accountant dashboard's four queue cards link to `/accountant?status=…` and need scope-aware targets.
+### 5. Dashboard covers both queues
+The accountant dashboard must still answer "is anything waiting for me?" in one glance now that there are two queues. Each of its four rows (Needs Review, Awaiting User, Zoho Failed, Missing Fields) keeps a **combined** count across event and daily, and gains two small linked chips — `N event` / `N daily` — routing to that lane on the matching page. The two money cards (Ready for Zoho, Awaiting Reimbursement) likewise stay combined totals.
+
+`GET /accountant/queue/summary` gains a per-scope breakdown so the dashboard reads real numbers rather than summing on the client. Its existing combined shape is preserved so nothing that consumes it breaks.
+
+### 6. Entry points that must follow
+- The accountant dashboard's four queue cards link to `/accountant?status=…` and need scope-aware targets (see §5).
 - `lib/navActive.ts` (`accountantNavActive`) keys on the old `/accountant` paths and must be reworked for the new routes, keeping exactly one nav item active per page.
 - The sidebar gains Event Review and Daily Review, and loses Purchase Orders and Reimbursements.
 
