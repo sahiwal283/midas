@@ -225,6 +225,7 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
       if (flags.includes('ready_for_zoho')) readyForZohoAmount += Number(row.amount || 0);
       if (row.reimbursementStatus === 'pending') {
         reimbursementPendingAmount += Number(row.amount || 0);
+        // Distinct employees, not a row count — see reimbursementEmployees note below.
         reimbursementEmployeeIds.add(row.userId);
       }
     }
@@ -233,6 +234,9 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
       counts,
       readyForZohoAmount,
       reimbursementPendingAmount,
+      // Distinct-employee count per subset. Unlike every other field here, this
+      // does NOT sum across scopes: an employee with a pending reimbursement in
+      // both the event and daily buckets is counted once in each.
       reimbursementEmployees: reimbursementEmployeeIds.size,
     };
   }
