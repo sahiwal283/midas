@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { logger } from './logger';
+import { matchVendorByName } from './vendorMatch';
 import type { ZohoServicePayload } from './zohoPayload';
 import type { ZohoPoServicePayload } from './zohoPoPayload';
 import { toZohoBooksPoCreateBody } from './zohoPoPayload';
@@ -175,6 +176,97 @@ export async function listExpenseAccounts(brand: string, timeoutMs = 15000): Pro
   return accounts;
 }
 
+/**
+ * Resolve the merchant to a Zoho Books vendor (contact) id: exact name match
+ * against the brand's vendor list, else create a vendor contact. Best-effort —
+ * any failure returns null and the push proceeds without a vendor rather than
+ * blocking the expense.
+ */
+export async function resolveBooksVendorId(merchant: string, brand: string): Promise<string | null> {
+  if (env.ZOHO_MODE !== 'service' || env.ZOHO_DRY_RUN) return null;
+  const baseUrl = env.ZOHO_SERVICE_BASE_URL;
+  if (!baseUrl || !env.ZOHO_SERVICE_TOKEN || !merchant.trim()) return null;
+
+  try {
+    const listRes = await fetchWithTimeout(
+      `${baseUrl}/zoho/vendors/list`,
+      { method: 'GET', headers: serviceHeaders({}, brand) },
+      15000,
+    );
+    if (listRes.ok) {
+      const json = await listRes.json() as {
+        data?: { contacts?: Array<Record<string, unknown>>; vendors?: Array<Record<string, unknown>> };
+        contacts?: Array<Record<string, unknown>>;
+        vendors?: Array<Record<string, unknown>>;
+      };
+      const raw = json.data?.contacts ?? json.data?.vendors ?? json.contacts ?? json.vendors ?? [];
+      const vendors = raw.flatMap((v) => {
+        const id = v.contact_id ?? v.vendor_id;
+        const name = v.contact_name ?? v.vendor_name;
+        return typeof id === 'string' && typeof name === 'string' ? [{ id, name }] : [];
+      });
+      const matched = matchVendorByName(vendors, merchant);
+      if (matched) return matched;
+    }
+
+    const createRes = await fetchWithTimeout(
+      `${baseUrl}/zoho/contacts/create`,
+      {
+        method: 'POST',
+        headers: serviceHeaders({ 'Content-Type': 'application/json' }, brand),
+        body: JSON.stringify({ contact_name: merchant.trim(), contact_type: 'vendor' }),
+      },
+      15000,
+    );
+    if (!createRes.ok) {
+      logger.warn({ merchant, brand, status: createRes.status }, 'Zoho vendor create failed — pushing without vendor');
+      return null;
+    }
+    const created = await createRes.json() as {
+      data?: { contact?: { contact_id?: string } };
+      contact?: { contact_id?: string };
+    };
+    return created.data?.contact?.contact_id ?? created.contact?.contact_id ?? null;
+  } catch (err) {
+    logger.warn({ err, merchant, brand }, 'Zoho vendor resolution failed — pushing without vendor');
+    return null;
+  }
+}
+
+/**
+ * Attach a receipt file to an existing Zoho Books expense. Best-effort: the
+ * expense already exists in Zoho, so a failed attachment logs and returns
+ * false instead of failing the push.
+ */
+export async function attachReceiptToBooksExpense(
+  zohoExpenseId: string,
+  file: { buffer: Buffer; filename: string; mimeType: string },
+  brand: string,
+): Promise<boolean> {
+  if (env.ZOHO_MODE !== 'service' || env.ZOHO_DRY_RUN) return false;
+  const baseUrl = env.ZOHO_SERVICE_BASE_URL;
+  if (!baseUrl || !env.ZOHO_SERVICE_TOKEN) return false;
+
+  try {
+    const form = new FormData();
+    form.append('attachment', new Blob([new Uint8Array(file.buffer)], { type: file.mimeType }), file.filename);
+    const res = await fetchWithTimeout(
+      `${baseUrl}/zoho/expenses/attach_receipt/${encodeURIComponent(zohoExpenseId)}`,
+      // No explicit Content-Type: fetch sets the multipart boundary itself.
+      { method: 'POST', headers: serviceHeaders({}, brand), body: form },
+      30000,
+    );
+    if (!res.ok) {
+      logger.warn({ zohoExpenseId, brand, status: res.status }, 'Zoho receipt attach failed');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn({ err, zohoExpenseId, brand }, 'Zoho receipt attach failed');
+    return false;
+  }
+}
+
 /** Wire shape for create_books — only fields the integration service / Zoho Books accept. */
 export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown> {
   const p = payload as ZohoServicePayload & ZohoPushPayload;
@@ -198,6 +290,7 @@ export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown
     brand: 'brand' in p ? p.brand : env.ZOHO_DEFAULT_BRAND,
     account_id: 'account_id' in p ? p.account_id : undefined,
     paid_through_account_id: 'paid_through_account_id' in p ? p.paid_through_account_id : undefined,
+    vendor_id: 'vendor_id' in p ? (p.vendor_id ?? undefined) : undefined,
     reimbursable: 'reimbursable' in p ? p.reimbursable : undefined,
     // Do not send nested `source`, `category`, or `paymentMethod` — Zoho Books treats
     // `source` as a short string field and rejects our provenance object.

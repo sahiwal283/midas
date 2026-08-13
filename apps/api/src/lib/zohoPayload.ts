@@ -17,6 +17,8 @@ export interface ZohoServicePayload {
   account_id: string | null;
   /** Zoho Books paid-through account_id (card / reimbursement liability). */
   paid_through_account_id: string | null;
+  /** Zoho Books vendor (contact) id resolved from the merchant name — set just before push. */
+  vendor_id?: string | null;
   category: { id: string | null; name: string | null; proposedZohoAccount: string | null };
   paymentMethod: { id: string | null; label: string | null; proposedPaidThroughAccount: string | null };
   reimbursable: boolean;

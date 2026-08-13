@@ -1,9 +1,15 @@
-import { eq } from 'drizzle-orm';
+import path from 'path';
+import fs from 'fs/promises';
+import { asc, eq } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses } from '../db/schema';
+import { expenses, receipts } from '../db/schema';
+import { env } from '../config/env';
 import { auditLog } from './audit';
 import { isPartnerExpense } from './expenseKind';
-import { zoho, ZohoServiceError, type ZohoPushResult } from './zoho';
+import {
+  zoho, ZohoServiceError, resolveBooksVendorId, attachReceiptToBooksExpense,
+  type ZohoPushResult,
+} from './zoho';
 import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
 import { resolveCategoryEntityAccountId } from './categoryZohoAccounts';
 import { classifyZohoError } from './zohoErrors';
@@ -67,6 +73,9 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
 
   const categoryEntityAccountId = await resolveCategoryEntityAccountId(expense.categoryId, expense.zohoEntity);
   const payload = buildZohoServicePayload({ ...expense, categoryEntityAccountId });
+  // Best-effort vendor: match or create a Books vendor from the merchant so
+  // the Zoho record is searchable by name. Never blocks the push.
+  payload.vendor_id = await resolveBooksVendorId(expense.merchant, payload.brand);
   if (!payload.account_id) {
     return {
       ok: false, status: 409, code: 'MISSING_ZOHO_EXPENSE_ACCOUNT',
@@ -97,13 +106,40 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
 
     await syncExpenseToTransaction(updated);
 
+    // Best-effort receipt attachment: the Zoho record exists either way, so a
+    // failed attach only logs — the receipt always remains in Midas.
+    let receiptAttached = false;
+    if (result.zohoExpenseId && !result.dryRun) {
+      const receipt = await db.query.receipts.findFirst({
+        where: eq(receipts.expenseId, expense.id),
+        orderBy: [asc(receipts.uploadedAt)],
+      });
+      if (receipt) {
+        try {
+          const buffer = await fs.readFile(path.join(env.UPLOADS_DIR, receipt.storagePath));
+          receiptAttached = await attachReceiptToBooksExpense(
+            result.zohoExpenseId,
+            { buffer, filename: receipt.filename, mimeType: receipt.mimeType },
+            payload.brand,
+          );
+        } catch {
+          // File unreadable — leave receiptAttached false; the audit log records it.
+        }
+      }
+    }
+
     await auditLog({
       entityType: 'expense',
       entityId: expense.id,
       userId: actorUserId,
       action: 'zoho.pushed',
       after: result,
-      metadata: { idempotencyKey: payload.idempotencyKey, dryRun: result.dryRun ?? false },
+      metadata: {
+        idempotencyKey: payload.idempotencyKey,
+        dryRun: result.dryRun ?? false,
+        vendorId: payload.vendor_id ?? null,
+        receiptAttached,
+      },
     });
     return { ok: true, expense: updated, zoho: result };
   } catch (err) {
