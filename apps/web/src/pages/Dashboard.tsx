@@ -198,9 +198,11 @@ function EmployeeDashboard() {
 
   return (
     <div className="p-4 lg:p-8">
-      <div className="mb-8 flex items-start justify-between">
+      {/* The bell floats top-right on mobile, so keep the greeting clear of it;
+          the Add button is desktop-only \u2014 the camera FAB covers mobile. */}
+      <div className="mb-6 flex items-start justify-between pr-10 lg:mb-8 lg:pr-0">
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">
+          <h1 className="font-display text-2xl font-semibold text-ink lg:text-3xl">
             {timeGreeting()}, {user?.name?.split(' ')[0]}
           </h1>
           <p className="mt-1 text-sm text-charcoal/55">
@@ -211,7 +213,7 @@ function EmployeeDashboard() {
         </div>
         <Link
           to="/expenses/new"
-          className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-600"
+          className="hidden items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-600 lg:flex"
         >
           <Plus className="h-4 w-4" />
           Add Transaction
@@ -246,8 +248,8 @@ function EmployeeDashboard() {
         </div>
       )}
 
-      {/* Action-first lanes */}
-      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+      {/* Action-first lanes — compact 3-up on phones instead of stacked slabs */}
+      <div className="mb-6 grid grid-cols-3 gap-2 sm:gap-4 lg:mb-8">
         <StatCard
           label="Needs your attention"
           value={actionNeeded.length}
@@ -268,7 +270,7 @@ function EmployeeDashboard() {
 
       {/* Recent expenses */}
       <div className="rounded-xl border border-ink/10 bg-white shadow-panel">
-        <div className="flex items-center justify-between border-b border-gold-400/60 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-gold-400/60 px-4 py-4 sm:px-6">
           <h2 className="font-display text-lg font-semibold text-ink">Recent expenses</h2>
           <Link to="/expenses" className="text-sm font-medium text-brand-700 hover:text-brand-800">View all</Link>
         </div>
@@ -286,19 +288,20 @@ function EmployeeDashboard() {
               <Link
                 key={expense.id}
                 to={`/expenses/${expense.id}`}
-                className={`flex items-center justify-between px-6 py-4 hover:bg-ink/[0.02] ${expense.status === 'awaiting_info' ? 'bg-amber-50/80' : ''}`}
+                className={`flex items-start justify-between gap-3 px-4 py-3 hover:bg-ink/[0.02] sm:items-center sm:px-6 sm:py-4 ${expense.status === 'awaiting_info' ? 'bg-amber-50/80' : ''}`}
               >
-                <div>
-                  <p className="font-medium text-ink">{expense.merchant}</p>
-                  <p className="text-sm text-charcoal/50">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-ink">{expense.merchant}</p>
+                  <p className="truncate text-sm text-charcoal/50">
                     {expense.date} · {expense.category?.name ?? 'Uncategorized'}
                   </p>
                 </div>
-                <div className="flex items-center gap-4">
+                {/* Phone: amount over status, right-aligned. Desktop: side by side. */}
+                <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
                   <span className="font-semibold text-ink">
                     {expense.currency} {Number(expense.amount).toFixed(2)}
                   </span>
-                  <div className="w-40 text-right">
+                  <div className="text-right sm:w-40">
                     {expense.status === 'awaiting_info' ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
                         <AlertCircle className="h-3 w-3" />
@@ -333,12 +336,12 @@ function StatCard({
   accent?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border bg-white p-5 shadow-panel ${accent ? 'border-amber-400/60' : 'border-ink/10'}`}>
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-charcoal/55">{label}</p>
-        {icon}
+    <div className={`rounded-xl border bg-white p-3 shadow-panel sm:p-5 ${accent ? 'border-amber-400/60' : 'border-ink/10'}`}>
+      <div className="flex items-center justify-between gap-1">
+        <p className="text-xs leading-tight text-charcoal/55 sm:text-sm">{label}</p>
+        <span className="hidden sm:block">{icon}</span>
       </div>
-      <p className="mt-2 font-display text-3xl font-semibold text-ink">{value}</p>
+      <p className="mt-1.5 font-display text-2xl font-semibold text-ink sm:mt-2 sm:text-3xl">{value}</p>
     </div>
   );
 }

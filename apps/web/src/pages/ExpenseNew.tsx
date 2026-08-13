@@ -8,6 +8,7 @@ import { CategoryPicker } from '../components/CategoryPicker';
 import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
 import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
+import { compressReceiptImage } from '../lib/receiptCompress';
 import type { Receipt } from '../types';
 
 type WizardStep = 'choose' | 'form' | 'done';
@@ -184,8 +185,11 @@ export function ExpenseNew() {
   }, [ocrCategorySuggestion, categories, form.categoryId]);
 
   /** Photo/upload entry: create empty draft, upload receipt, let OCR prefill. */
-  async function startWithReceipt(file: File) {
+  async function startWithReceipt(original: File) {
     setError('');
+    // Shrink multi-MB camera photos before they hit the network — the single
+    // biggest lever for upload speed on mobile data.
+    const file = await compressReceiptImage(original);
     setReceipt(file);
     setStep('form');
     setUploading(true);

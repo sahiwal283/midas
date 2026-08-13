@@ -8,6 +8,7 @@ import {
 import { expenseApi, accountantApi } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { CategoryPicker } from '../components/CategoryPicker';
+import { compressReceiptImage } from '../lib/receiptCompress';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
 import { ReceiptPreview } from '../components/ReceiptPreview';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
@@ -568,7 +569,7 @@ export function ExpenseDetail() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => expenseApi.uploadReceipt(id!, file),
+    mutationFn: async (file: File) => expenseApi.uploadReceipt(id!, await compressReceiptImage(file)),
     onSuccess: () => {
       setReceiptUploadFailed(false);
       qc.invalidateQueries({ queryKey: ['expense', id] });

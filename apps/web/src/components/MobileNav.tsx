@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, ReceiptText, Camera, X, ClipboardList, BarChart3,
   Briefcase, Settings, LogOut, Upload, Activity,
 } from 'lucide-react';
+import { MIDAS_VERSION } from '@midas/shared';
+import client from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 // Matches the desktop navy rail: gold marks the active destination.
@@ -19,6 +22,14 @@ export function MobileNav() {
   // Both scoped review pages share one bottom-bar tab, so match either instead
   // of relying on NavLink's own (single-path) active check.
   const queueActive = location.pathname.startsWith('/accountant');
+
+  // Same source as the desktop sidebar: live API version, constant fallback.
+  const { data: meta } = useQuery({
+    queryKey: ['meta'],
+    queryFn: () => client.get<{ version: string }>('/meta').then((r) => r.data),
+    staleTime: Infinity,
+  });
+  const version = `v${meta?.version ?? MIDAS_VERSION}`;
 
   const role = user?.role;
   const isDeveloper = role === 'developer';
@@ -55,6 +66,9 @@ export function MobileNav() {
               <LogOut className="h-4 w-4" />
               Log out
             </button>
+            <p className="border-t border-ink/5 px-4 pb-1 pt-2 text-center text-[11px] text-charcoal/35">
+              Midas {version}
+            </p>
           </div>
         </div>
       )}
