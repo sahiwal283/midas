@@ -11,8 +11,8 @@ describe('editableFields', () => {
     expect(editableFields('draft', null)).toBe('all');
     expect(editableFields('awaiting_info', null)).toBe('all');
   });
-  it('pending is notes-only', () => {
-    expect(editableFields('pending', null)).toBe('notes_only');
+  it('pending is fully editable so submitters can complete missing fields pre-review', () => {
+    expect(editableFields('pending', null)).toBe('all');
   });
   it('in_review/approved/rejected/zoho_sync_failed are locked', () => {
     for (const s of ['in_review', 'approved', 'rejected', 'zoho_sync_failed']) {
@@ -21,7 +21,7 @@ describe('editableFields', () => {
   });
   it('refusal messages are state-specific', () => {
     expect(editRefusalMessage('approved', 'z1')).toMatch(/synced to Zoho/);
-    expect(editRefusalMessage('pending', null)).toMatch(/notes/i);
+    expect(editRefusalMessage('approved', null)).toMatch(/approved/);
   });
 });
 

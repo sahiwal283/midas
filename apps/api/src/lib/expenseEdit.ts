@@ -4,13 +4,14 @@ export type Editability = 'all' | 'notes_only' | 'none';
 
 export function editableFields(status: string, zohoExpenseId: string | null): Editability {
   if (zohoExpenseId) return 'none';
-  if (status === 'draft' || status === 'awaiting_info') return 'all';
-  if (status === 'pending') return 'notes_only';
+  // pending stays fully editable so submitters can complete missing fields
+  // (receipt, payment method, …) before an accountant picks the expense up —
+  // a completed daily expense then auto-approves (see lib/pendingCompletion).
+  if (status === 'draft' || status === 'awaiting_info' || status === 'pending') return 'all';
   return 'none';
 }
 
 export function editRefusalMessage(status: string, zohoExpenseId: string | null): string {
   if (zohoExpenseId) return 'This expense is synced to Zoho and cannot be edited. Corrections require an explicit adjustment.';
-  if (status === 'pending') return 'Only notes can be changed while the expense is awaiting approval.';
   return `Expenses cannot be edited from status '${status}'.`;
 }

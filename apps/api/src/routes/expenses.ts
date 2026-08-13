@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { eq, and, or, desc, ilike, gte, lte, count, sql, inArray } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseCategories, paymentMethods, companies } from '../db/schema';
+import { expenses, expenseCategories, paymentMethods, companies, expenseMessages } from '../db/schema';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
@@ -21,6 +21,9 @@ import { pushExpenseToZoho } from '../lib/zohoPush';
 import { syncExpenseToTransaction, removeSyncedTransaction } from '../lib/syncExpenseTransaction';
 import { effectivelyActiveIds, descendantIds } from '../lib/categoryTree';
 import { assertActiveCompany } from '../lib/companies';
+import { isDailyAutoPushCandidate, incompleteSubmissionMessage } from '../lib/pendingCompletion';
+import { maybeAutoPushPending } from '../lib/pendingCompletionDb';
+import { notifyUser } from '../lib/notify';
 
 const router = Router();
 
@@ -262,6 +265,17 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   await syncExpenseToTransaction(updated);
   await auditLog({ entityType: 'expense', entityId: expense.id, userId: req.user!.id, action: 'updated', before, after: updated });
 
+  // Completing a pending daily expense (adding payment method, category, …)
+  // auto-approves and pushes it — no accountant round-trip.
+  const completion = updated.status === 'pending'
+    ? await maybeAutoPushPending(updated.id, req.user!.id)
+    : null;
+  if (completion) {
+    const fresh = await db.query.expenses.findFirst({ where: eq(expenses.id, updated.id) });
+    res.json({ expense: fresh ?? updated, autoPushed: completion.autoPushed });
+    return;
+  }
+
   res.json({ expense: updated });
 }));
 
@@ -424,7 +438,31 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
 
   await auditLog({ entityType: 'expense', entityId: expense.id, userId: req.user!.id, action: 'submitted', before: { status: 'draft' }, after: { status: 'pending' } });
 
-  res.json({ expense: updated });
+  // A daily expense that would have auto-approved but for missing details:
+  // tell the submitter exactly what to add so they can complete it and skip
+  // the accountant entirely (see lib/pendingCompletion). requestType stays
+  // null — a non-null requestType would itself block Zoho readiness.
+  const missingForAutoPush = isDailyAutoPushCandidate({
+    sourceApp: expense.sourceApp,
+    expenseKind: expense.expenseKind,
+    companyZohoEnabled: company?.zohoEnabled,
+  }) && !readiness.ready ? readiness.missing : null;
+  if (missingForAutoPush) {
+    await db.insert(expenseMessages).values({
+      expenseId: expense.id,
+      senderId: req.user!.id,
+      body: incompleteSubmissionMessage(missingForAutoPush),
+      isSystem: true,
+    });
+    await notifyUser(req.user!.id, 'expense_incomplete', {
+      expenseId: expense.id,
+      merchant: expense.merchant,
+      amount: expense.amount,
+      missing: missingForAutoPush,
+    });
+  }
+
+  res.json({ expense: updated, missing: missingForAutoPush ?? undefined });
 }));
 
 const bulkDeleteSchema = z.object({

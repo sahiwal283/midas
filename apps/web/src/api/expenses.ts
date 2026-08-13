@@ -71,7 +71,7 @@ export const expenseApi = {
     }>('/zoho/expense-accounts', { params: { zohoEntity } }).then((r) => r.data),
 
   submit: (id: string) =>
-    client.post<{ expense: Expense; autoPushed?: boolean }>(`/expenses/${id}/submit`).then((r) => r.data),
+    client.post<{ expense: Expense; autoPushed?: boolean; missing?: string[] }>(`/expenses/${id}/submit`).then((r) => r.data),
 
   delete: (id: string, force = false) =>
     client.delete(`/expenses/${id}`, { params: force ? { force: 'true' } : undefined }).then((r) => r.data),

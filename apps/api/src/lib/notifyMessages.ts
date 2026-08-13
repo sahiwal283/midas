@@ -3,13 +3,15 @@
  * this without a database (see src/__tests__/notifyMessages.test.ts).
  */
 
-export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid';
+export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete';
 
 export interface NotificationInput {
   merchant: string;
   amount: string | number;
   /** Reviewer note — appended to the body for rejections when present. */
   note?: string;
+  /** Missing readiness items — listed in the body for incomplete submissions. */
+  missing?: string[];
 }
 
 /** "12.5" | 12.5 → "$12.50"; falls back to the raw string when not numeric. */
@@ -40,6 +42,13 @@ export function buildNotification(
         title: 'Expense rejected',
         body: `Your ${amount} expense at ${i.merchant} was rejected.`
           + (i.note ? ` Note: ${i.note}` : ''),
+      };
+    case 'expense_incomplete':
+      return {
+        title: 'Your expense is missing details',
+        body: `Your ${amount} expense at ${i.merchant} was submitted without: `
+          + `${(i.missing ?? []).join(', ')}. Add the missing item(s) and it will be `
+          + 'approved automatically — no accountant review needed.',
       };
     case 'reimbursement_paid':
       return {
