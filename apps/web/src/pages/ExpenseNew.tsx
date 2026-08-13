@@ -130,6 +130,13 @@ export function ExpenseNew() {
   }
 
   function applyOcr(r: Receipt) {
+    // Upload succeeded but OCR itself failed — the receipt is safely attached;
+    // tell the user to type the details instead of pretending we read them.
+    if (r.ocrStatus === 'failed') {
+      setOcrRan(false);
+      setError('Receipt attached, but we could not read it automatically. Please fill in the details below.');
+      return;
+    }
     const fields = r.ocrData?.fields;
     setOcrRan(true);
     setOcrCategorySuggestion(fields?.category?.value ?? null);
@@ -197,7 +204,14 @@ export function ExpenseNew() {
         void qc.invalidateQueries({ queryKey: ['upload-queue-count'] });
         setError('You appear to be offline. The receipt is queued and will retry automatically — you can keep filling out the form.');
       } else {
-        setError('We could not read the receipt automatically. You can fill in the details manually below.');
+        // The upload itself failed — the server has no receipt. Clear the local
+        // file so the form doesn't claim "Receipt attached" when nothing is.
+        setReceipt(null);
+        setError(
+          err && typeof err === 'object' && (err as any)?.response?.status === 413
+            ? 'That photo is too large to upload (max 10 MB). Please retake it or choose a smaller image.'
+            : 'We could not upload the receipt. You can fill in the details manually and try attaching it again.',
+        );
         setOcrRan(false);
       }
     } finally {
