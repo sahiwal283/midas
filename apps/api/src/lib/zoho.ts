@@ -249,7 +249,9 @@ export async function attachReceiptToBooksExpense(
 
   try {
     const form = new FormData();
-    form.append('attachment', new Blob([new Uint8Array(file.buffer)], { type: file.mimeType }), file.filename);
+    // Zoho Books' POST /expenses/{id}/receipt requires the field name `receipt`
+    // (the integration service forwards multipart field names verbatim).
+    form.append('receipt', new Blob([new Uint8Array(file.buffer)], { type: file.mimeType }), file.filename);
     const res = await fetchWithTimeout(
       `${baseUrl}/zoho/expenses/attach_receipt/${encodeURIComponent(zohoExpenseId)}`,
       // No explicit Content-Type: fetch sets the multipart boundary itself.
