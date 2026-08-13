@@ -124,7 +124,7 @@ export function PaymentMethodsSection() {
       {showForm && (
         <div className="rounded-xl border border-brand-200 bg-brand-50 p-5">
           <h2 className="mb-4 text-sm font-semibold text-gray-700">New Payment Method</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">Label *</label>
               <input

@@ -178,6 +178,14 @@ export async function listExpenseAccounts(brand: string, timeoutMs = 15000): Pro
 /** Wire shape for create_books — only fields the integration service / Zoho Books accept. */
 export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown> {
   const p = payload as ZohoServicePayload & ZohoPushPayload;
+  // The service drops `merchant` when creating the Books record (no vendor
+  // mapping), which left expenses unsearchable in Zoho. Bake the merchant into
+  // the description so the record always carries it.
+  const merchant = p.merchant?.trim() ?? '';
+  const notes = p.description?.trim() || null;
+  const description = notes
+    ? (merchant && !notes.toLowerCase().startsWith(merchant.toLowerCase()) ? `${merchant} — ${notes}` : notes)
+    : merchant || null;
   return {
     idempotencyKey: 'idempotencyKey' in p ? p.idempotencyKey : undefined,
     expenseId: 'expenseId' in p ? p.expenseId : undefined,
@@ -185,7 +193,7 @@ export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown
     amount: p.amount,
     currency: p.currency,
     date: p.date,
-    description: p.description ?? null,
+    description,
     zohoEntity: p.zohoEntity,
     brand: 'brand' in p ? p.brand : env.ZOHO_DEFAULT_BRAND,
     account_id: 'account_id' in p ? p.account_id : undefined,
