@@ -90,6 +90,28 @@ export function ChartOfAccountsSection() {
     onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not clear the mapping'),
   });
 
+  const [syncResult, setSyncResult] = useState('');
+  const syncMutation = useMutation({
+    mutationFn: () => client.post<{ summary: {
+      company: string; brand: string | null; accounts: number; created: string[]; mapped: number; error?: string;
+    }[] }>('/admin/categories/sync-zoho').then((r) => r.data),
+    onSuccess: ({ summary }) => {
+      setError('');
+      const created = summary.flatMap((s) => s.created);
+      const mapped = summary.reduce((n, s) => n + s.mapped, 0);
+      const failures = summary.filter((s) => s.error).map((s) => `${s.company} (${s.error})`);
+      setSyncResult(
+        `${created.length ? `Created: ${created.join(', ')}. ` : 'No new categories. '}`
+        + `${mapped} mapping${mapped === 1 ? '' : 's'} added.`
+        + (failures.length ? ` Failed: ${failures.join('; ')}.` : ''),
+      );
+      void qc.invalidateQueries({ queryKey: ['admin-categories'] });
+      void qc.invalidateQueries({ queryKey: ['expense-categories'] });
+      void qc.invalidateQueries({ queryKey: ['coa-mappings'] });
+    },
+    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not import categories from Zoho'),
+  });
+
   const { rows, toggle, expandAll, collapseAll } = useCollapsibleTree(categories);
   const accountName = (id: string) => accounts.find((a) => a.accountId === id)?.accountName ?? id;
 
@@ -181,10 +203,23 @@ export function ChartOfAccountsSection() {
             : `${accounts.length} Zoho accounts · ${mappedCount} mapped · ${Math.max(0, accounts.length - claimedCount)} still available`}
         </span>
         <div className="ml-auto flex items-center gap-3 text-xs">
+          <button
+            onClick={() => { setSyncResult(''); syncMutation.mutate(); }}
+            disabled={syncMutation.isPending}
+            className="rounded-lg border border-brand-300 px-3 py-1.5 font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+          >
+            {syncMutation.isPending ? 'Importing…' : 'Import categories from Zoho'}
+          </button>
           <button onClick={expandAll} className="text-brand-600 underline hover:text-brand-700">Expand all</button>
           <button onClick={collapseAll} className="text-brand-600 underline hover:text-brand-700">Collapse all</button>
         </div>
       </div>
+
+      {syncResult && (
+        <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+          {syncResult}
+        </div>
+      )}
 
       {accountsFailed && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

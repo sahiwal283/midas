@@ -120,7 +120,7 @@ export function BudgetsSection() {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         {budgets.isLoading ? (
           <p className="p-6 text-sm text-gray-400">Loading…</p>
         ) : (budgets.data ?? []).length === 0 ? (

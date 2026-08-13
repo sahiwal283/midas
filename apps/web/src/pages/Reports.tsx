@@ -94,6 +94,7 @@ function RankedTable({ title, rows }: { title: string; rows: ReportRow[] }) {
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-gray-400">No data in this range.</p>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -118,6 +119,7 @@ function RankedTable({ title, rows }: { title: string; rows: ReportRow[] }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </Card>
   );
@@ -162,7 +164,7 @@ export function Reports() {
   const empty = !isLoading && (data?.totals.count ?? 0) === 0;
 
   return (
-    <div className="p-8">
+    <div className="p-4 lg:p-8">
       <div className="mb-6">
         <h1 className="font-display text-3xl font-semibold text-ink">Reports</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -383,7 +385,7 @@ export function Reports() {
               <KpiTile label="Paid" value={usd(data.reimbursement.paid)} />
             </div>
             {data.reimbursement.byEmployee.length > 0 && (
-              <div className="mt-4">
+              <div className="mt-4 overflow-x-auto">
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">By employee</h3>
                 <table className="w-full text-sm">
                   <thead>

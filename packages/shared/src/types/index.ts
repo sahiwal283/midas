@@ -427,7 +427,7 @@ export interface ClosedPeriod {
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 
-export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid';
+export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete';
 
 export interface Notification {
   id: string;

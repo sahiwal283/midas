@@ -18,6 +18,7 @@ import { canDeleteUser, canChangeRole, hasOwnedData, type OwnedCounts } from '..
 import { issueInvite } from '../lib/invites';
 import { parseAuditFilters } from '../lib/auditFilters';
 import { wouldCreateCycle } from '../lib/categoryTree';
+import { syncCategoriesFromZoho } from '../lib/categorySyncDb';
 
 const router = Router();
 router.use(authenticate);
@@ -590,6 +591,15 @@ router.patch('/categories/:id', accounting, asyncHandler(async (req, res) => {
     .returning();
 
   res.json({ category: updated });
+}));
+
+// Import expense-class accounts from each Zoho-enabled company's live chart
+// of accounts: unknown account names become new top-level categories; matched
+// names gain a (category, company) mapping unless one already exists (a
+// deliberate accountant mapping is never overwritten). Idempotent.
+router.post('/categories/sync-zoho', accounting, asyncHandler(async (req, res) => {
+  const summary = await syncCategoriesFromZoho(req.user!.id);
+  res.json({ summary });
 }));
 
 // ── Chart of Accounts (category → Zoho COA account, per company) ───────────

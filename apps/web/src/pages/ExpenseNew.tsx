@@ -42,7 +42,12 @@ export function ExpenseNew() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null);
-  const [result, setResult] = useState<{ autoPushed: boolean; pending: boolean } | null>(null);
+  const [result, setResult] = useState<{
+    autoPushed: boolean;
+    pending: boolean;
+    missing: string[] | null;
+    expenseId: string | null;
+  } | null>(null);
 
   const [form, setForm] = useState({
     merchant: '',
@@ -130,6 +135,13 @@ export function ExpenseNew() {
   }
 
   function applyOcr(r: Receipt) {
+    // Upload succeeded but OCR itself failed — the receipt is safely attached;
+    // tell the user to type the details instead of pretending we read them.
+    if (r.ocrStatus === 'failed') {
+      setOcrRan(false);
+      setError('Receipt attached, but we could not read it automatically. Please fill in the details below.');
+      return;
+    }
     const fields = r.ocrData?.fields;
     setOcrRan(true);
     setOcrCategorySuggestion(fields?.category?.value ?? null);
@@ -197,7 +209,14 @@ export function ExpenseNew() {
         void qc.invalidateQueries({ queryKey: ['upload-queue-count'] });
         setError('You appear to be offline. The receipt is queued and will retry automatically — you can keep filling out the form.');
       } else {
-        setError('We could not read the receipt automatically. You can fill in the details manually below.');
+        // The upload itself failed — the server has no receipt. Clear the local
+        // file so the form doesn't claim "Receipt attached" when nothing is.
+        setReceipt(null);
+        setError(
+          err && typeof err === 'object' && (err as any)?.response?.status === 413
+            ? 'That photo is too large to upload (max 10 MB). Please retake it or choose a smaller image.'
+            : 'We could not upload the receipt. You can fill in the details manually and try attaching it again.',
+        );
         setOcrRan(false);
       }
     } finally {
@@ -267,6 +286,8 @@ export function ExpenseNew() {
       setResult({
         autoPushed: !!submitted.autoPushed,
         pending: submitted.expense.status === 'pending',
+        missing: submitted.missing ?? null,
+        expenseId: id,
       });
       setStep('done');
     } catch (err: any) {
@@ -292,15 +313,27 @@ export function ExpenseNew() {
           <CheckCircle2 className="mx-auto h-12 w-12 text-success" />
           <StepHint current={3} total={3} label="Done" />
           <h1 className="mt-3 font-display text-2xl font-semibold text-ink">
-            {result.pending ? 'Submitted for review' : 'Approved ✓'}
+            {result.pending
+              ? (result.missing?.length ? 'Submitted — a few details missing' : 'Submitted for review')
+              : 'Approved ✓'}
           </h1>
           <p className="mt-2 text-sm text-charcoal/55">
             {result.pending
-              ? 'Your expense was submitted. The accountant will review it shortly.'
+              ? result.missing?.length
+                ? `Add the missing ${result.missing.join(', ')} and this expense will be approved automatically — no accountant review needed.`
+                : 'Your expense was submitted. The accountant will review it shortly.'
               : result.autoPushed
                 ? 'Your expense was approved and sent to accounting.'
                 : 'Your expense was approved.'}
           </p>
+          {result.pending && !!result.missing?.length && result.expenseId && (
+            <Link
+              to={`/expenses/${result.expenseId}`}
+              className="mt-3 inline-block text-sm font-medium text-brand-700 hover:underline"
+            >
+              Complete it now →
+            </Link>
+          )}
           <div className="mt-6 flex justify-center gap-3">
             <button
               type="button"

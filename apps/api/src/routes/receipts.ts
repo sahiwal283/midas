@@ -9,6 +9,7 @@ import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { storage } from '../lib/storage';
 import { runReceiptOcr } from '../lib/runReceiptOcr';
+import { maybeAutoPushPending } from '../lib/pendingCompletionDb';
 import { toJpegIfHeic } from '../lib/receiptImage';
 import { auditLog } from '../lib/audit';
 import { env } from '../config/env';
@@ -72,13 +73,18 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
 
   if (runAsync) {
     // Escape hatch only — see docs/SYNC_AND_OFFLINE.md
-    void runReceiptOcr(receipt.id, stored.storagePath);
+    void runReceiptOcr(receipt.id, stored.storagePath).then(() =>
+      maybeAutoPushPending(req.params.expenseId, req.user!.id),
+    );
     res.status(201).json({ receipt, ocrMode: 'async' });
     return;
   }
 
   const withOcr = await runReceiptOcr(receipt.id, stored.storagePath);
-  res.status(201).json({ receipt: withOcr, ocrMode: 'sync' });
+  // A receipt was often the last missing piece of a pending daily expense —
+  // completing it auto-approves and pushes without accountant review.
+  const completion = await maybeAutoPushPending(req.params.expenseId, req.user!.id);
+  res.status(201).json({ receipt: withOcr, ocrMode: 'sync', autoPushed: completion?.autoPushed });
 }));
 
 // Stream receipt file inline (session cookie auth — used by UI preview)

@@ -29,7 +29,9 @@ services:
     ports:
       - "4000:4000"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/v1/health"]
+      # 127.0.0.1, not localhost: the container resolves localhost to ::1 and
+      # the API listens on IPv4 only, so the check would always fail.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -47,7 +49,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
       interval: 30s
       timeout: 10s
       retries: 3

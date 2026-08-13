@@ -6,6 +6,8 @@ import {
   Clock, XCircle, RefreshCw, CreditCard, Trash2, Pencil,
 } from 'lucide-react';
 import { expenseApi, accountantApi } from '../api/expenses';
+import { companyApi } from '../api/companies';
+import { CategoryPicker } from '../components/CategoryPicker';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
 import { ReceiptPreview } from '../components/ReceiptPreview';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
@@ -317,7 +319,28 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ merchant: '', amount: '', date: '', description: '' });
+  const [form, setForm] = useState({
+    merchant: '', amount: '', date: '', description: '',
+    paymentMethodId: '', company: '', categoryId: '',
+  });
+
+  // Lists for the completion fields — fetched only while the editor is open.
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['payment-methods'],
+    queryFn: () => expenseApi.paymentMethods(),
+    enabled: editing && mode === 'all',
+  });
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => companyApi.list(),
+    enabled: editing && mode === 'all',
+  });
+  const { data: categories = [] } = useQuery({
+    queryKey: ['expense-categories'],
+    queryFn: () => expenseApi.categories(),
+    enabled: editing && mode === 'all',
+    staleTime: 60_000,
+  });
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -329,6 +352,9 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
               amount: Number(form.amount),
               date: form.date,
               description: form.description,
+              ...(form.paymentMethodId ? { paymentMethodId: form.paymentMethodId } : {}),
+              ...(form.company ? { zohoEntity: form.company } : {}),
+              ...(form.categoryId ? { categoryId: form.categoryId } : {}),
             }
           : { description: form.description },
       ),
@@ -355,6 +381,9 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
       amount: String(expense.amount ?? ''),
       date: expense.date ?? '',
       description: expense.description ?? '',
+      paymentMethodId: expense.paymentMethodId ?? '',
+      company: expense.zohoEntity ?? '',
+      categoryId: expense.categoryId ?? '',
     });
     setError('');
     setEditing(true);
@@ -390,7 +419,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
       {!editing ? (
         <p className="text-xs text-gray-400">
           {mode === 'all'
-            ? 'You can update the merchant, amount, date, and notes.'
+            ? 'You can update the merchant, amount, date, payment method, company, category, and notes.'
             : 'This expense is waiting for review — only the notes can be changed.'}
         </p>
       ) : (
@@ -427,6 +456,42 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
                     className={inputCls}
                   />
                 </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Payment method</label>
+                <select
+                  value={form.paymentMethodId}
+                  onChange={(e) => setForm((f) => ({ ...f, paymentMethodId: e.target.value }))}
+                  className={inputCls}
+                >
+                  <option value="">— Select payment method —</option>
+                  {paymentMethods.map((pm) => (
+                    <option key={pm.id} value={pm.id}>
+                      {pm.label}{pm.lastFour ? ` ···${pm.lastFour}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Company</label>
+                <select
+                  value={form.company}
+                  onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+                  className={inputCls}
+                >
+                  <option value="">— Select company —</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Category</label>
+                <CategoryPicker
+                  categories={categories}
+                  value={form.categoryId}
+                  onChange={(id) => setForm((f) => ({ ...f, categoryId: id }))}
+                />
               </div>
             </>
           )}
@@ -580,13 +645,27 @@ export function ExpenseDetail() {
     }
     return null;
   })();
-  // Field editing mirrors the API's state rules: draft/awaiting_info fully
-  // editable, pending notes-only, everything else (incl. Zoho-synced) locked.
+  // Field editing mirrors the API's state rules: draft/awaiting_info/pending
+  // fully editable (pending so submitters can complete missing fields before
+  // review), everything else (incl. Zoho-synced) locked.
   const editMode: 'all' | 'notes_only' | 'none' = (() => {
     if (!isOwner || expense.zohoExpenseId) return 'none';
-    if (isDraft || isAwaiting) return 'all';
-    if (expense.status === 'pending') return 'notes_only';
+    if (isDraft || isAwaiting || expense.status === 'pending') return 'all';
     return 'none';
+  })();
+  // What a pending daily expense still needs to auto-approve without an
+  // accountant. Mirrors the server's Zoho readiness checks the owner can fix.
+  // Partner expenses never sit in 'pending' (recorded as approved on submit),
+  // so pending + daily source is a sufficient guard here.
+  const missingForAutoPush: string[] = (() => {
+    if (!isOwner || expense.status !== 'pending') return [];
+    if (expense.sourceApp && expense.sourceApp !== 'browser_extension') return [];
+    const missing: string[] = [];
+    if (!(expense.receipts?.length)) missing.push('a receipt');
+    if (!expense.paymentMethodId) missing.push('a payment method');
+    if (!expense.categoryId && !expense.zohoExpenseAccountId) missing.push('a category');
+    if (!expense.zohoEntity) missing.push('a company');
+    return missing;
   })();
   const hasOpenRequest = expense.messages?.some(
     (m) => m.requestType && !m.isResolved,
@@ -599,7 +678,7 @@ export function ExpenseDetail() {
   })();
 
   return (
-    <div className="p-8">
+    <div className="p-4 lg:p-8">
       {/* Header */}
       <div className="mb-4 flex items-start gap-4">
         <button onClick={() => navigate(-1)} className="mt-0.5 rounded p-1 text-gray-400 hover:bg-gray-100">
@@ -729,9 +808,23 @@ export function ExpenseDetail() {
         </div>
       )}
 
-      {/* Status banner — user-facing only (the owner's rejected card replaces it) */}
-      {!isPrivileged && !(isOwner && isRejected) && (
-        <StatusBanner status={expense.status} isPrivileged={false} />
+      {/* Status banner — user-facing only (the owner's rejected card replaces it).
+          An incomplete pending daily expense gets an actionable checklist instead
+          of the generic "waiting for review" banner. */}
+      {missingForAutoPush.length > 0 ? (
+        <div className="mb-6 rounded-xl border-2 border-amber-400 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">
+            Almost done — add {missingForAutoPush.join(', ')} to finish this expense.
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            Once complete it will be approved and sent to accounting automatically — no
+            accountant review needed. Use the Receipts card below or the Edit details card.
+          </p>
+        </div>
+      ) : (
+        !isPrivileged && !(isOwner && isRejected) && (
+          <StatusBanner status={expense.status} isPrivileged={false} />
+        )
       )}
 
       {/* Action-needed callout for users */}
@@ -742,9 +835,9 @@ export function ExpenseDetail() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main column */}
-        <div className="col-span-2 space-y-6">
+        <div className="space-y-6 lg:col-span-2">
           {expense.description && (
             <div className="rounded-xl border border-gray-200 bg-white p-5">
               <h2 className="mb-2 text-sm font-semibold text-gray-700">Description</h2>
