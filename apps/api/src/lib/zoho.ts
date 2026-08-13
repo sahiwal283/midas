@@ -209,8 +209,10 @@ export async function resolveBooksVendorId(merchant: string, brand: string): Pro
       if (matched) return matched;
     }
 
+    // vendors/create maps to Books POST /contacts (a vendor-type contact) —
+    // NOT contacts/create, which is a CRM route requiring Last_Name.
     const createRes = await fetchWithTimeout(
-      `${baseUrl}/zoho/contacts/create`,
+      `${baseUrl}/zoho/vendors/create`,
       {
         method: 'POST',
         headers: serviceHeaders({ 'Content-Type': 'application/json' }, brand),
