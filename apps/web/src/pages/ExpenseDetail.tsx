@@ -678,7 +678,7 @@ export function ExpenseDetail() {
   })();
 
   return (
-    <div className="p-8">
+    <div className="p-4 lg:p-8">
       {/* Header */}
       <div className="mb-4 flex items-start gap-4">
         <button onClick={() => navigate(-1)} className="mt-0.5 rounded p-1 text-gray-400 hover:bg-gray-100">
@@ -835,9 +835,9 @@ export function ExpenseDetail() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main column */}
-        <div className="col-span-2 space-y-6">
+        <div className="space-y-6 lg:col-span-2">
           {expense.description && (
             <div className="rounded-xl border border-gray-200 bg-white p-5">
               <h2 className="mb-2 text-sm font-semibold text-gray-700">Description</h2>

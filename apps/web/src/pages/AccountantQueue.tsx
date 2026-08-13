@@ -571,7 +571,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
       )}
 
       {/* Summary stat cards */}
-      <div className="mb-6 grid grid-cols-4 gap-3">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {summaryLanes.map(({ id, color }) => (
           <SummaryCard
             key={id}
@@ -786,6 +786,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
             {activeLane === 'all' ? 'No expenses yet.' : `No items in this queue.`}
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -830,6 +831,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

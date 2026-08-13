@@ -59,13 +59,21 @@ export function MobileNav() {
         </div>
       )}
 
+      {/* Equal-width tab groups flank a fixed-width slot so the camera FAB sits
+          at the exact horizontal center regardless of how many tabs a role has. */}
       <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-white/10 bg-brand-800 pb-[env(safe-area-inset-bottom)] lg:hidden">
-        <NavLink to="/dashboard" className={itemCls}>
-          <LayoutDashboard className="h-5 w-5" />
-          Home
-        </NavLink>
+        <div className="flex flex-1 items-stretch">
+          <NavLink to="/dashboard" className={itemCls}>
+            <LayoutDashboard className="h-5 w-5" />
+            Home
+          </NavLink>
+          <NavLink to="/expenses" className={itemCls}>
+            <ReceiptText className="h-5 w-5" />
+            Expenses
+          </NavLink>
+        </div>
 
-        <div className="relative flex flex-1 justify-center">
+        <div className="flex w-16 shrink-0 justify-center">
           <Link
             to="/expenses/new?mode=scan"
             aria-label="Add transaction"
@@ -75,17 +83,13 @@ export function MobileNav() {
           </Link>
         </div>
 
-        <NavLink to="/expenses" className={itemCls}>
-          <ReceiptText className="h-5 w-5" />
-          Expenses
-        </NavLink>
-
-        {isPrivileged ? (
-          <NavLink to="/accountant/daily" className={() => itemCls({ isActive: queueActive })}>
-            <ClipboardList className="h-5 w-5" />
-            Queue
-          </NavLink>
-        ) : (
+        <div className="flex flex-1 items-stretch">
+          {isPrivileged && (
+            <NavLink to="/accountant/daily" className={() => itemCls({ isActive: queueActive })}>
+              <ClipboardList className="h-5 w-5" />
+              Queue
+            </NavLink>
+          )}
           <button
             onClick={() => setMoreOpen((o) => !o)}
             className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-brand-300"
@@ -93,17 +97,7 @@ export function MobileNav() {
             {moreOpen ? <X className="h-5 w-5" /> : <MoreDots />}
             More
           </button>
-        )}
-
-        {isPrivileged && (
-          <button
-            onClick={() => setMoreOpen((o) => !o)}
-            className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-brand-300"
-          >
-            {moreOpen ? <X className="h-5 w-5" /> : <MoreDots />}
-            More
-          </button>
-        )}
+        </div>
       </nav>
     </>
   );

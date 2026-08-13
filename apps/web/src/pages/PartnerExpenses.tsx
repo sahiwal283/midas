@@ -134,6 +134,7 @@ export function PartnerExpenses() {
             No partner expenses yet. Submit an expense and choose “Partner expense”.
           </p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink/10 text-left text-xs font-semibold uppercase tracking-wider text-charcoal/45">
@@ -160,6 +161,7 @@ export function PartnerExpenses() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

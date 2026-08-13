@@ -99,7 +99,7 @@ export function SearchableSelect({
         aria-expanded={open}
         aria-autocomplete="list"
         disabled={disabled}
-        className="w-full rounded border border-brand-200 px-3 py-2 text-sm"
+        className="w-full rounded border border-brand-200 px-3 py-3 text-sm lg:py-2"
         placeholder={placeholder}
         value={open ? query : (selected?.label ?? '')}
         onFocus={() => {

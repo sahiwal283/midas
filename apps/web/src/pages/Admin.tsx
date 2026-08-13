@@ -88,7 +88,7 @@ export function Admin() {
   const activeSection = allowedSections.has(section) ? section : defaultSectionForRole(user?.role);
 
   return (
-    <div className="p-8">
+    <div className="p-4 lg:p-8">
       <h1 className="mb-6 font-display text-3xl font-semibold text-ink">Settings</h1>
 
       <div className="flex flex-col gap-8 lg:flex-row">
@@ -197,7 +197,7 @@ function CompaniesTab() {
         </button>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -558,7 +558,7 @@ function UsersTab() {
       {showCreate && (
         <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-5">
           <h3 className="text-sm font-semibold text-gray-700">Create user</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
               <input
