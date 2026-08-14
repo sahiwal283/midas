@@ -1,8 +1,10 @@
-import { useState, Fragment } from 'react';
+import { useEffect, useMemo, useState, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, CreditCard } from 'lucide-react';
-import { paymentMethodsApi } from '../../api/expenses';
+import { Plus, CreditCard, AlertCircle } from 'lucide-react';
+import { paymentMethodsApi, expenseApi } from '../../api/expenses';
+import { companyApi } from '../../api/companies';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { SearchableSelect, type SearchableOption } from '../../components/SearchableSelect';
 import { useAuth } from '../../contexts/AuthContext';
 import client from '../../api/client';
 import type { PaymentMethod, User } from '../../types';
@@ -18,6 +20,27 @@ const BRAND_LABELS: Record<string, string> = {
 };
 
 const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
+
+interface ZohoPaidThroughAccount {
+  accountId: string;
+  accountName: string;
+  accountCode: string | null;
+  accountType: string;
+}
+
+/** "AMEX Business Platinum Card (-1002)" → { lastFour: '1002', brand: 'amex' } */
+export function suggestCardFromZohoAccount(accountName: string): { lastFour: string; brand: string } {
+  const digits = accountName.match(/(\d{3,4})\D*$/)?.[1] ?? '';
+  const n = accountName.toLowerCase();
+  const brand =
+    n.includes('amex') || n.includes('american express') ? 'amex'
+    : n.includes('visa') ? 'visa'
+    : n.includes('master') ? 'mastercard'
+    : n.includes('discover') ? 'discover'
+    : n.includes('cash') ? 'cash'
+    : '';
+  return { lastFour: digits.length === 4 ? digits : '', brand };
+}
 
 export function PaymentMethodsSection() {
   const qc = useQueryClient();
@@ -43,6 +66,73 @@ export function PaymentMethodsSection() {
   const { data: methods = [], isLoading } = useQuery({
     queryKey: ['payment-methods-admin'],
     queryFn: () => paymentMethodsApi.list(),
+  });
+
+  // Company selector → that brand's live Zoho paid-through accounts (bank /
+  // credit card / cash), same pattern as the Chart of Accounts section.
+  const [company, setCompany] = useState('');
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => companyApi.list(),
+  });
+  const zohoCompanies = useMemo(
+    () => companies.filter((c) => c.zohoEnabled && c.isActive !== false),
+    [companies],
+  );
+  useEffect(() => {
+    if (!company && zohoCompanies.length > 0) setCompany(zohoCompanies[0].name);
+  }, [company, zohoCompanies]);
+
+  const {
+    data: accountData,
+    isFetching: accountsLoading,
+    isError: accountsFailed,
+  } = useQuery({
+    queryKey: ['zoho-paid-through-accounts', company],
+    queryFn: () => expenseApi.zohoPaidThroughAccounts(company),
+    enabled: !!company,
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const accounts: ZohoPaidThroughAccount[] = accountData?.accounts ?? [];
+  const accountName = (id: string) => accounts.find((a) => a.accountId === id)?.accountName ?? null;
+
+  /** Account ids already claimed by some payment method (any company). */
+  const claimedAccountIds = useMemo(
+    () => new Set(methods.map((m) => m.zohoAccountName).filter(Boolean) as string[]),
+    [methods],
+  );
+  const unclaimedAccounts = accounts.filter((a) => !claimedAccountIds.has(a.accountId));
+
+  /**
+   * One Zoho account maps to one card. Accounts claimed by OTHER methods are
+   * hidden; the row's own mapping stays selectable, as does a saved id Zoho no
+   * longer returns (so it never silently disappears).
+   */
+  const accountOptionsFor = (pm: PaymentMethod): SearchableOption[] => {
+    const opts: SearchableOption[] = accounts
+      .filter((a) => !claimedAccountIds.has(a.accountId) || pm.zohoAccountName === a.accountId)
+      .map((a) => ({
+        value: a.accountId,
+        label: a.accountName,
+        hint: a.accountType.replace(/_/g, ' '),
+      }));
+    if (pm.zohoAccountName && !opts.some((o) => o.value === pm.zohoAccountName)) {
+      opts.unshift({ value: pm.zohoAccountName, label: pm.zohoAccountName, hint: 'not in current Zoho list' });
+    }
+    return opts;
+  };
+
+  const mapMutation = useMutation({
+    mutationFn: (v: { id: string; zohoAccountName: string }) =>
+      paymentMethodsApi.update(v.id, {
+        zohoAccountName: v.zohoAccountName,
+        // The paid-through account belongs to this company's Zoho org, so the
+        // card's default entity follows the mapping.
+        defaultZohoEntity: company,
+      }),
+    onSuccess: () => { invalidate(); setError(''); },
+    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not save the Zoho mapping'),
   });
 
   const { data: users = [] } = useQuery<User[]>({
@@ -98,9 +188,10 @@ export function PaymentMethodsSection() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-gray-500">
-          Manage company cards and payment methods. Employees select these when submitting expenses.
+          Manage company cards and payment methods. Pick a company to match each card to its
+          Zoho Books paid-through account — no more copying account ids by hand.
         </p>
         <button
           onClick={() => setShowForm(true)}
@@ -110,6 +201,35 @@ export function PaymentMethodsSection() {
           Add Method
         </button>
       </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="text-sm font-medium text-gray-700" htmlFor="pm-company">Company</label>
+        <select
+          id="pm-company"
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+        >
+          {zohoCompanies.map((c) => (
+            <option key={c.id} value={c.name}>{c.name}</option>
+          ))}
+        </select>
+        <span className="text-xs text-gray-400">
+          {accountsLoading
+            ? 'Loading Zoho accounts…'
+            : `${accounts.length} Zoho paid-through accounts · ${unclaimedAccounts.length} not yet linked to a card`}
+        </span>
+      </div>
+
+      {accountsFailed && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Could not reach Zoho to load this company's paid-through accounts. Existing mappings
+            still work; matching is unavailable until Zoho is reachable.
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -154,21 +274,33 @@ export function PaymentMethodsSection() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Zoho payment account ID / name</label>
-              <input
-                value={form.zohoAccountName}
-                onChange={(e) => set('zohoAccountName', e.target.value)}
-                placeholder="Zoho Books paid-through account id"
+              <label className="mb-1 block text-xs font-medium text-gray-700">Company</label>
+              <select
+                value={form.defaultZohoEntity}
+                onChange={(e) => {
+                  set('defaultZohoEntity', e.target.value);
+                  // Keep the page's account list in sync so the picker below
+                  // always shows this company's Zoho accounts.
+                  if (e.target.value) setCompany(e.target.value);
+                }}
                 className={inputCls}
-              />
+              >
+                <option value="">— Select company —</option>
+                {zohoCompanies.map((c) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Default company</label>
-              <input
-                value={form.defaultZohoEntity}
-                onChange={(e) => set('defaultZohoEntity', e.target.value)}
-                placeholder="e.g. Nirvana Kulture"
-                className={inputCls}
+              <label className="mb-1 block text-xs font-medium text-gray-700">Zoho paid-through account</label>
+              <SearchableSelect
+                options={accounts
+                  .filter((a) => !claimedAccountIds.has(a.accountId) || form.zohoAccountName === a.accountId)
+                  .map((a) => ({ value: a.accountId, label: a.accountName, hint: a.accountType.replace(/_/g, ' ') }))}
+                value={form.zohoAccountName}
+                onChange={(id) => set('zohoAccountName', id)}
+                placeholder={form.defaultZohoEntity ? 'Search Zoho accounts…' : 'Pick a company first'}
+                disabled={!form.defaultZohoEntity || accountsLoading}
               />
             </div>
           </div>
@@ -263,7 +395,24 @@ export function PaymentMethodsSection() {
                         <span className="text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs text-gray-600">{pm.zohoAccountName ?? '—'}</td>
+                    <td className="min-w-[16rem] px-6 py-4">
+                      <SearchableSelect
+                        options={accountOptionsFor(pm)}
+                        value={pm.zohoAccountName ?? ''}
+                        onChange={(accountId) => {
+                          if (accountId && accountId !== pm.zohoAccountName) {
+                            mapMutation.mutate({ id: pm.id, zohoAccountName: accountId });
+                          }
+                        }}
+                        placeholder="Match Zoho account…"
+                        disabled={accountsLoading || accountsFailed}
+                      />
+                      {pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed && (
+                        <p className="mt-1 font-mono text-[11px] text-gray-400">
+                          id {pm.zohoAccountName} — not in {company}'s account list
+                        </p>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-gray-600">
                       {pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}
                     </td>
@@ -312,6 +461,47 @@ export function PaymentMethodsSection() {
           </table>
         )}
       </div>
+
+      {/* Zoho accounts with no Midas card yet — one click prefills the create form */}
+      {!accountsLoading && !accountsFailed && unclaimedAccounts.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="text-sm font-semibold text-gray-700">
+            In {company}'s Zoho Books but not in Midas
+          </h2>
+          <p className="mt-0.5 text-xs text-gray-400">
+            Add creates a Midas payment method pre-filled from the Zoho account — review and save.
+          </p>
+          <ul className="mt-3 divide-y divide-gray-100">
+            {unclaimedAccounts.map((a) => (
+              <li key={a.accountId} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-gray-800">{a.accountName}</p>
+                  <p className="text-xs text-gray-400">{a.accountType.replace(/_/g, ' ')}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const guess = suggestCardFromZohoAccount(a.accountName);
+                    setForm({
+                      label: a.accountName,
+                      lastFour: guess.lastFour,
+                      brand: guess.brand,
+                      zohoAccountName: a.accountId,
+                      defaultZohoEntity: company,
+                      requiresReimbursement: false,
+                      isCompanyWide: true,
+                    });
+                    setShowForm(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="shrink-0 rounded-lg border border-brand-300 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50"
+                >
+                  + Add to Midas
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <ConfirmModal
         open={deactivateTarget !== null}

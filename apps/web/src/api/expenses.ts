@@ -70,6 +70,17 @@ export const expenseApi = {
       }>;
     }>('/zoho/expense-accounts', { params: { zohoEntity } }).then((r) => r.data),
 
+  zohoPaidThroughAccounts: (zohoEntity: string) =>
+    client.get<{
+      brand: string;
+      accounts: Array<{
+        accountId: string;
+        accountName: string;
+        accountCode: string | null;
+        accountType: string;
+      }>;
+    }>('/zoho/paid-through-accounts', { params: { zohoEntity } }).then((r) => r.data),
+
   submit: (id: string) =>
     client.post<{ expense: Expense; autoPushed?: boolean; missing?: string[] }>(`/expenses/${id}/submit`).then((r) => r.data),
 

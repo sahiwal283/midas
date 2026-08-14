@@ -119,6 +119,16 @@ const EXPENSE_ACCOUNT_TYPES = new Set([
   'cost_of_goods_sold',
 ]);
 
+/** Zoho Books account types accepted as an expense's Paid Through account. */
+const PAID_THROUGH_ACCOUNT_TYPES = new Set([
+  'bank',
+  'credit_card',
+  'cash',
+  'other_current_asset',
+  'other_current_liability',
+  'equity',
+]);
+
 export interface ZohoExpenseAccount {
   accountId: string;
   accountName: string;
@@ -126,11 +136,11 @@ export interface ZohoExpenseAccount {
   accountType: string;
 }
 
-/**
- * Live chart-of-accounts for a brand, filtered to expense-class accounts
- * (matches Zoho Books "Expense Account" picker). Read-only.
- */
-export async function listExpenseAccounts(brand: string, timeoutMs = 15000): Promise<ZohoExpenseAccount[]> {
+async function listAccountsOfTypes(
+  brand: string,
+  types: ReadonlySet<string>,
+  timeoutMs: number,
+): Promise<ZohoExpenseAccount[]> {
   const baseUrl = env.ZOHO_SERVICE_BASE_URL;
   if (!baseUrl) throw new Error('ZOHO_SERVICE_BASE_URL is not configured');
   if (!env.ZOHO_SERVICE_TOKEN) throw new Error('ZOHO_SERVICE_TOKEN is not configured');
@@ -157,7 +167,7 @@ export async function listExpenseAccounts(brand: string, timeoutMs = 15000): Pro
   const accounts: ZohoExpenseAccount[] = [];
   for (const a of raw) {
     const accountType = String(a.account_type ?? '');
-    if (!EXPENSE_ACCOUNT_TYPES.has(accountType)) continue;
+    if (!types.has(accountType)) continue;
     if (a.is_active === false) continue;
     const accountId = String(a.account_id ?? '');
     const accountName = String(a.account_name ?? '');
@@ -174,6 +184,22 @@ export async function listExpenseAccounts(brand: string, timeoutMs = 15000): Pro
     return a.accountName.localeCompare(b.accountName);
   });
   return accounts;
+}
+
+/**
+ * Live chart-of-accounts for a brand, filtered to expense-class accounts
+ * (matches Zoho Books "Expense Account" picker). Read-only.
+ */
+export async function listExpenseAccounts(brand: string, timeoutMs = 15000): Promise<ZohoExpenseAccount[]> {
+  return listAccountsOfTypes(brand, EXPENSE_ACCOUNT_TYPES, timeoutMs);
+}
+
+/**
+ * Live chart-of-accounts filtered to accounts usable as an expense's Paid
+ * Through (bank / credit card / cash / …) — matches Zoho Books' picker.
+ */
+export async function listPaidThroughAccounts(brand: string, timeoutMs = 15000): Promise<ZohoExpenseAccount[]> {
+  return listAccountsOfTypes(brand, PAID_THROUGH_ACCOUNT_TYPES, timeoutMs);
 }
 
 /**

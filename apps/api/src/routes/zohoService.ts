@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { env } from '../config/env';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, createError } from '../middleware/error';
-import { checkServiceHealth, checkZohoAuth, listExpenseAccounts, ZohoServiceError } from '../lib/zoho';
+import { checkServiceHealth, checkZohoAuth, listExpenseAccounts, listPaidThroughAccounts, ZohoServiceError } from '../lib/zoho';
 import { listZohoEntities, resolveBrandFromEntity } from '../lib/zohoBrand';
 
 const router = Router();
@@ -50,6 +50,43 @@ router.get('/expense-accounts', asyncHandler(async (req, res) => {
 
   try {
     const accounts = await listExpenseAccounts(brand);
+    res.json({
+      zohoEntity: zohoEntity || null,
+      brand,
+      accounts,
+    });
+  } catch (err) {
+    if (err instanceof ZohoServiceError) {
+      const message = err.code === 'ZOHO_AUTH_FORBIDDEN'
+        ? `Midas is not granted Zoho access for brand "${brand}". Contact the Zoho Integration Service team.`
+        : err.message;
+      res.status(err.status >= 400 && err.status < 600 ? err.status : 502).json({
+        error: { code: err.code, message, requestId: err.requestId ?? undefined },
+      });
+      return;
+    }
+    throw err;
+  }
+}));
+
+// GET /api/v1/zoho/paid-through-accounts?zohoEntity=Haute%20Brands
+// Live Zoho Books bank/credit-card/cash accounts for the entity's brand —
+// the ones valid as an expense's Paid Through. Powers the Payment Methods
+// mapping UI. Not stored in Midas.
+router.get('/paid-through-accounts', asyncHandler(async (req, res) => {
+  const zohoEntity = typeof req.query.zohoEntity === 'string' ? req.query.zohoEntity.trim() : '';
+  const brandParam = typeof req.query.brand === 'string' ? req.query.brand.trim() : '';
+  const brand = brandParam || resolveBrandFromEntity(zohoEntity);
+  if (!brand) {
+    throw createError(
+      'Select a known accounting entity (e.g. Haute Brands) to load paid-through accounts',
+      400,
+      'MISSING_ZOHO_ENTITY',
+    );
+  }
+
+  try {
+    const accounts = await listPaidThroughAccounts(brand);
     res.json({
       zohoEntity: zohoEntity || null,
       brand,
