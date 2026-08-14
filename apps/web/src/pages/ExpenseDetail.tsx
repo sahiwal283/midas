@@ -9,6 +9,7 @@ import { expenseApi, accountantApi } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { compressReceiptImage } from '../lib/receiptCompress';
+import { VendorCombobox } from '../components/VendorCombobox';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
 import { ReceiptPreview } from '../components/ReceiptPreview';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
@@ -429,10 +430,11 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
             <>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">Merchant</label>
-                <input
+                <VendorCombobox
                   value={form.merchant}
-                  onChange={(e) => setForm((f) => ({ ...f, merchant: e.target.value }))}
-                  className={inputCls}
+                  onChange={(m) => setForm((f) => ({ ...f, merchant: m }))}
+                  zohoEntity={form.company || undefined}
+                  inputClassName={inputCls}
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">

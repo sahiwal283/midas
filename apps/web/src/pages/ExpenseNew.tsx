@@ -9,6 +9,7 @@ import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
 import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
 import { compressReceiptImage } from '../lib/receiptCompress';
+import { VendorCombobox } from '../components/VendorCombobox';
 import type { Receipt } from '../types';
 
 type WizardStep = 'choose' | 'form' | 'done';
@@ -509,12 +510,12 @@ export function ExpenseNew() {
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-xl border border-ink/10 bg-white p-5 shadow-panel">
           <Field label="Merchant *">
-            <input
+            <VendorCombobox
               required
               value={form.merchant}
-              onChange={(e) => set('merchant', e.target.value)}
-              placeholder="Coffee Shop, Airline, etc."
-              className={`${inputCls}${lowConfidenceFields.has('merchant') ? ' border-amber-400 ring-1 ring-amber-200' : ''}`}
+              onChange={(m) => set('merchant', m)}
+              zohoEntity={form.company || undefined}
+              inputClassName={`${inputCls}${lowConfidenceFields.has('merchant') ? ' border-amber-400 ring-1 ring-amber-200' : ''}`}
             />
             {lowConfidenceFields.has('merchant') && (
               <p className="mt-1 text-xs text-amber-700">OCR was unsure about the merchant — confirm or edit.</p>

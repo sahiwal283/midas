@@ -48,6 +48,7 @@ export interface ZohoAdapter {
   pushExpense(payload: ZohoPushBody): Promise<ZohoPushResult>;
   pushPurchaseOrder(payload: ZohoPoServicePayload): Promise<ZohoPoPushResult>;
   listVendors(brand: string): Promise<ZohoVendor[]>;
+  createVendor(name: string, brand: string): Promise<ZohoVendor>;
   listItems(brand: string): Promise<ZohoItem[]>;
 }
 
@@ -212,51 +213,18 @@ export async function listPaidThroughAccounts(brand: string, timeoutMs = 15000):
  */
 export async function resolveBooksVendorId(merchant: string, brand: string): Promise<string | null> {
   if (env.ZOHO_MODE !== 'service' || env.ZOHO_DRY_RUN) return null;
-  const baseUrl = env.ZOHO_SERVICE_BASE_URL;
-  if (!baseUrl || !env.ZOHO_SERVICE_TOKEN || !merchant.trim()) return null;
+  if (!env.ZOHO_SERVICE_BASE_URL || !env.ZOHO_SERVICE_TOKEN || !merchant.trim()) return null;
 
   try {
-    const listRes = await fetchWithTimeout(
-      `${baseUrl}/zoho/vendors/list`,
-      { method: 'GET', headers: serviceHeaders({}, brand) },
-      15000,
+    const list = await zoho.listVendors(brand);
+    const matched = matchVendorByName(
+      list.map((v) => ({ id: v.vendorId, name: v.companyName || v.vendorName })),
+      merchant,
     );
-    if (listRes.ok) {
-      const json = await listRes.json() as {
-        data?: { contacts?: Array<Record<string, unknown>>; vendors?: Array<Record<string, unknown>> };
-        contacts?: Array<Record<string, unknown>>;
-        vendors?: Array<Record<string, unknown>>;
-      };
-      const raw = json.data?.contacts ?? json.data?.vendors ?? json.contacts ?? json.vendors ?? [];
-      const vendors = raw.flatMap((v) => {
-        const id = v.contact_id ?? v.vendor_id;
-        const name = v.contact_name ?? v.vendor_name;
-        return typeof id === 'string' && typeof name === 'string' ? [{ id, name }] : [];
-      });
-      const matched = matchVendorByName(vendors, merchant);
-      if (matched) return matched;
-    }
+    if (matched) return matched;
 
-    // vendors/create maps to Books POST /contacts (a vendor-type contact) —
-    // NOT contacts/create, which is a CRM route requiring Last_Name.
-    const createRes = await fetchWithTimeout(
-      `${baseUrl}/zoho/vendors/create`,
-      {
-        method: 'POST',
-        headers: serviceHeaders({ 'Content-Type': 'application/json' }, brand),
-        body: JSON.stringify({ contact_name: merchant.trim(), contact_type: 'vendor' }),
-      },
-      15000,
-    );
-    if (!createRes.ok) {
-      logger.warn({ merchant, brand, status: createRes.status }, 'Zoho vendor create failed — pushing without vendor');
-      return null;
-    }
-    const created = await createRes.json() as {
-      data?: { contact?: { contact_id?: string } };
-      contact?: { contact_id?: string };
-    };
-    return created.data?.contact?.contact_id ?? created.contact?.contact_id ?? null;
+    const created = await zoho.createVendor(merchant.trim(), brand);
+    return created.vendorId;
   } catch (err) {
     logger.warn({ err, merchant, brand }, 'Zoho vendor resolution failed — pushing without vendor');
     return null;
@@ -375,6 +343,10 @@ class MockZohoAdapter implements ZohoAdapter {
       { vendorId: 'MOCK-V-1', vendorName: 'ABC Food Supply' },
       { vendorId: 'MOCK-V-2', vendorName: 'Demo Ingredients Co' },
     ];
+  }
+
+  async createVendor(name: string, _brand: string): Promise<ZohoVendor> {
+    return { vendorId: `MOCK-V-${Date.now()}`, vendorName: name };
   }
 
   async listItems(_brand: string): Promise<ZohoItem[]> {
@@ -532,6 +504,40 @@ export class ServiceZohoAdapter implements ZohoAdapter {
       vendorName: String(v.vendorName ?? v.vendor_name ?? v.contact_name ?? v.company_name ?? ''),
       companyName: (v.company_name as string | undefined) ?? null,
     })).filter((v) => v.vendorId && v.vendorName);
+  }
+
+  async createVendor(name: string, brand: string): Promise<ZohoVendor> {
+    const baseUrl = env.ZOHO_SERVICE_BASE_URL;
+    if (!baseUrl) throw new Error('ZOHO_SERVICE_BASE_URL is not configured');
+    if (!env.ZOHO_SERVICE_TOKEN) throw new Error('ZOHO_SERVICE_TOKEN is not configured');
+
+    // vendors/create maps to Books POST /contacts (vendor-type contact).
+    const res = await fetchWithTimeout(
+      `${baseUrl}/zoho/vendors/create`,
+      {
+        method: 'POST',
+        headers: serviceHeaders({ 'Content-Type': 'application/json' }, brand),
+        body: JSON.stringify({ contact_name: name, contact_type: 'vendor' }),
+      },
+      15000,
+    );
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw parseServiceErrorBody(errBody, res.status);
+    }
+    const data = await res.json() as {
+      data?: { contact?: { contact_id?: string; contact_name?: string } };
+      contact?: { contact_id?: string; contact_name?: string };
+    };
+    const contact = data.data?.contact ?? data.contact;
+    if (!contact?.contact_id) {
+      throw new ZohoServiceError({
+        status: 502,
+        code: 'ZOHO_RESPONSE_INVALID',
+        message: 'Zoho service response missing contact_id for created vendor',
+      });
+    }
+    return { vendorId: contact.contact_id, vendorName: contact.contact_name ?? name };
   }
 
   async listItems(brand: string): Promise<ZohoItem[]> {

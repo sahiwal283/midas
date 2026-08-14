@@ -13,9 +13,15 @@ describe('matchVendorByName', () => {
     expect(matchVendorByName(vendors, '  ULINE')).toBe('v-2');
   });
 
-  it('returns null when nothing matches exactly (no fuzzy matching)', () => {
+  it('matches through merchant normalization (processor suffixes, punctuation, aliases)', () => {
+    expect(matchVendorByName(vendors, 'Home Depot #123')).toBe('v-3');
+    expect(matchVendorByName([{ id: 'v-w', name: 'Walmart' }], 'WAL-MART #1234')).toBe('v-w');
+    expect(matchVendorByName([{ id: 'v-a', name: 'Amazon' }], 'AMZN Mktp US*1A2B3C')).toBe('v-a');
+  });
+
+  it('returns null when nothing matches after normalization', () => {
     expect(matchVendorByName(vendors, 'S&D')).toBeNull();
-    expect(matchVendorByName(vendors, 'Home Depot #123')).toBeNull();
+    expect(matchVendorByName(vendors, 'Costco')).toBeNull();
   });
 
   it('returns null for an empty merchant', () => {

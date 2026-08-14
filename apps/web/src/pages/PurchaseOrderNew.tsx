@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import { SearchableSelect } from '../components/SearchableSelect';
+import { VendorCombobox } from '../components/VendorCombobox';
 import type { Transaction } from '@midas/shared';
 
 type ZohoVendor = { vendorId: string; vendorName: string; companyName?: string | null };
@@ -161,11 +162,16 @@ export function PurchaseOrderNew() {
         </label>
         <label className="block text-sm">
           <span className="text-charcoal/80">Vendor name *</span>
-          <input
-            className="mt-1 w-full rounded border border-brand-200 px-3 py-2"
-            value={vendorName}
-            onChange={(e) => setVendorName(e.target.value)}
+          {/* Type-to-search with create: a brand-new vendor is created in Zoho
+              (dedup-checked) and its id fills the Zoho vendor picker above. */}
+          <VendorCombobox
+            className="mt-1"
+            inputClassName="w-full rounded border border-brand-200 px-3 py-2 text-sm"
+            placeholder="Search or create a vendor…"
             required
+            value={vendorName}
+            onChange={setVendorName}
+            onVendorPicked={(v) => setZohoVendorId(v.vendorId)}
           />
         </label>
         <label className="block text-sm">
