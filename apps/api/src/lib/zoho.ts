@@ -119,14 +119,16 @@ const EXPENSE_ACCOUNT_TYPES = new Set([
   'cost_of_goods_sold',
 ]);
 
-/** Zoho Books account types accepted as an expense's Paid Through account. */
+/**
+ * Zoho Books account types offered when matching payment methods. Zoho's own
+ * Paid Through picker also allows liability/asset/equity accounts, but for
+ * card matching those are noise ("Goods In Transit", …) — unusual accounts can
+ * still be entered by id in the payment-method editor.
+ */
 const PAID_THROUGH_ACCOUNT_TYPES = new Set([
   'bank',
   'credit_card',
   'cash',
-  'other_current_asset',
-  'other_current_liability',
-  'equity',
 ]);
 
 export interface ZohoExpenseAccount {
