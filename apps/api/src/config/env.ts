@@ -60,6 +60,13 @@ const schema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
+  // ── Web Push notifications (VAPID) ─────────────────────────────────────────
+  // Generate a key pair once per environment: `npx web-push generate-vapid-keys`.
+  // Push delivery is silently disabled unless both keys are set.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  // Contact URI sent to push services (mailto: or https:).
+  VAPID_SUBJECT: z.string().default('mailto:admin@midas.local'),
   // Optional integrations
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   // Auth rate limiting — max login attempts per 15-minute window per IP.

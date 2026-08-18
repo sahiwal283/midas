@@ -2,9 +2,11 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { eq, and, desc, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/index';
-import { notifications } from '../db/schema';
+import { notifications, pushSubscriptions } from '../db/schema';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound } from '../middleware/error';
+import { pushConfigured } from '../lib/push';
+import { env } from '../config/env';
 
 const router = Router();
 router.use(authenticate);
@@ -60,6 +62,62 @@ router.post('/read-all', asyncHandler(async (req, res) => {
       eq(notifications.userId, req.user!.id),
       isNull(notifications.readAt),
     ));
+
+  res.json({ ok: true });
+}));
+
+// ── Web push subscriptions ────────────────────────────────────────────────────
+
+// Public VAPID key for the client's PushManager.subscribe(). `null` means push
+// is not configured in this environment and the UI should hide the option.
+router.get('/push/public-key', asyncHandler(async (_req, res) => {
+  res.json({ publicKey: pushConfigured() ? env.VAPID_PUBLIC_KEY : null });
+}));
+
+const subscribeSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string().min(1),
+    auth: z.string().min(1),
+  }),
+});
+
+router.post('/push/subscribe', asyncHandler(async (req, res) => {
+  const { endpoint, keys } = subscribeSchema.parse(req.body);
+
+  // Endpoint identifies the browser/device. If another account previously
+  // registered this device, reassign it to the current user.
+  const [sub] = await db.insert(pushSubscriptions)
+    .values({
+      userId: req.user!.id,
+      endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+      userAgent: req.get('user-agent') ?? null,
+    })
+    .onConflictDoUpdate({
+      target: pushSubscriptions.endpoint,
+      set: {
+        userId: req.user!.id,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
+        userAgent: req.get('user-agent') ?? null,
+      },
+    })
+    .returning({ id: pushSubscriptions.id });
+
+  res.status(201).json({ id: sub.id });
+}));
+
+const unsubscribeSchema = z.object({ endpoint: z.string().url() });
+
+router.post('/push/unsubscribe', asyncHandler(async (req, res) => {
+  const { endpoint } = unsubscribeSchema.parse(req.body);
+
+  await db.delete(pushSubscriptions).where(and(
+    eq(pushSubscriptions.endpoint, endpoint),
+    eq(pushSubscriptions.userId, req.user!.id),
+  ));
 
   res.json({ ok: true });
 }));

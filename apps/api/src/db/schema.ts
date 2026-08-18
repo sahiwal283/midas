@@ -523,6 +523,24 @@ export const notifications = pgTable('notifications', {
   index('notifications_user_id_idx').on(t.userId),
 ]);
 
+// ── Push subscriptions ────────────────────────────────────────────────────────
+// Web Push (VAPID) endpoints, one row per browser/device. Endpoint is unique
+// globally; re-subscribing from another account reassigns the device.
+
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  endpoint: text('endpoint').notNull(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  lastUsedAt: timestamp('last_used_at'),
+}, (t) => [
+  uniqueIndex('push_subscriptions_endpoint_idx').on(t.endpoint),
+  index('push_subscriptions_user_id_idx').on(t.userId),
+]);
+
 // ── Relations ─────────────────────────────────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -572,6 +590,10 @@ export const closedPeriodsRelations = relations(closedPeriods, ({ one }) => ({
 export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, { fields: [notifications.userId], references: [users.id] }),
   expense: one(expenses, { fields: [notifications.expenseId], references: [expenses.id] }),
+}));
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
+  user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
 }));
 
 export const vendorsRelations = relations(vendors, ({ many }) => ({

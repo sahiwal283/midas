@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell } from 'lucide-react';
+import { Bell, BellRing } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationApi } from '../api/notifications';
+import { getPushState, subscribeToPush, unsubscribeFromPush } from '../lib/push';
 import type { Notification } from '../types';
 
 /** "5m ago" style relative time — small enough to not need a dependency. */
@@ -57,6 +58,17 @@ export function NotificationBell({
 
   const unreadCount = data?.unreadCount ?? 0;
   const notifications = data?.notifications ?? [];
+
+  // Device push state — only checked while the panel is open.
+  const { data: pushState } = useQuery({
+    queryKey: ['push-state'],
+    queryFn: getPushState,
+    enabled: open,
+    staleTime: 30_000,
+  });
+  const invalidatePush = () => queryClient.invalidateQueries({ queryKey: ['push-state'] });
+  const enablePush = useMutation({ mutationFn: subscribeToPush, onSettled: invalidatePush });
+  const disablePush = useMutation({ mutationFn: unsubscribeFromPush, onSettled: invalidatePush });
 
   const openNotification = (n: Notification) => {
     setOpen(false);
@@ -117,6 +129,45 @@ export function NotificationBell({
               ))
             )}
           </div>
+
+          {/* Device push controls — hidden when unsupported or not configured */}
+          {pushState === 'ready' && (
+            <div className="border-t border-gray-100 px-4 py-2.5">
+              <button
+                onClick={() => enablePush.mutate()}
+                disabled={enablePush.isPending}
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-50 px-3 text-sm font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50"
+              >
+                <BellRing className="h-4 w-4" />
+                {enablePush.isPending ? 'Enabling…' : 'Enable notifications on this device'}
+              </button>
+              {enablePush.isError && (
+                <p className="mt-1.5 text-xs text-danger">
+                  Couldn't enable push — check browser notification permissions.
+                </p>
+              )}
+            </div>
+          )}
+          {pushState === 'subscribed' && (
+            <div className="flex min-h-11 items-center justify-between gap-2 border-t border-gray-100 px-4 py-2">
+              <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                <BellRing className="h-3.5 w-3.5 text-success" />
+                Push enabled on this device
+              </span>
+              <button
+                onClick={() => disablePush.mutate()}
+                disabled={disablePush.isPending}
+                className="min-h-11 px-2 text-xs font-medium text-gray-400 hover:text-gray-600 disabled:opacity-50"
+              >
+                Disable
+              </button>
+            </div>
+          )}
+          {pushState === 'denied' && (
+            <p className="border-t border-gray-100 px-4 py-2.5 text-xs text-gray-400">
+              Push notifications are blocked in your browser settings.
+            </p>
+          )}
         </div>
       )}
     </div>

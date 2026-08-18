@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import client from '../api/client';
+import { unsubscribeFromPush } from '../lib/push';
 import type { User } from '../types';
 
 interface AuthContextValue {
@@ -31,6 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
+    // Drop this device's push subscription first (needs the session cookie) —
+    // otherwise the next person at a shared machine sees this user's expense
+    // notifications. Best-effort: never let it block logout.
+    try {
+      await unsubscribeFromPush();
+    } catch {
+      /* ignore */
+    }
     await client.post('/auth/logout');
     setUser(null);
   }

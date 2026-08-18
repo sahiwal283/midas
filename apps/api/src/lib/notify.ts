@@ -4,6 +4,7 @@ import { notifications, users } from '../db/schema';
 import { env } from '../config/env';
 import { logger } from './logger';
 import { sendEmail } from './email';
+import { sendPushToUser } from './push';
 import { buildNotification, type NotificationType, type NotificationInput } from './notifyMessages';
 
 export interface NotifyInput extends NotificationInput {
@@ -30,6 +31,15 @@ export async function notifyUser(
       body,
       expenseId: input.expenseId,
     }).returning({ id: notifications.id });
+
+    // Fire-and-forget web push — sendPushToUser never throws and is a no-op
+    // unless VAPID keys are configured.
+    void sendPushToUser(userId, {
+      title,
+      body,
+      url: `/expenses/${input.expenseId}`,
+      tag: `expense-${input.expenseId}`,
+    });
 
     // Fire-and-forget email — the caller's response never waits on SMTP.
     void (async () => {

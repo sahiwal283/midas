@@ -21,4 +21,16 @@ export const notificationApi = {
 
   markAllRead: () =>
     client.post<{ ok: boolean }>('/notifications/read-all').then((r) => r.data),
+
+  pushPublicKey: () =>
+    client.get<{ publicKey: string | null }>('/notifications/push/public-key')
+      .then((r) => r.data),
+
+  pushSubscribe: (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    client.post<{ id: string }>('/notifications/push/subscribe', subscription)
+      .then((r) => r.data),
+
+  pushUnsubscribe: (body: { endpoint: string }) =>
+    client.post<{ ok: boolean }>('/notifications/push/unsubscribe', body)
+      .then((r) => r.data),
 };
