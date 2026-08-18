@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.46.0 (2026-08-18)
+
+### Mobile optimization + web push notifications
+- **Every page optimized for phones**: mobile card lists replace desktop-only tables (accountant queue, reports, budgets, partner expenses, PO line items, admin users/companies/audit, payment methods), 44px touch targets and stacked filters throughout, safe-area support for notched iPhones, quick-view modal is a bottom sheet on mobile. Desktop rendering unchanged.
+- **Web push notifications**: expense notifications (approved/rejected/action required/reimbursed) now reach phones and desktops via Web Push. Enable per device from the notification bell. New `push_subscriptions` table (migration 0025), `/notifications/push/*` routes, VAPID fan-out beside email in `notifyUser`. Requires `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` in `.env` (`npx web-push generate-vapid-keys`); silently off otherwise.
+- **Installable PWA**: manifest upgraded (`standalone`, PNG icons); iOS users must Add to Home Screen to receive push. Logout unsubscribes the device.
+
 ## 0.29.0-alpha (2026-08-10)
 
 ### Purchase orders + Integration Health
