@@ -9,6 +9,7 @@ import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
 import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
 import { compressReceiptImage } from '../lib/receiptCompress';
+import { takePendingCapture } from '../lib/pendingCapture';
 import { VendorCombobox } from '../components/VendorCombobox';
 import type { Receipt } from '../types';
 
@@ -101,12 +102,21 @@ export function ExpenseNew() {
     staleTime: 60_000,
   });
 
-  // ?mode=scan (mobile camera button) jumps straight into the camera.
+  // ?mode=scan: the mobile camera button opens the native camera in the nav
+  // itself (see MobileNav) and hands the photo over — consume it here. The
+  // programmatic-click fallback covers direct visits to this URL.
+  const consumedCapture = useRef(false);
   useEffect(() => {
-    if (params.get('mode') === 'scan') {
-      const t = setTimeout(() => cameraInputRef.current?.click(), 150);
-      return () => clearTimeout(t);
+    if (params.get('mode') !== 'scan') return;
+    const captured = takePendingCapture();
+    if (captured) {
+      consumedCapture.current = true;
+      void startWithReceipt(captured);
+      return;
     }
+    if (consumedCapture.current) return;
+    const t = setTimeout(() => cameraInputRef.current?.click(), 150);
+    return () => clearTimeout(t);
   }, [params]);
 
   useEffect(() => {

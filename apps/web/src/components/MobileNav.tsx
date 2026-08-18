@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Link, useLocation } from 'react-router-dom';
+import { NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, ReceiptText, Camera, X, ClipboardList, BarChart3,
@@ -8,6 +8,7 @@ import {
 import { MIDAS_VERSION } from '@midas/shared';
 import client from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { setPendingCapture } from '../lib/pendingCapture';
 
 // Matches the desktop navy rail: gold marks the active destination.
 const itemCls = ({ isActive }: { isActive: boolean }) =>
@@ -18,6 +19,7 @@ const itemCls = ({ isActive }: { isActive: boolean }) =>
 export function MobileNav() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
   // Both scoped review pages share one bottom-bar tab, so match either instead
   // of relying on NavLink's own (single-path) active check.
@@ -88,13 +90,29 @@ export function MobileNav() {
         </div>
 
         <div className="flex w-16 shrink-0 justify-center">
-          <Link
-            to="/expenses/new?mode=scan"
-            aria-label="Add transaction"
-            className="-mt-5 flex h-14 w-14 items-center justify-center rounded-full bg-gold-400 text-brand-800 shadow-lg ring-4 ring-brand-800 transition-colors active:bg-gold-500"
+          {/* A label wrapping the file input opens the native camera directly,
+              inside the tap gesture — navigating first and clicking the input
+              programmatically gets blocked by mobile browsers. */}
+          <label
+            aria-label="Scan a receipt"
+            className="-mt-5 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-gold-400 text-brand-800 shadow-lg ring-4 ring-brand-800 transition-colors active:bg-gold-500"
           >
             <Camera className="h-6 w-6" />
-          </Link>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) {
+                  setPendingCapture(file);
+                  navigate('/expenses/new?mode=scan');
+                }
+              }}
+            />
+          </label>
         </div>
 
         <div className="flex flex-1 items-stretch">

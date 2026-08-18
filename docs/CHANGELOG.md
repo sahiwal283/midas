@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.46.1 (2026-08-18)
+
+### Fixed
+- **Mobile camera button opens the camera directly**: the bottom-nav FAB previously landed on the add-transaction chooser because browsers block programmatic file-input clicks after navigation; the capture input now lives in the nav button itself and hands the photo to the expense form (compress → draft → OCR). Cancelling the camera no longer navigates anywhere.
+
 ## 0.46.0 (2026-08-18)
 
 ### Mobile optimization + web push notifications
