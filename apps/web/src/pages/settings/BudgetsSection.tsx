@@ -15,7 +15,7 @@ type Budget = {
   category?: { id: string; name: string } | null;
 };
 
-const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none';
+const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2';
 
 export function BudgetsSection() {
   const { user } = useAuth();
@@ -112,7 +112,7 @@ export function BudgetsSection() {
               type="button"
               disabled={!form.companyName || !form.amount || create.isPending}
               onClick={() => create.mutate()}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              className="min-h-11 w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:w-auto lg:min-h-0"
             >
               Add budget
             </button>
@@ -126,7 +126,31 @@ export function BudgetsSection() {
         ) : (budgets.data ?? []).length === 0 ? (
           <p className="p-6 text-sm text-gray-400">No budgets for {period}.</p>
         ) : (
-          <table className="w-full text-sm">
+          <>
+            {/* Mobile cards */}
+            <div className="divide-y divide-gray-100 md:hidden">
+              {(budgets.data ?? []).map((b) => (
+                <div key={b.id} className="flex items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{b.companyName}</p>
+                    <p className="text-xs text-gray-500">{b.category?.name ?? 'All categories'}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm font-medium">${Number(b.amount).toLocaleString()}</span>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="min-h-11 px-2 text-xs text-red-600 hover:underline"
+                        onClick={() => remove.mutate(b.id)}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <table className="hidden w-full text-sm md:table">
             <thead>
               <tr className="border-b text-left text-xs uppercase tracking-wider text-gray-500">
                 <th className="px-4 py-3">Company</th>
@@ -155,7 +179,8 @@ export function BudgetsSection() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </>
         )}
       </div>
     </div>

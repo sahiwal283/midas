@@ -5,6 +5,13 @@
 @layer base {
   html {
     @apply antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Remove the 300ms double-tap-to-zoom delay on interactive elements
+     without disabling pinch-zoom on the page itself. */
+  button, a, input, select, textarea, label {
+    touch-action: manipulation;
   }
 
   body {

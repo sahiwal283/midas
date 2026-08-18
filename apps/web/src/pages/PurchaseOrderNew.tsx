@@ -166,7 +166,7 @@ export function PurchaseOrderNew() {
               (dedup-checked) and its id fills the Zoho vendor picker above. */}
           <VendorCombobox
             className="mt-1"
-            inputClassName="w-full rounded border border-brand-200 px-3 py-2 text-sm"
+            inputClassName="w-full rounded border border-brand-200 px-3 py-3 lg:py-2 text-sm"
             placeholder="Search or create a vendor…"
             required
             value={vendorName}
@@ -178,18 +178,18 @@ export function PurchaseOrderNew() {
           <span className="text-charcoal/80">Date *</span>
           <input
             type="date"
-            className="mt-1 w-full rounded border border-brand-200 px-3 py-2"
+            className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2"
             value={transactionDate}
             onChange={(e) => setTransactionDate(e.target.value)}
           />
         </label>
         <label className="block text-sm">
           <span className="text-charcoal/80">PO number</span>
-          <input className="mt-1 w-full rounded border border-brand-200 px-3 py-2" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
+          <input className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
         </label>
         <label className="block text-sm">
           <span className="text-charcoal/80">Company</span>
-          <select className="mt-1 w-full rounded border border-brand-200 px-3 py-2" value={zohoEntity} onChange={(e) => setZohoEntity(e.target.value)}>
+          <select className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2" value={zohoEntity} onChange={(e) => setZohoEntity(e.target.value)}>
             <option value="">—</option>
             {(companies.data ?? []).map((c: { name: string }) => (
               <option key={c.name} value={c.name}>{c.name}</option>
@@ -199,7 +199,111 @@ export function PurchaseOrderNew() {
       </div>
 
       <h2 className="text-sm font-semibold text-ink mb-2">Line items</h2>
-      <div className="overflow-x-auto border border-brand-100 rounded-lg mb-4">
+
+      {/* Mobile: stacked line-item cards */}
+      <div className="md:hidden space-y-3 mb-4">
+        {lines.map((line, idx) => (
+          <div key={line.lineNumber} className="rounded-lg border border-brand-100 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-charcoal/60">Line {idx + 1}</span>
+              {lines.length > 1 && (
+                <button
+                  type="button"
+                  aria-label={`Remove line ${idx + 1}`}
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-xs text-red-600"
+                  onClick={() => setLines(lines.filter((_, i) => i !== idx))}
+                >
+                  ✕ Remove
+                </button>
+              )}
+            </div>
+            <label className="block text-sm">
+              <span className="text-charcoal/80">Zoho item</span>
+              <SearchableSelect
+                className="mt-1"
+                disabled={itemsQ.isLoading}
+                placeholder="Search item…"
+                value={line.zohoItemId}
+                onChange={(id) => pickItem(idx, id)}
+                options={itemOptions.map((it) => ({
+                  value: it.itemId,
+                  label: it.name,
+                  hint: it.sku || it.itemId,
+                }))}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-charcoal/80">Description</span>
+              <input
+                className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
+                value={line.description}
+                onChange={(e) => {
+                  const next = [...lines];
+                  next[idx] = { ...line, description: e.target.value };
+                  setLines(next);
+                }}
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="text-charcoal/80">Qty</span>
+                <input
+                  className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
+                  value={line.quantity}
+                  onChange={(e) => {
+                    const next = [...lines];
+                    next[idx] = recalc({ ...line, quantity: e.target.value });
+                    setLines(next);
+                  }}
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-charcoal/80">Unit</span>
+                <input
+                  className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
+                  value={line.unit}
+                  onChange={(e) => {
+                    const next = [...lines];
+                    next[idx] = { ...line, unit: e.target.value };
+                    setLines(next);
+                  }}
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-charcoal/80">Price</span>
+                <input
+                  className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
+                  value={line.unitPrice}
+                  onChange={(e) => {
+                    const next = [...lines];
+                    next[idx] = recalc({ ...line, unitPrice: e.target.value });
+                    setLines(next);
+                  }}
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-charcoal/80">Tax</span>
+                <input
+                  className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
+                  value={line.tax}
+                  onChange={(e) => {
+                    const next = [...lines];
+                    next[idx] = recalc({ ...line, tax: e.target.value });
+                    setLines(next);
+                  }}
+                />
+              </label>
+            </div>
+            <div className="flex items-center justify-between border-t border-brand-100 pt-2 text-sm">
+              <span className="text-charcoal/60">Amount</span>
+              <span className="font-mono text-xs">{line.total}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: editable table */}
+      <div className="hidden md:block overflow-x-auto border border-brand-100 rounded-lg mb-4">
         <table className="min-w-full text-sm">
           <thead className="bg-brand-50/60 text-left">
             <tr>
@@ -297,16 +401,16 @@ export function PurchaseOrderNew() {
       </div>
       <button
         type="button"
-        className="text-sm text-brand-700 mb-6"
-        onClick={() => setLines([...lines, blankLine(lines.length + 1)])}
+        className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-brand-200 sm:border-0 text-sm text-brand-700 mb-6"
+        onClick={() => setLines([...lines, blankLine(Math.max(0, ...lines.map((l) => l.lineNumber)) + 1)])}
       >
         + Add line
       </button>
 
-      <div className="flex flex-wrap items-end gap-4 mb-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end mb-8">
         <label className="block text-sm">
           <span className="text-charcoal/80">Tax total</span>
-          <input className="mt-1 w-32 rounded border border-brand-200 px-3 py-2" value={taxTotal} onChange={(e) => setTaxTotal(e.target.value)} />
+          <input className="mt-1 w-full sm:w-32 rounded border border-brand-200 px-3 py-3 lg:py-2" value={taxTotal} onChange={(e) => setTaxTotal(e.target.value)} />
         </label>
         <div className="text-sm">
           <div className="text-charcoal/60">Subtotal</div>
@@ -318,16 +422,16 @@ export function PurchaseOrderNew() {
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           type="button"
           disabled={!canSave || create.isPending}
           onClick={() => create.mutate()}
-          className="rounded-lg bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
+          className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
         >
           {create.isPending ? 'Saving…' : 'Save draft'}
         </button>
-        <button type="button" onClick={() => navigate(-1)} className="rounded-lg border border-brand-200 px-4 py-2 text-sm">
+        <button type="button" onClick={() => navigate(-1)} className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-brand-200 px-4 py-2 text-sm">
           Cancel
         </button>
       </div>

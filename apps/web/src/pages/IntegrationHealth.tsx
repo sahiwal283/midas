@@ -94,12 +94,12 @@ export function IntegrationHealth() {
               <StatusPill ok={!!authOk} label={authOk ? 'Zoho auth OK' : 'Zoho auth blocked'} />
               <StatusPill ok={live} label={live ? 'Live writes enabled' : 'Live writes off'} />
             </div>
-            <dl className="grid grid-cols-2 gap-3 text-sm text-charcoal/70">
+            <dl className="grid grid-cols-1 gap-3 text-sm text-charcoal/70 sm:grid-cols-2">
               <div><dt className="text-xs text-charcoal/40">Mode</dt><dd className="font-medium text-ink">{h.zohoMode}</dd></div>
               <div><dt className="text-xs text-charcoal/40">Dry run</dt><dd className="font-medium text-ink">{h.dryRun ? 'yes' : 'no'}</dd></div>
               <div><dt className="text-xs text-charcoal/40">Brand</dt><dd className="font-medium text-ink">{h.brand}</dd></div>
               <div><dt className="text-xs text-charcoal/40">Service version</dt><dd className="font-medium text-ink">{h.service?.serviceVersion ?? '—'}</dd></div>
-              <div className="col-span-2"><dt className="text-xs text-charcoal/40">Base URL</dt><dd className="font-mono text-xs text-ink">{h.service?.baseUrl ?? '—'}</dd></div>
+              <div className="sm:col-span-2"><dt className="text-xs text-charcoal/40">Base URL</dt><dd className="break-all font-mono text-xs text-ink">{h.service?.baseUrl ?? '—'}</dd></div>
             </dl>
             {h.zohoAuth?.ok === false && (
               <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -123,7 +123,7 @@ export function IntegrationHealth() {
               </button>
             </div>
             <ul className="space-y-2 text-sm">
-              <li className="flex items-center justify-between">
+              <li className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-charcoal/70">Vendors list</span>
                 {vendors.isLoading ? <span className="text-charcoal/40">…</span>
                   : vendors.isError ? <StatusPill ok={false} label="Failed" />
@@ -134,7 +134,7 @@ export function IntegrationHealth() {
                     />
                   )}
               </li>
-              <li className="flex items-center justify-between">
+              <li className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-charcoal/70">Items list</span>
                 {items.isLoading ? <span className="text-charcoal/40">…</span>
                   : items.isError ? <StatusPill ok={false} label="Failed" />

@@ -72,12 +72,12 @@ export function PartnerExpenses() {
         <div>
           <label className="mb-1 block text-xs font-medium text-charcoal/60" htmlFor="pe-from">From</label>
           <input id="pe-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-            className="rounded-lg border border-ink/15 px-3 py-2 text-sm" />
+            className="rounded-lg border border-ink/15 px-3 py-3 text-sm lg:py-2" />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-charcoal/60" htmlFor="pe-to">To</label>
           <input id="pe-to" type="date" value={to} onChange={(e) => setTo(e.target.value)}
-            className="rounded-lg border border-ink/15 px-3 py-2 text-sm" />
+            className="rounded-lg border border-ink/15 px-3 py-3 text-sm lg:py-2" />
         </div>
         {summary && (
           <p className="ml-auto text-sm text-charcoal/60">
@@ -104,7 +104,7 @@ export function PartnerExpenses() {
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={summary.byPeriod} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
                 <CartesianGrid stroke={GRID} vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: INK_MUTED, fontSize: 12 }} tickLine={false} />
+                <XAxis dataKey="label" tick={{ fill: INK_MUTED, fontSize: 12 }} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fill: INK_MUTED, fontSize: 12 }} tickLine={false} axisLine={false} />
                 <Tooltip formatter={(v: number) => money(v)} />
                 <Bar dataKey="spend" fill={SERIES[0]} radius={[4, 4, 0, 0]} />
@@ -134,7 +134,28 @@ export function PartnerExpenses() {
             No partner expenses yet. Submit an expense and choose “Partner expense”.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile list */}
+          <div className="divide-y divide-ink/5 md:hidden">
+            {rows.map((r) => (
+              <div key={r.id} className="px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 truncate font-medium text-ink">{r.merchant}</span>
+                  <span className="shrink-0 font-semibold text-ink">{money(Number(r.amount))}</span>
+                </div>
+                <p className="mt-0.5 text-xs text-charcoal/60">
+                  {r.date} · {r.user?.name ?? '—'} · {r.category?.name ?? '—'}
+                </p>
+                {r.paymentMethod && (
+                  <p className="mt-0.5 text-xs text-charcoal/60">
+                    {r.paymentMethod.label}{r.paymentMethod.lastFour ? ` ····${r.paymentMethod.lastFour}` : ''}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink/10 text-left text-xs font-semibold uppercase tracking-wider text-charcoal/45">
@@ -162,6 +183,7 @@ export function PartnerExpenses() {
             </tbody>
           </table>
           </div>
+          </>
         )}
       </div>
     </div>

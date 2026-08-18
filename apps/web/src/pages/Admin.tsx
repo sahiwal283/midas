@@ -65,7 +65,7 @@ function defaultSectionForRole(role: string | undefined): Section {
   return 'account';
 }
 
-const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none';
+const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2';
 
 function ErrorPanel({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   if (!message) return null;
@@ -91,10 +91,27 @@ export function Admin() {
     <div className="p-4 lg:p-8">
       <h1 className="mb-6 font-display text-3xl font-semibold text-ink">Settings</h1>
 
-      <div className="flex flex-col gap-8 lg:flex-row">
-        {/* Grouped section nav */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:gap-8">
+        {/* Grouped section nav: horizontal chip strip on phones, grouped column ≥lg */}
         <nav className="w-full shrink-0 lg:w-52">
-          <div className="space-y-5 rounded-xl border border-gray-200 bg-white p-4">
+          <div className="-mx-4 overflow-x-auto px-4 pb-1 lg:hidden">
+            <div className="flex w-max gap-2">
+              {navGroups.flatMap((group) => group.items).map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setSection(item.id)}
+                  className={`min-h-11 shrink-0 whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors ${
+                    activeSection === item.id
+                      ? 'border-brand-200 bg-brand-50 text-brand-700'
+                      : 'border-gray-200 bg-white text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="hidden space-y-5 rounded-xl border border-gray-200 bg-white p-4 lg:block">
             {navGroups.map((group) => (
               <div key={group.label}>
                 <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
@@ -181,24 +198,60 @@ function CompaniesTab() {
 
       <ErrorPanel message={error} onDismiss={() => setError('')} />
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="New company name"
-          className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+          className="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none sm:w-64 lg:py-2"
         />
         <button
           onClick={() => createMutation.mutate()}
           disabled={!name.trim() || createMutation.isPending}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
         >
           Add Company
         </button>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-sm">
+        {/* Mobile cards */}
+        <div className="divide-y divide-gray-100 md:hidden">
+          {companies.map((c: any) => (
+            <div key={c.id} className="space-y-3 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-gray-900">{c.name}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.zohoEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                  {c.zohoEnabled ? 'Syncs to Zoho' : 'No Zoho'}
+                </span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {c.isActive ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => patchMutation.mutate({ id: c.id, zohoEnabled: !c.zohoEnabled })}
+                  disabled={patchMutation.isPending}
+                  className="min-h-11 flex-1 rounded border border-gray-200 bg-gray-50 px-2.5 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                >
+                  {c.zohoEnabled ? 'Disable Zoho' : 'Enable Zoho'}
+                </button>
+                <button
+                  onClick={() => patchMutation.mutate({ id: c.id, isActive: !c.isActive })}
+                  disabled={patchMutation.isPending}
+                  className={`min-h-11 flex-1 rounded border px-2.5 text-xs font-medium disabled:opacity-40 ${
+                    c.isActive
+                      ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                      : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+                  }`}
+                >
+                  {c.isActive ? 'Deactivate' : 'Reactivate'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <table className="hidden w-full text-sm md:table">
           <thead>
             <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
               <th className="px-5 py-3">Name</th>
@@ -290,6 +343,23 @@ function InviteLinkPanel({ title, url, onDismiss }: { title: string; url: string
           Dismiss
         </button>
       </div>
+    </div>
+  );
+}
+
+function TempPasswordPanel({ name, password, onDismiss }: { name: string; password: string; onDismiss: () => void }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-xs font-semibold text-yellow-800">Temporary password for {name} — shown once:</p>
+        <code className="mt-1 block select-all rounded bg-yellow-100 px-2 py-1 font-mono text-sm text-yellow-900">
+          {password}
+        </code>
+        <p className="mt-1 text-xs text-yellow-700">Copy this now and share it securely. It will not be shown again.</p>
+      </div>
+      <button onClick={onDismiss} className="shrink-0 text-xs text-yellow-700 underline hover:text-yellow-900">
+        Dismiss
+      </button>
     </div>
   );
 }
@@ -471,13 +541,13 @@ function UsersTab() {
         <div className="flex gap-2">
           <button
             onClick={() => { setShowInvite((v) => !v); setShowCreate(false); setInviteError(''); }}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+            className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 lg:min-h-0"
           >
             {showInvite ? 'Cancel' : 'Invite User'}
           </button>
           <button
             onClick={() => { setShowCreate((v) => !v); setShowInvite(false); setCreateError(''); }}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 lg:min-h-0"
           >
             {showCreate ? 'Cancel' : '+ New User'}
           </button>
@@ -649,7 +719,161 @@ function UsersTab() {
 
       {/* User table */}
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-sm">
+        {/* Mobile cards */}
+        <div className="md:hidden">
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 border-b border-gray-100 px-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => setSelected(allSelected ? new Set() : new Set(selectableUsers.map((u) => u.id)))}
+              className="rounded border-gray-300"
+              aria-label="Select all users"
+            />
+            Select all
+          </label>
+          <div className="divide-y divide-gray-100">
+            {users.map((u) => (
+              <div key={u.id} className="p-4 pl-2">
+                <div className="flex items-center gap-1">
+                  {/* Oversized label = 44px tap area; toggles selection only */}
+                  <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(u.id)}
+                      onChange={() => toggleSelected(u.id)}
+                      disabled={u.id === currentUser?.id}
+                      title={u.id === currentUser?.id ? 'You cannot bulk-edit your own account' : ''}
+                      className="rounded border-gray-300 disabled:opacity-30"
+                      aria-label={`Select ${u.name}`}
+                    />
+                  </label>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900">
+                      {u.name}
+                      {duplicateNames.has(u.name.trim().toLowerCase().replace(/\s+/g, ' ')) && (
+                        <span
+                          className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                          title="Another account has this name — they may be the same person recorded twice."
+                        >
+                          possible duplicate
+                        </span>
+                      )}
+                      {u.department && <span className="ml-2 text-xs font-normal text-gray-400">{u.department}</span>}
+                    </p>
+                    <p className="truncate text-xs text-gray-500">{u.email ?? '—'}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {u.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-3 pl-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={u.role}
+                      onChange={(e) => patchMutation.mutate({ id: u.id, role: e.target.value })}
+                      disabled={u.id === currentUser?.id || patchMutation.isPending}
+                      title={u.id === currentUser?.id ? 'You cannot change your own role' : ''}
+                      className="min-h-11 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm capitalize text-gray-700 focus:border-brand-500 focus:outline-none disabled:cursor-not-allowed disabled:appearance-none disabled:border-transparent disabled:bg-transparent"
+                    >
+                      {['user', 'accountant', 'admin', 'partner', 'developer'].map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                    <span
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500"
+                      title="How this user can sign in"
+                    >
+                      {u.hasSso && u.hasPassword ? 'SSO + Local' : u.hasSso ? 'SSO-only' : u.hasPassword ? 'Local' : 'Invited'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500" title={u.lastLoginAt ?? undefined}>
+                    Last login: {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : '—'}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setEditingId((id) => (id === u.id ? null : u.id))}
+                      className="min-h-11 rounded border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                    >
+                      {editingId === u.id ? 'Close' : 'Edit profile'}
+                    </button>
+                    {u.isActive ? (
+                      <button
+                        onClick={() => patchMutation.mutate({ id: u.id, isActive: false })}
+                        disabled={u.id === currentUser?.id || patchMutation.isPending}
+                        title={u.id === currentUser?.id ? 'Cannot deactivate your own account' : ''}
+                        className="min-h-11 rounded border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-40"
+                      >
+                        Deactivate
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => patchMutation.mutate({ id: u.id, isActive: true })}
+                        disabled={patchMutation.isPending}
+                        className="min-h-11 rounded border border-green-200 bg-green-50 px-3 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-40"
+                      >
+                        Reactivate
+                      </button>
+                    )}
+                    {!u.hasPassword && !u.hasSso && (
+                      <button
+                        onClick={() => resendMutation.mutate(u.id)}
+                        disabled={resendMutation.isPending}
+                        className="min-h-11 rounded border border-brand-200 bg-brand-50 px-3 text-xs font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-40"
+                      >
+                        Resend invite
+                      </button>
+                    )}
+                    <button
+                      onClick={() => resetMutation.mutate(u.id)}
+                      disabled={resetMutation.isPending}
+                      className="min-h-11 rounded border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                    >
+                      Reset Password
+                    </button>
+                    {u.id !== currentUser?.id && (
+                      <button
+                        onClick={() => setDeleteTarget(u)}
+                        disabled={deleteMutation.isPending}
+                        className="min-h-11 rounded border border-red-300 bg-red-600 px-3 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-40"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {editingId === u.id && (
+                  <div className="mt-3 rounded-lg bg-gray-50 p-3">
+                    <UserProfileEditor
+                      user={u}
+                      allUsers={users}
+                      onClose={() => setEditingId(null)}
+                      onError={setActionError}
+                    />
+                  </div>
+                )}
+                {inviteLinks[u.id] && (
+                  <div className="mt-3">
+                    <InviteLinkPanel
+                      title={`Fresh invitation link for ${u.name} — shown once:`}
+                      url={inviteLinks[u.id]}
+                      onDismiss={() => setInviteLinks((prev) => { const n = { ...prev }; delete n[u.id]; return n; })}
+                    />
+                  </div>
+                )}
+                {tempPasswords[u.id] && (
+                  <div className="mt-3 rounded-lg bg-yellow-50 px-3 py-3">
+                    <TempPasswordPanel
+                      name={u.name}
+                      password={tempPasswords[u.id]}
+                      onDismiss={() => setTempPasswords((prev) => { const n = { ...prev }; delete n[u.id]; return n; })}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <table className="hidden w-full text-sm md:table">
           <thead>
             <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
               <th className="px-4 py-3">
@@ -804,21 +1028,11 @@ function UsersTab() {
                 {tempPasswords[u.id] && (
                   <tr className="bg-yellow-50">
                     <td colSpan={7} className="px-5 py-3">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-semibold text-yellow-800">Temporary password for {u.name} — shown once:</p>
-                          <code className="mt-1 block select-all rounded bg-yellow-100 px-2 py-1 font-mono text-sm text-yellow-900">
-                            {tempPasswords[u.id]}
-                          </code>
-                          <p className="mt-1 text-xs text-yellow-700">Copy this now and share it securely. It will not be shown again.</p>
-                        </div>
-                        <button
-                          onClick={() => setTempPasswords((prev) => { const n = { ...prev }; delete n[u.id]; return n; })}
-                          className="shrink-0 text-xs text-yellow-700 underline hover:text-yellow-900"
-                        >
-                          Dismiss
-                        </button>
-                      </div>
+                      <TempPasswordPanel
+                        name={u.name}
+                        password={tempPasswords[u.id]}
+                        onDismiss={() => setTempPasswords((prev) => { const n = { ...prev }; delete n[u.id]; return n; })}
+                      />
                     </td>
                   </tr>
                 )}
@@ -1004,17 +1218,17 @@ function UserProfileEditor({ user, allUsers, onClose, onError }: {
           </select>
         </div>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <button
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
         >
           {saveMutation.isPending ? 'Saving…' : 'Save profile'}
         </button>
         <button
           onClick={onClose}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 lg:min-h-0"
         >
           Cancel
         </button>
@@ -1259,7 +1473,36 @@ function AuditTab() {
         ) : entries.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-gray-400">No audit entries match these filters.</div>
         ) : (
-          <table className="w-full text-sm">
+          <>
+            {/* Mobile cards */}
+            <div className="divide-y divide-gray-100 md:hidden">
+              {entries.map((e) => (
+                <div key={e.id} className="space-y-1 p-4">
+                  <p className="text-sm font-medium text-gray-900">
+                    {e.actorName ?? <span className="font-normal text-gray-400">system</span>}
+                  </p>
+                  <p className="break-all font-mono text-xs text-gray-800">{e.action}</p>
+                  <p className="text-xs text-gray-600">
+                    <span className="font-medium">{e.entityType}</span>
+                    <span className="ml-1 font-mono text-gray-400" title={e.entityId}>
+                      {e.entityId.length > 12 ? `${e.entityId.slice(0, 12)}…` : e.entityId}
+                    </span>
+                  </p>
+                  <p className="text-xs text-gray-500">{new Date(e.createdAt).toLocaleString()}</p>
+                  {(e.before || e.after || e.metadata) ? (
+                    <details>
+                      <summary className="cursor-pointer select-none py-1.5 text-xs text-brand-700 hover:underline">View details</summary>
+                      <div className="mt-2 max-w-md space-y-2">
+                        {e.before != null && <AuditJson label="Before" value={e.before} />}
+                        {e.after != null && <AuditJson label="After" value={e.after} />}
+                        {e.metadata != null && <AuditJson label="Metadata" value={e.metadata} />}
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            <table className="hidden w-full text-sm md:table">
             <thead>
               <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <th className="px-4 py-3">When</th>
@@ -1298,7 +1541,8 @@ function AuditTab() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </>
         )}
       </div>
 
@@ -1311,14 +1555,14 @@ function AuditTab() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
-            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            className="min-h-11 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 lg:min-h-0"
           >
             ← Prev
           </button>
           <button
             onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
             disabled={page >= lastPage}
-            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            className="min-h-11 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 lg:min-h-0"
           >
             Next →
           </button>

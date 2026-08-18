@@ -498,8 +498,8 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     { id: 'ready_for_zoho', color: 'teal' },
   ];
 
-  const filterSelectClass = 'rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none';
-  const filterInputClass = 'rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none';
+  const filterSelectClass = 'min-h-11 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none md:min-h-0';
+  const filterInputClass = 'min-h-11 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none md:min-h-0';
 
   const title = scope === 'event' ? 'Event Review' : 'Daily Review';
   const subtitle = scope === 'event'
@@ -561,7 +561,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
           <button
             onClick={() => bulkPushMutation.mutate(readyRows.map((e) => e.id))}
             disabled={bulkPushMutation.isPending}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+            className="min-h-11 w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:min-h-0 sm:w-auto"
           >
             {bulkPushMutation.isPending
               ? 'Pushing…'
@@ -614,12 +614,12 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
 
       {/* Filter bar */}
       <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3 lg:grid-cols-4">
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search merchant or description…"
-            className={`${filterInputClass} col-span-2`}
+            className={`${filterInputClass} md:col-span-2`}
           />
           <select value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)} className={filterSelectClass}>
             <option value="">All employees</option>
@@ -760,16 +760,16 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
           <p className="text-sm font-medium text-gray-800">
             {selectedRows.length} selected · {fmtMoney(selectedTotal)}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <button
               onClick={() => setShowApproveModal(true)}
-              className="rounded-lg bg-brand-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
+              className="min-h-11 flex-1 rounded-lg bg-brand-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 sm:min-h-0 sm:flex-none"
             >
               Approve selected…
             </button>
             <button
               onClick={() => setSelected(new Set())}
-              className="rounded-lg px-2.5 py-1.5 text-sm text-gray-600 hover:bg-white"
+              className="min-h-11 rounded-lg px-2.5 py-1.5 text-sm text-gray-600 hover:bg-white sm:min-h-0"
             >
               Clear
             </button>
@@ -786,7 +786,32 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
             {activeLane === 'all' ? 'No expenses yet.' : `No items in this queue.`}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile: stacked cards */}
+          <div className="divide-y divide-gray-100 md:hidden">
+            {displayData.map((expense) => (
+              <ExpenseCard
+                key={expense.id}
+                expense={expense}
+                selected={selected.has(expense.id)}
+                onToggleSelect={() => toggleRow(expense.id)}
+                onOpenReceipt={setQuickViewId}
+                onReview={(action, note, requestType, internalNote) =>
+                  reviewMutation.mutate({ id: expense.id, action, note, requestType, internalNote })
+                }
+                onResolve={() => resolveMutation.mutate(expense.id)}
+                onPushZoho={() => zohoMutation.mutate(expense.id)}
+                zohoPushSuffix={zohoPushSuffix}
+                isActing={
+                  reviewMutation.isPending ||
+                  resolveMutation.isPending ||
+                  zohoMutation.isPending
+                }
+              />
+            ))}
+          </div>
+          {/* Desktop: full table */}
+          <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -832,6 +857,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
             </tbody>
           </table>
           </div>
+          </>
         )}
       </div>
 
@@ -845,7 +871,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
               type="button"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 disabled:opacity-40"
+              className="min-h-11 rounded-lg border border-gray-200 bg-white px-3 py-1.5 disabled:opacity-40 sm:min-h-0"
             >
               Previous
             </button>
@@ -853,7 +879,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
               type="button"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 disabled:opacity-40"
+              className="min-h-11 rounded-lg border border-gray-200 bg-white px-3 py-1.5 disabled:opacity-40 sm:min-h-0"
             >
               Next
             </button>
@@ -957,14 +983,14 @@ function BulkApproveModal({
           <button
             onClick={onCancel}
             disabled={isPending}
-            className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+            className="min-h-11 rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-50 sm:min-h-0"
           >
             Cancel
           </button>
           <button
             onClick={() => onConfirm(readyRows.map((e) => e.id), flaggedRows.length)}
             disabled={isPending || readyRows.length === 0}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+            className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:min-h-0"
           >
             {isPending
               ? 'Approving…'
@@ -1014,8 +1040,8 @@ function LaneGroup({
   onSelect: (id: LaneId) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 flex-wrap">
-      <span className="mr-1 text-xs font-semibold text-gray-400 w-28 shrink-0">{label}</span>
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:flex-wrap">
+      <span className="mr-1 text-xs font-semibold text-gray-400 shrink-0 sm:w-28">{label}</span>
       <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1 flex-wrap">
         {lanes.map((lane) => {
           const count = lane === 'all' ? undefined : (laneCounts[lane] ?? 0);
@@ -1119,6 +1145,95 @@ const REQUEST_TYPE_OPTIONS = [
   { value: 'missing_payment_method', label: 'Please specify payment method' },
 ];
 
+interface ExpenseRowProps {
+  expense: Expense;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onOpenReceipt: (expenseId: string) => void;
+  onReview: (action: 'approve' | 'reject' | 'request_info', note?: string, requestType?: string, internalNote?: string) => void;
+  onResolve: () => void;
+  onPushZoho: () => void;
+  zohoPushSuffix: string;
+  isActing: boolean;
+}
+
+/** Status/flag facts the desktop row and mobile card both branch on — keep in one place. */
+function deriveRowState(expense: Expense) {
+  return {
+    flags: (expense.flags ?? []).filter((f) => f !== 'zoho_synced' && f !== 'from_extension'),
+    isFromExtension: (expense.flags ?? []).includes('from_extension'),
+    canReview: expense.status === 'pending' || expense.status === 'in_review',
+    isAwaiting: expense.status === 'awaiting_info',
+    isReadyForZoho: (expense.flags ?? []).includes('ready_for_zoho'),
+    isZohoFailed: expense.status === 'zoho_sync_failed',
+    needsReimb:
+      expense.reimbursementStatus === 'pending' || expense.reimbursementStatus === 'approved',
+  };
+}
+
+/** "Needs review" request form — shared by the desktop row and the mobile card. */
+function AskForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (note: string, requestType: string, internalNote?: string) => void;
+  onCancel: () => void;
+}) {
+  const [askNote, setAskNote] = useState('');
+  const [askType, setAskType] = useState('info_request');
+  const [askInternal, setAskInternal] = useState('');
+
+  function submitAsk() {
+    if (!askNote.trim()) return;
+    onSubmit(askNote.trim(), askType, askInternal.trim() || undefined);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+        <select
+          value={askType}
+          onChange={(e) => setAskType(e.target.value)}
+          className="min-h-11 rounded-lg border border-blue-300 bg-white px-2 py-1.5 text-sm focus:outline-none sm:min-h-0"
+        >
+          {REQUEST_TYPE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <input
+          autoFocus
+          value={askNote}
+          onChange={(e) => setAskNote(e.target.value)}
+          placeholder="Message to employee…"
+          className="min-h-11 flex-1 rounded-lg border border-blue-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 sm:min-h-0"
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={askInternal}
+          onChange={(e) => setAskInternal(e.target.value)}
+          placeholder="Internal note (not shown to employee, optional)"
+          className="min-h-11 min-w-0 flex-1 basis-40 rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-400 sm:min-h-0"
+        />
+        <button
+          onClick={submitAsk}
+          disabled={!askNote.trim()}
+          className="flex min-h-11 items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50 sm:min-h-0"
+        >
+          <Send className="h-3.5 w-3.5" />
+          Send
+        </button>
+        <button
+          onClick={onCancel}
+          className="min-h-11 text-sm text-gray-500 hover:text-gray-700 sm:min-h-0"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ExpenseRow({
   expense,
   selected,
@@ -1129,39 +1244,11 @@ function ExpenseRow({
   onPushZoho,
   zohoPushSuffix,
   isActing,
-}: {
-  expense: Expense;
-  selected: boolean;
-  onToggleSelect: () => void;
-  onOpenReceipt: (expenseId: string) => void;
-  onReview: (action: 'approve' | 'reject' | 'request_info', note?: string, requestType?: string, internalNote?: string) => void;
-  onResolve: () => void;
-  onPushZoho: () => void;
-  zohoPushSuffix: string;
-  isActing: boolean;
-}) {
+}: ExpenseRowProps) {
   const [showAskForm, setShowAskForm] = useState(false);
-  const [askNote, setAskNote] = useState('');
-  const [askType, setAskType] = useState('info_request');
-  const [askInternal, setAskInternal] = useState('');
 
-  const flags = (expense.flags ?? []).filter((f) => f !== 'zoho_synced' && f !== 'from_extension');
-  const isFromExtension = (expense.flags ?? []).includes('from_extension');
-  const canReview = expense.status === 'pending' || expense.status === 'in_review';
-  const isAwaiting = expense.status === 'awaiting_info';
-  const isReadyForZoho = (expense.flags ?? []).includes('ready_for_zoho');
-  const isZohoFailed = expense.status === 'zoho_sync_failed';
-  const needsReimb =
-    expense.reimbursementStatus === 'pending' || expense.reimbursementStatus === 'approved';
-
-  function submitAsk() {
-    if (!askNote.trim()) return;
-    onReview('request_info', askNote.trim(), askType, askInternal.trim() || undefined);
-    setShowAskForm(false);
-    setAskNote('');
-    setAskType('info_request');
-    setAskInternal('');
-  }
+  const { flags, isFromExtension, canReview, isAwaiting, isReadyForZoho, isZohoFailed, needsReimb } =
+    deriveRowState(expense);
 
   return (
     <>
@@ -1251,48 +1338,13 @@ function ExpenseRow({
       {showAskForm && (
         <tr className="bg-blue-50">
           <td colSpan={8} className="px-5 py-3">
-            <div className="space-y-2">
-              <div className="flex items-start gap-2">
-                <select
-                  value={askType}
-                  onChange={(e) => setAskType(e.target.value)}
-                  className="rounded-lg border border-blue-300 bg-white px-2 py-1.5 text-sm focus:outline-none"
-                >
-                  {REQUEST_TYPE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-                <input
-                  autoFocus
-                  value={askNote}
-                  onChange={(e) => setAskNote(e.target.value)}
-                  placeholder="Message to employee…"
-                  className="flex-1 rounded-lg border border-blue-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  value={askInternal}
-                  onChange={(e) => setAskInternal(e.target.value)}
-                  placeholder="Internal note (not shown to employee, optional)"
-                  className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-400"
-                />
-                <button
-                  onClick={submitAsk}
-                  disabled={!askNote.trim()}
-                  className="flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  Send
-                </button>
-                <button
-                  onClick={() => { setShowAskForm(false); setAskNote(''); }}
-                  className="text-sm text-gray-500 hover:text-gray-700"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+            <AskForm
+              onSubmit={(note, requestType, internalNote) => {
+                onReview('request_info', note, requestType, internalNote);
+                setShowAskForm(false);
+              }}
+              onCancel={() => setShowAskForm(false)}
+            />
           </td>
         </tr>
       )}
@@ -1300,11 +1352,116 @@ function ExpenseRow({
   );
 }
 
+// ── Expense card (mobile) ─────────────────────────────────────────────────────
+
+function ExpenseCard({
+  expense,
+  selected,
+  onToggleSelect,
+  onOpenReceipt,
+  onReview,
+  onResolve,
+  onPushZoho,
+  zohoPushSuffix,
+  isActing,
+}: ExpenseRowProps) {
+  const [showAskForm, setShowAskForm] = useState(false);
+
+  const { flags, isFromExtension, canReview, isAwaiting, isReadyForZoho, isZohoFailed, needsReimb } =
+    deriveRowState(expense);
+
+  return (
+    <div className={`px-4 py-3 ${selected ? 'bg-brand-50/50' : ''}`}>
+      <div className="flex items-start gap-1">
+        {/* Checkbox sits outside the Link so tapping it never navigates */}
+        <label className="-my-2 -ml-2 flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            aria-label={`Select ${expense.merchant}`}
+          />
+        </label>
+        <Link to={`/accountant/${expense.id}`} className="block min-w-0 flex-1 active:bg-gray-50">
+          <div className="flex items-center justify-between gap-3">
+            <p className="min-w-0 truncate font-medium text-gray-900">{expense.merchant}</p>
+            <p className="shrink-0 font-medium text-gray-900">
+              {expense.currency} {Number(expense.amount).toFixed(2)}
+            </p>
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-gray-500">{expense.date}</span>
+            <span className="text-xs text-gray-400">· {expense.user?.name ?? '—'}</span>
+            {isFromExtension && (
+              <span className="rounded bg-blue-100 px-1 py-0.5 text-xs text-blue-700">Extension</span>
+            )}
+            {expense.category && (
+              <span className="text-xs text-gray-400">· {expense.category.name}</span>
+            )}
+            {expense.paymentMethod && (
+              <span className="text-xs text-gray-400">
+                · {expense.paymentMethod.label}{expense.paymentMethod.lastFour ? ` ···${expense.paymentMethod.lastFour}` : ''}
+              </span>
+            )}
+          </div>
+        </Link>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        <StatusBadge status={expense.status} variant="accountant" />
+        <ZohoPushBadge
+          zohoExpenseId={expense.zohoExpenseId}
+          syncFailed={isZohoFailed}
+        />
+        {isZohoFailed && <ZohoErrorCategoryChip error={expense.zohoSyncError} />}
+        {needsReimb && <ReimbursementBadge status={expense.reimbursementStatus} />}
+        {flags.map((f) => <FlagBadge key={f} flag={f} />)}
+        <OcrQueueBadge receipts={expense.receipts ?? []} />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <ReceiptDetailsButton
+          expenseId={expense.id}
+          receipts={expense.receipts}
+          onOpen={onOpenReceipt}
+        />
+        {canReview && (
+          <>
+            <ActionBtn color="green" size="touch" onClick={() => onReview('approve')} disabled={isActing}>Approve</ActionBtn>
+            <ActionBtn color="red" size="touch" onClick={() => onReview('reject')} disabled={isActing}>Reject</ActionBtn>
+            <ActionBtn color="blue" size="touch" onClick={() => setShowAskForm(true)} disabled={isActing}>
+              Needs review
+            </ActionBtn>
+          </>
+        )}
+        {isAwaiting && (
+          <ActionBtn color="blue" size="touch" onClick={onResolve} disabled={isActing}>Resolve</ActionBtn>
+        )}
+        {(isReadyForZoho || isZohoFailed) && (
+          <ActionBtn color="teal" size="touch" onClick={onPushZoho} disabled={isActing}>
+            {isZohoFailed ? `Retry Zoho${zohoPushSuffix}` : `Push to Zoho${zohoPushSuffix}`}
+          </ActionBtn>
+        )}
+      </div>
+      {showAskForm && (
+        <div className="mt-2 rounded-lg bg-blue-50 p-3">
+          <AskForm
+            onSubmit={(note, requestType, internalNote) => {
+              onReview('request_info', note, requestType, internalNote);
+              setShowAskForm(false);
+            }}
+            onCancel={() => setShowAskForm(false)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Action button ─────────────────────────────────────────────────────────────
 
 function ActionBtn({
-  color, onClick, children, disabled,
-}: { color: 'green' | 'red' | 'blue' | 'teal' | 'gray'; onClick: () => void; children: React.ReactNode; disabled?: boolean }) {
+  color, onClick, children, disabled, size = 'xs',
+}: { color: 'green' | 'red' | 'blue' | 'teal' | 'gray'; onClick: () => void; children: React.ReactNode; disabled?: boolean; size?: 'xs' | 'touch' }) {
   const styles = {
     green: 'bg-green-50 text-green-700 hover:bg-green-100 border-green-200',
     red: 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200',
@@ -1312,11 +1469,15 @@ function ActionBtn({
     teal: 'bg-teal-50 text-teal-700 hover:bg-teal-100 border-teal-200',
     gray: 'bg-gray-50 text-gray-500 hover:bg-gray-100 border-gray-200',
   };
+  const sizes = {
+    xs: 'px-2.5 py-1 text-xs',
+    touch: 'min-h-11 px-3 py-1.5 text-xs',
+  };
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded border px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${styles[color]}`}
+      className={`rounded border font-medium disabled:opacity-50 ${sizes[size]} ${styles[color]}`}
     >
       {children}
     </button>

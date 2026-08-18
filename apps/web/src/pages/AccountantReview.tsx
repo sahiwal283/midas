@@ -59,10 +59,10 @@ function ReceiptPane({ expense }: { expense: Expense }) {
                   href={receiptContentUrl(expense.id, r.id)}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 hover:underline"
+                  className="inline-flex min-h-11 max-w-full items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 hover:underline lg:min-h-0"
                 >
-                  <FileText className="h-3.5 w-3.5" />
-                  {r.filename}
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  <span className="break-all">{r.filename}</span>
                 </a>
               </li>
             ))}
@@ -87,7 +87,7 @@ function ReceiptView({ expenseId, receipt }: { expenseId: string; receipt: Recei
           href={url}
           target="_blank"
           rel="noreferrer"
-          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+          className="inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 lg:min-h-0"
         >
           Open PDF
         </a>
@@ -100,7 +100,7 @@ function ReceiptView({ expenseId, receipt }: { expenseId: string; receipt: Recei
       <img
         src={url}
         alt={receipt.filename}
-        className="mx-auto max-h-[42rem] w-auto max-w-full rounded-lg border border-gray-200 object-contain"
+        className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg border border-gray-200 object-contain lg:max-h-[42rem]"
       />
     </a>
   );
@@ -143,7 +143,7 @@ function ZohoReadinessCard({ expense }: { expense: Expense }) {
         <ReadinessLine ok={notSynced} label="Not already synced" />
       </ul>
       {expense.zohoExpenseId && (
-        <p className="mt-2 text-xs text-gray-500">Zoho ID: {expense.zohoExpenseId}</p>
+        <p className="mt-2 break-all text-xs text-gray-500">Zoho ID: {expense.zohoExpenseId}</p>
       )}
     </div>
   );
@@ -160,7 +160,7 @@ function MessageItem({
 }) {
   if (message.isSystem) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center text-xs text-gray-500">
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center text-xs text-gray-500 break-words">
         {message.body}
       </div>
     );
@@ -179,9 +179,9 @@ function MessageItem({
           </div>
           <span className="text-xs text-gray-400">{new Date(message.createdAt).toLocaleString()}</span>
         </div>
-        <p className={resolved ? 'text-green-900' : 'text-amber-900'}>{message.body}</p>
+        <p className={`break-words ${resolved ? 'text-green-900' : 'text-amber-900'}`}>{message.body}</p>
         {message.internalNote && (
-          <p className="mt-2 rounded border border-yellow-200 bg-yellow-50 px-2 py-1 text-xs text-yellow-800">
+          <p className="mt-2 rounded border border-yellow-200 bg-yellow-50 px-2 py-1 text-xs text-yellow-800 break-words">
             <span className="font-semibold">Internal note: </span>{message.internalNote}
           </p>
         )}
@@ -199,7 +199,7 @@ function MessageItem({
         )}
         <span className="text-xs opacity-60">{new Date(message.createdAt).toLocaleString()}</span>
       </div>
-      <p>{message.body}</p>
+      <p className="break-words">{message.body}</p>
     </div>
   );
 }
@@ -208,9 +208,9 @@ function MessageItem({
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-4">
-      <dt className="shrink-0 text-gray-400">{label}</dt>
-      <dd className="text-right font-medium text-gray-800">{value}</dd>
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
+      <dt className="text-gray-400 sm:shrink-0">{label}</dt>
+      <dd className="min-w-0 break-words font-medium text-gray-800 sm:text-right">{value}</dd>
     </div>
   );
 }
@@ -303,9 +303,9 @@ export function AccountantReview() {
   return (
     <div>
       {/* Sticky header */}
-      <div className="sticky top-0 z-10 border-b border-ink/10 bg-white/95 px-4 py-3 backdrop-blur lg:px-8">
+      <div className="sticky top-0 z-10 border-b border-ink/10 bg-white/95 px-4 pr-14 py-3 backdrop-blur lg:px-8">
         <div className="flex flex-wrap items-center gap-3">
-          <Link to={queueBackTo} className="rounded p-1 text-charcoal/40 hover:bg-ink/[0.04]" aria-label="Back to queue">
+          <Link to={queueBackTo} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded p-1 text-charcoal/40 hover:bg-ink/[0.04] lg:min-h-0 lg:min-w-0" aria-label="Back to queue">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
@@ -322,11 +322,11 @@ export function AccountantReview() {
               {fmtMoney(Number(expense.amount || 0))}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <button
               onClick={() => reviewMutation.mutate({ action: 'approve' })}
               disabled={!canReview || reviewMutation.isPending}
-              className="flex items-center gap-1.5 rounded-lg bg-success px-3.5 py-2 text-sm font-semibold text-cream hover:opacity-90 disabled:opacity-40"
+              className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-success px-3.5 py-2 text-sm font-semibold text-cream hover:opacity-90 disabled:opacity-40 sm:flex-none lg:min-h-0"
             >
               <CheckCircle2 className="h-4 w-4" />
               Approve
@@ -334,7 +334,7 @@ export function AccountantReview() {
             <button
               onClick={() => reviewMutation.mutate({ action: 'reject' })}
               disabled={!canReview || reviewMutation.isPending}
-              className="flex items-center gap-1.5 rounded-lg bg-danger px-3.5 py-2 text-sm font-semibold text-cream hover:opacity-90 disabled:opacity-40"
+              className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-danger px-3.5 py-2 text-sm font-semibold text-cream hover:opacity-90 disabled:opacity-40 sm:flex-none lg:min-h-0"
             >
               <XCircle className="h-4 w-4" />
               Reject
@@ -342,7 +342,7 @@ export function AccountantReview() {
             <button
               onClick={() => setShowAskForm((v) => !v)}
               disabled={!canReview || reviewMutation.isPending}
-              className="flex items-center gap-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3.5 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-500/15 disabled:opacity-40"
+              className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3.5 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-500/15 disabled:opacity-40 sm:flex-none lg:min-h-0"
             >
               <MessageCircleQuestion className="h-4 w-4" />
               Ask
@@ -366,11 +366,11 @@ export function AccountantReview() {
         {/* Ask form */}
         {showAskForm && (
           <div className="mt-3 space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
-            <div className="flex items-start gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
               <select
                 value={askType}
                 onChange={(e) => setAskType(e.target.value)}
-                className="rounded-lg border border-blue-300 bg-white px-2 py-1.5 text-sm focus:outline-none"
+                className="w-full rounded-lg border border-blue-300 bg-white px-2 py-3 text-sm focus:outline-none sm:w-auto lg:py-1.5"
               >
                 {REQUEST_TYPE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -381,27 +381,27 @@ export function AccountantReview() {
                 value={askNote}
                 onChange={(e) => setAskNote(e.target.value)}
                 placeholder="Message to employee…"
-                className="flex-1 rounded-lg border border-blue-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="min-w-0 rounded-lg border border-blue-300 px-3 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 sm:flex-1 lg:py-1.5"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 value={askInternal}
                 onChange={(e) => setAskInternal(e.target.value)}
                 placeholder="Internal note (not shown to employee, optional)"
-                className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-400"
+                className="w-full min-w-0 rounded-lg border border-gray-300 bg-gray-50 px-3 py-3 text-xs text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-400 sm:w-auto sm:flex-1 lg:py-1.5"
               />
               <button
                 onClick={submitAsk}
                 disabled={!askNote.trim() || reviewMutation.isPending}
-                className="flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                className="flex min-h-11 items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50 lg:min-h-0"
               >
                 <Send className="h-3.5 w-3.5" />
                 Send
               </button>
               <button
                 onClick={() => { setShowAskForm(false); setAskNote(''); }}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="min-h-11 px-2 text-sm text-gray-500 hover:text-gray-700 lg:min-h-0 lg:px-0"
               >
                 Cancel
               </button>
@@ -442,7 +442,7 @@ export function AccountantReview() {
             {expense.description && (
               <div className="mt-3 border-t border-gray-100 pt-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Notes</p>
-                <p className="mt-1 text-sm text-gray-600">{expense.description}</p>
+                <p className="mt-1 break-words text-sm text-gray-600">{expense.description}</p>
               </div>
             )}
           </div>
@@ -474,12 +474,12 @@ export function AccountantReview() {
                 value={reply}
                 onChange={(e) => setReply(e.target.value)}
                 placeholder="Add a note or reply…"
-                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
               />
               <button
                 type="submit"
                 disabled={!reply.trim() || messageMutation.isPending}
-                className="rounded-lg bg-brand-600 px-3 py-2 text-white hover:bg-brand-700 disabled:opacity-60"
+                className="min-h-11 min-w-11 rounded-lg bg-brand-600 px-3 py-2 text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:min-w-0"
               >
                 <Send className="h-4 w-4" />
               </button>

@@ -76,7 +76,7 @@ function BreakdownList({ rows }: { rows: Array<ReportRow & { color: string }> })
       {rows.map((r) => (
         <div key={r.name} className="flex items-center gap-3">
           <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: r.color }} />
-          <span className="w-40 truncate text-sm text-gray-700" title={r.name}>{r.name}</span>
+          <span className="w-28 truncate text-sm text-gray-700 md:w-40" title={r.name}>{r.name}</span>
           <div className="h-3.5 flex-1 overflow-hidden rounded bg-gray-100">
             <div className="h-full rounded" style={{ width: `${(r.spend / max) * 100}%`, backgroundColor: r.color }} />
           </div>
@@ -94,7 +94,25 @@ function RankedTable({ title, rows }: { title: string; rows: ReportRow[] }) {
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-gray-400">No data in this range.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* Mobile list */}
+        <div className="space-y-2.5 md:hidden">
+          {rows.map((r, i) => (
+            <div key={r.name}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate font-medium text-gray-900" title={r.name}>
+                  <span className="mr-1.5 font-normal text-gray-400">{i + 1}</span>{r.name}
+                </span>
+                <span className="shrink-0 text-gray-700">{usd(r.spend)}</span>
+              </div>
+              <div className="mt-1 h-2.5 w-full overflow-hidden rounded bg-gray-100">
+                <div className="h-full rounded bg-brand-300" style={{ width: `${(r.spend / max) * 100}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -120,6 +138,7 @@ function RankedTable({ title, rows }: { title: string; rows: ReportRow[] }) {
           </tbody>
         </table>
         </div>
+        </>
       )}
     </Card>
   );
@@ -180,7 +199,7 @@ export function Reports() {
               key={p.id}
               type="button"
               onClick={() => applyPreset(p.id)}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={`rounded-md px-3 py-2.5 text-sm font-medium transition-colors lg:py-1.5 ${
                 preset === p.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -194,14 +213,14 @@ export function Reports() {
             type="date"
             value={range.from}
             onChange={(e) => applyCustom('from', e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none"
+            className="rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm text-gray-700 focus:border-brand-500 focus:outline-none lg:py-1.5"
           />
           <label className="text-xs font-medium text-gray-500">To</label>
           <input
             type="date"
             value={range.to}
             onChange={(e) => applyCustom('to', e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none"
+            className="rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm text-gray-700 focus:border-brand-500 focus:outline-none lg:py-1.5"
           />
           <div className="flex rounded-lg border border-gray-200 bg-gray-100 p-1">
             {([['', 'All'], ['daily', 'Daily'], ['event', 'Event']] as const).map(([id, label]) => (
@@ -209,7 +228,7 @@ export function Reports() {
                 key={label}
                 type="button"
                 onClick={() => setType(id as ReportType | '')}
-                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors lg:py-1 ${
                   type === id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -220,7 +239,7 @@ export function Reports() {
           <select
             value={entity}
             onChange={(e) => setEntity(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none"
+            className="max-w-full rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm text-gray-700 focus:border-brand-500 focus:outline-none lg:py-1.5"
           >
             <option value="">All companies</option>
             {entityOptions.map((n) => (
@@ -273,7 +292,26 @@ export function Reports() {
           {(data.budgets?.length ?? 0) > 0 && (
             <div className="mb-6">
             <Card title="Budget vs spend">
-              <div className="overflow-x-auto">
+              {/* Mobile cards */}
+              <div className="space-y-3 md:hidden">
+                {data.budgets!.map((b) => (
+                  <div key={b.id} className="rounded-lg border border-gray-100 p-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate font-medium text-gray-900">{b.companyName}</span>
+                      <span className={`shrink-0 font-medium ${b.remaining < 0 ? 'text-red-700' : 'text-green-700'}`}>
+                        {usd(b.remaining)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-500">{b.period} · {b.categoryName ?? 'All'}</p>
+                    <div className="mt-2 flex justify-between text-gray-700">
+                      <span>Budget {usd(b.budget)}</span>
+                      <span>Spend {usd(b.spend)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wider text-gray-500 border-b">
@@ -310,7 +348,7 @@ export function Reports() {
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={data.byPeriod} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
                 <CartesianGrid vertical={false} stroke={GRID} />
-                <XAxis dataKey="label" tick={{ fill: INK_MUTED, fontSize: 12 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
+                <XAxis dataKey="label" tick={{ fill: INK_MUTED, fontSize: 12 }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tickFormatter={usdCompact} tick={{ fill: INK_MUTED, fontSize: 12 }} axisLine={false} tickLine={false} width={56} />
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
                 <Bar dataKey="spend" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={40} />
@@ -324,8 +362,9 @@ export function Reports() {
               {categories.length === 0 ? (
                 <p className="py-6 text-center text-sm text-gray-400">No data.</p>
               ) : (
-                <div className="flex items-center gap-4">
-                  <ResponsiveContainer width="55%" height={240}>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                  <div className="w-full shrink-0 lg:w-[55%]">
+                  <ResponsiveContainer width="100%" height={240}>
                     <PieChart>
                       <Pie
                         data={categories}
@@ -344,6 +383,7 @@ export function Reports() {
                       <Tooltip content={<ChartTooltip />} />
                     </PieChart>
                   </ResponsiveContainer>
+                  </div>
                   <div className="min-w-0 flex-1 space-y-1.5">
                     {categories.map((c) => (
                       <div key={c.name} className="flex items-center gap-2 text-sm">
@@ -385,8 +425,21 @@ export function Reports() {
               <KpiTile label="Paid" value={usd(data.reimbursement.paid)} />
             </div>
             {data.reimbursement.byEmployee.length > 0 && (
-              <div className="mt-4 overflow-x-auto">
+              <div className="mt-4">
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">By employee</h3>
+                {/* Mobile list */}
+                <div className="divide-y divide-gray-50 md:hidden">
+                  {data.reimbursement.byEmployee.map((r) => (
+                    <div key={r.name} className="flex items-center justify-between gap-3 py-2 text-sm">
+                      <span className="min-w-0 truncate font-medium text-gray-900" title={r.name}>{r.name}</span>
+                      <span className="shrink-0 text-gray-700">
+                        {usd(r.outstanding)} <span className="text-gray-400">due</span> · {usd(r.paid)} <span className="text-gray-400">paid</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop table */}
+                <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -405,6 +458,7 @@ export function Reports() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </Card>

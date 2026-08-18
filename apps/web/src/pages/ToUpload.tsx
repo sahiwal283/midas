@@ -59,8 +59,8 @@ export function ToUpload() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="mx-auto max-w-3xl p-4 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">To upload</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -71,7 +71,7 @@ export function ToUpload() {
           type="button"
           onClick={() => void handleSyncAll()}
           disabled={syncing || items.length === 0 || !navigator.onLine}
-          className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-h-0 sm:shrink-0"
         >
           <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
           {syncing ? 'Uploading…' : 'Upload all'}
@@ -101,14 +101,14 @@ export function ToUpload() {
           items.map((item) => (
             <div
               key={item.id}
-              className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white px-4 py-3"
+              className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:items-center sm:gap-4"
             >
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-gray-900">{item.payload.merchant}</p>
-                <p className="text-sm text-gray-500">
+                <p className="break-words text-sm text-gray-500">
                   ${item.payload.amount.toFixed(2)} · {item.payload.date} · {item.receipt.name}
                 </p>
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 break-words text-xs text-gray-400">
                   Status: {item.status}
                   {item.retryCount > 0 ? ` · retries ${item.retryCount}` : ''}
                   {item.lastError ? ` · ${item.lastError}` : ''}
@@ -117,8 +117,9 @@ export function ToUpload() {
               <button
                 type="button"
                 onClick={() => void handleRemove(item.id)}
-                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600"
                 title="Discard"
+                aria-label="Discard queued upload"
               >
                 <Trash2 className="h-4 w-4" />
               </button>

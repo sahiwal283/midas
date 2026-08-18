@@ -143,7 +143,7 @@ export function PurchaseOrderDetail() {
         </Link>
       )}
       <h1 className="mt-2 mb-1 font-display text-3xl font-semibold text-ink">Purchase Order</h1>
-      <p className="mb-6 text-sm text-charcoal/55">
+      <p className="mb-6 break-words text-sm text-charcoal/55">
         {tx.vendorName} · {tx.transactionDate} · <span className="uppercase tracking-wide">{tx.status}</span>
       </p>
 
@@ -190,7 +190,55 @@ export function PurchaseOrderDetail() {
         </label>
       )}
 
-      <div className="mb-6 overflow-x-auto rounded-xl border border-ink/10 bg-white shadow-panel">
+      {/* Mobile: stacked line-item cards */}
+      <div className="mb-6 space-y-3 md:hidden">
+        {lines.map((li) => {
+          const conf = li.ocrConfidence != null ? Number(li.ocrConfidence) : null;
+          const lowConf = conf != null && conf < 0.7;
+          return (
+            <div key={li.id} className="rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
+              <p className="break-words text-sm font-medium text-ink">
+                {li.description}
+                {(li.needsReview || lowConf) && (
+                  <span className="ml-2 text-xs text-amber-700">
+                    verify{lowConf && conf != null ? ` (${Math.round(conf * 100)}%)` : ''}
+                  </span>
+                )}
+              </p>
+              {editable && (
+                <label className="mt-3 block text-sm">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-charcoal/45">Zoho item</span>
+                  <SearchableSelect
+                    className="mt-1"
+                    disabled={patch.isPending || itemsQ.isLoading}
+                    placeholder="Search item…"
+                    value={li.zohoItemId ?? ''}
+                    onChange={(itemId) => void setLineItem(li.lineNumber, itemId)}
+                    options={(itemsQ.data ?? []).map((it) => ({
+                      value: it.itemId,
+                      label: it.name,
+                      hint: it.itemId,
+                    }))}
+                  />
+                </label>
+              )}
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <dt className="text-xs font-semibold uppercase tracking-wider text-charcoal/45">Qty</dt>
+                <dd className="text-right">{li.quantity}</dd>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-charcoal/45">Unit</dt>
+                <dd className="text-right">{li.unit ?? '—'}</dd>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-charcoal/45">Price</dt>
+                <dd className="text-right">${Number(li.unitPrice).toFixed(2)}</dd>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-charcoal/45">Total</dt>
+                <dd className="text-right font-medium">${Number(li.total).toFixed(2)}</dd>
+              </dl>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop: read-only table */}
+      <div className="mb-6 hidden overflow-x-auto rounded-xl border border-ink/10 bg-white shadow-panel md:block">
         <table className="min-w-full text-sm">
           <thead className="bg-cream text-left">
             <tr>

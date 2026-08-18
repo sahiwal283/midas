@@ -191,7 +191,7 @@ export function ChartOfAccountsSection() {
           id="coa-company"
           value={company}
           onChange={(e) => setCompany(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+          className="rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
         >
           {zohoCompanies.map((c) => (
             <option key={c.id} value={c.name}>{c.name}</option>
@@ -206,12 +206,12 @@ export function ChartOfAccountsSection() {
           <button
             onClick={() => { setSyncResult(''); syncMutation.mutate(); }}
             disabled={syncMutation.isPending}
-            className="rounded-lg border border-brand-300 px-3 py-1.5 font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+            className="min-h-11 rounded-lg border border-brand-300 px-3 py-1.5 font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-60 lg:min-h-0"
           >
             {syncMutation.isPending ? 'Importing…' : 'Import categories from Zoho'}
           </button>
-          <button onClick={expandAll} className="text-brand-600 underline hover:text-brand-700">Expand all</button>
-          <button onClick={collapseAll} className="text-brand-600 underline hover:text-brand-700">Collapse all</button>
+          <button onClick={expandAll} className="inline-flex min-h-11 items-center text-brand-600 underline hover:text-brand-700 lg:min-h-0">Expand all</button>
+          <button onClick={collapseAll} className="inline-flex min-h-11 items-center text-brand-600 underline hover:text-brand-700 lg:min-h-0">Collapse all</button>
         </div>
       </div>
 
@@ -231,7 +231,8 @@ export function ChartOfAccountsSection() {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white">
+      {/* Deep indentation can outgrow a phone screen — scroll inside this card, never the page */}
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         {rows.map(({ cat, depth, hasChildren, collapsed, descendantCount }) => {
           const mapped = mappedByCategory.get(cat.id) ?? '';
           const inherited = mapped ? null : inheritedFrom(cat.id);
@@ -241,7 +242,7 @@ export function ChartOfAccountsSection() {
                 {hasChildren ? (
                   <button
                     onClick={() => toggle(cat.id)}
-                    className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    className="-m-3 rounded p-3.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 lg:m-0 lg:p-0.5"
                     aria-label={collapsed ? `Expand ${cat.name}` : `Collapse ${cat.name}`}
                     aria-expanded={!collapsed}
                   >
@@ -258,7 +259,7 @@ export function ChartOfAccountsSection() {
                 </span>
               </div>
 
-              <div className="w-72">
+              <div className="w-full sm:w-72">
                 <SearchableSelect
                   options={optionsFor(cat.id, mapped)}
                   value={mapped}
@@ -277,7 +278,7 @@ export function ChartOfAccountsSection() {
                     <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">Mapped</span>
                     <button
                       onClick={() => clearMutation.mutate(cat.id)}
-                      className="text-xs text-gray-400 underline hover:text-gray-600"
+                      className="inline-flex min-h-11 items-center px-1 text-xs text-gray-400 underline hover:text-gray-600 lg:min-h-0 lg:px-0"
                     >
                       Clear
                     </button>

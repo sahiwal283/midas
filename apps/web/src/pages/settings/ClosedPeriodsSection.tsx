@@ -77,14 +77,14 @@ export function ClosedPeriodsSection() {
           type="month"
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none"
+          className="rounded-lg border border-gray-300 px-3 py-3 text-sm text-gray-900 focus:border-brand-500 focus:outline-none lg:py-2"
           aria-label="Month to close"
         />
         <button
           type="button"
           disabled={!month || closeMutation.isPending}
           onClick={() => setConfirmClose(true)}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 lg:min-h-0"
         >
           Close period
         </button>
@@ -100,8 +100,8 @@ export function ClosedPeriodsSection() {
         ) : (
           <ul className="divide-y divide-gray-100">
             {periods.map((p) => (
-              <li key={p.period} className="flex items-center justify-between px-5 py-3">
-                <div>
+              <li key={p.period} className="flex items-center justify-between gap-3 px-5 py-3">
+                <div className="min-w-0">
                   <span className="text-sm font-medium text-gray-900">{fmtPeriod(p.period)}</span>
                   <span className="ml-2 text-xs text-gray-400">
                     closed {new Date(p.createdAt).toLocaleDateString()}
@@ -114,7 +114,7 @@ export function ClosedPeriodsSection() {
                     type="button"
                     onClick={() => setReopenTarget(p.period)}
                     disabled={reopenMutation.isPending}
-                    className="text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50"
+                    className="min-h-11 shrink-0 px-2 text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50 lg:min-h-0 lg:px-0"
                   >
                     Reopen
                   </button>
