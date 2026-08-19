@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, ReceiptText, AlertCircle, CheckCircle2, Clock, RefreshCw, FileX, Banknote } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { expenseApi, accountantApi } from '../api/expenses';
-import { userStatusLabel } from '../components/StatusBadge';
+import { StatusBadge } from '../components/StatusBadge';
 
 function fmtMoney(n: number): string {
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -196,33 +196,31 @@ function EmployeeDashboard() {
   const approved = expenses.filter((e) => e.status === 'approved' || e.status === 'zoho_sync_failed');
   const recent = [...expenses].slice(0, 5);
 
+  const subtitle = actionNeeded.length > 0
+    ? `${actionNeeded.length} need${actionNeeded.length === 1 ? 's' : ''} a reply`
+    : inFlight.length > 0
+      ? `${inFlight.length} under review`
+      : 'You\u2019re caught up';
+
   return (
-    <div className="p-4 lg:p-8">
+    <div className="page">
       {/* The bell floats top-right on mobile, so keep the greeting clear of it;
           the Add button is desktop-only \u2014 the camera FAB covers mobile. */}
       <div className="mb-6 flex items-start justify-between pr-10 lg:mb-8 lg:pr-0">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink lg:text-3xl">
+          <h1 className="page-title">
             {timeGreeting()}, {user?.name?.split(' ')[0]}
           </h1>
-          <p className="mt-1 text-sm text-charcoal/55">
-            {actionNeeded.length > 0
-              ? `${actionNeeded.length} expense${actionNeeded.length === 1 ? '' : 's'} need${actionNeeded.length === 1 ? 's' : ''} your attention`
-              : 'Here\u2019s what needs you next'}
-          </p>
+          <p className="page-subtitle">{subtitle}</p>
         </div>
-        <Link
-          to="/expenses/new"
-          className="btn-primary hidden lg:inline-flex"
-        >
+        <Link to="/expenses/new" className="btn-primary hidden lg:inline-flex">
           <Plus className="h-4 w-4" />
           Add Transaction
         </Link>
       </div>
 
-      {/* Action-needed callout */}
       {actionNeeded.length > 0 && (
-        <div className="mb-6 rounded-xl border-2 border-amber-400 bg-amber-50 p-4">
+        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4">
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
             <div className="flex-1">
@@ -236,10 +234,10 @@ function EmployeeDashboard() {
                   <Link
                     key={e.id}
                     to={`/expenses/${e.id}`}
-                    className="flex items-center justify-between rounded-lg bg-amber-100 px-3 py-2 text-sm text-amber-900 hover:bg-amber-200"
+                    className="flex min-h-11 items-center justify-between rounded-lg bg-white/80 px-3 py-2 text-sm text-amber-900 hover:bg-white"
                   >
                     <span className="font-medium">{e.merchant}</span>
-                    <span className="text-xs opacity-70">Reply →</span>
+                    <span className="text-xs font-medium text-amber-800">Reply</span>
                   </Link>
                 ))}
               </div>
@@ -248,39 +246,43 @@ function EmployeeDashboard() {
         </div>
       )}
 
-      {/* Action-first lanes — compact 3-up on phones instead of stacked slabs */}
       <div className="mb-6 grid grid-cols-3 gap-2 sm:gap-4 lg:mb-8">
         <StatCard
-          label="Needs your attention"
+          to="/expenses"
+          label="Needs reply"
           value={actionNeeded.length}
           accent={actionNeeded.length > 0}
-          icon={<AlertCircle className={`h-5 w-5 ${actionNeeded.length > 0 ? 'text-amber-600' : 'text-charcoal/30'}`} />}
+          icon={<AlertCircle className={`h-5 w-5 ${actionNeeded.length > 0 ? 'text-amber-700' : 'text-muted'}`} />}
+          well={actionNeeded.length > 0 ? 'bg-amber-50' : 'bg-brand-50'}
         />
         <StatCard
+          to="/expenses"
           label="Under review"
           value={inFlight.length}
           icon={<ReceiptText className="h-5 w-5 text-brand-600" />}
+          well="bg-brand-50"
         />
         <StatCard
+          to="/expenses"
           label="Approved"
           value={approved.length}
           icon={<CheckCircle2 className="h-5 w-5 text-success" />}
+          well="bg-success/10"
         />
       </div>
 
-      {/* Recent expenses */}
-      <div className="rounded-xl border border-ink/10 bg-white shadow-panel">
-        <div className="flex items-center justify-between border-b border-gold-400/60 px-4 py-4 sm:px-6">
+      <div className="panel">
+        <div className="panel-head">
           <h2 className="font-display text-lg font-semibold text-ink">Recent expenses</h2>
           <Link to="/expenses" className="text-sm font-medium text-brand-700 hover:text-brand-800">View all</Link>
         </div>
 
         {isLoading ? (
-          <div className="px-6 py-8 text-center text-sm text-charcoal/40">Loading…</div>
+          <div className="h-48 animate-pulse bg-brand-50 motion-reduce:animate-none" aria-hidden />
         ) : recent.length === 0 ? (
-          <div className="px-6 py-8 text-center text-sm text-charcoal/45">
+          <div className="px-6 py-10 text-center text-sm text-muted">
             No expenses yet.{' '}
-            <Link to="/expenses/new" className="text-brand-700 hover:underline">Create one</Link>
+            <Link to="/expenses/new" className="font-medium text-brand-700 hover:underline">Create one</Link>
           </div>
         ) : (
           <div className="divide-y divide-ink/5">
@@ -288,60 +290,64 @@ function EmployeeDashboard() {
               <Link
                 key={expense.id}
                 to={`/expenses/${expense.id}`}
-                className={`flex items-start justify-between gap-3 px-4 py-3 hover:bg-ink/[0.02] sm:items-center sm:px-6 sm:py-4 ${expense.status === 'awaiting_info' ? 'bg-amber-50/80' : ''}`}
+                className={`flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-ink/[0.02] sm:px-6 ${expense.status === 'awaiting_info' ? 'bg-amber-50/70' : ''}`}
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium text-ink">{expense.merchant}</p>
-                  <p className="truncate text-sm text-charcoal/50">
+                  <p className="truncate text-xs text-muted sm:text-sm">
                     {expense.date} · {expense.category?.name ?? 'Uncategorized'}
                   </p>
                 </div>
-                {/* Phone: amount over status, right-aligned. Desktop: side by side. */}
-                <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
-                  <span className="font-semibold tabular-nums text-ink">
-                    {expense.currency} {Number(expense.amount).toFixed(2)}
+                <div className="flex shrink-0 items-center gap-3 sm:gap-5">
+                  <span className="text-right font-semibold tabular-nums text-ink">
+                    <span className="mr-1 text-xs font-medium text-muted">{expense.currency}</span>
+                    {Number(expense.amount).toFixed(2)}
                   </span>
-                  <div className="text-right sm:w-40">
-                    {expense.status === 'awaiting_info' ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
-                        <AlertCircle className="h-3 w-3" />
-                        Action needed
-                      </span>
-                    ) : (
-                      <span className="text-xs font-medium text-charcoal/60">
-                        {userStatusLabel(expense.status, expense.zohoExpenseId)}
-                      </span>
-                    )}
-                  </div>
+                  <span className="hidden sm:inline-flex sm:w-40 sm:justify-end">
+                    <StatusBadge status={expense.status} variant="user" zohoExpenseId={expense.zohoExpenseId} />
+                  </span>
                 </div>
               </Link>
             ))}
           </div>
         )}
       </div>
-
     </div>
   );
 }
 
 function StatCard({
+  to,
   label,
   value,
   icon,
+  well,
   accent = false,
 }: {
+  to: string;
   label: string;
   value: number;
   icon: React.ReactNode;
+  well: string;
   accent?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border bg-white p-3 shadow-panel sm:p-5 ${accent ? 'border-amber-400/60' : 'border-ink/10'}`}>
-      <div className="flex items-center justify-between gap-1">
-        <p className="text-xs leading-tight text-charcoal/55 sm:text-sm">{label}</p>
-        <span className="hidden sm:block">{icon}</span>
+    <Link
+      to={to}
+      className={`relative overflow-hidden rounded-xl border bg-white shadow-panel transition-colors hover:border-brand-300 ${
+        accent ? 'border-amber-400/70' : 'border-ink/10'
+      }`}
+    >
+      {accent && <span className="absolute inset-y-0 left-0 w-1 bg-gold-400" />}
+      <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:p-5">
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${well}`}>
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted">{label}</p>
+          <p className="mt-0.5 font-display text-2xl font-semibold tabular-nums text-ink sm:text-3xl">{value}</p>
+        </div>
       </div>
-      <p className="mt-1.5 font-display text-2xl font-semibold tabular-nums text-ink sm:mt-2 sm:text-3xl">{value}</p>
-    </div>
+    </Link>
   );
 }

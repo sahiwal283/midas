@@ -1185,9 +1185,9 @@ function LaneRail({
                   key={lane}
                   type="button"
                   onClick={() => onSelect(lane)}
-                  className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
+                  className={`relative flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg py-2 pl-3 pr-2.5 text-left text-sm transition-colors ${
                     active
-                      ? 'bg-brand-50 font-semibold text-brand-800'
+                      ? 'bg-brand-50 font-semibold text-brand-800 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-gold-400'
                       : 'font-medium text-charcoal/70 hover:bg-ink/[0.03] hover:text-ink'
                   }`}
                 >
@@ -1429,28 +1429,19 @@ function ExpenseRow({
           </div>
         </td>
         <td className="px-4 py-2.5">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {canReview && (
-              <>
-                <ActionBtn color="green" onClick={() => onReview('approve')} disabled={isActing}>Approve</ActionBtn>
-                <ActionBtn color="red" onClick={() => onReview('reject')} disabled={isActing}>Reject</ActionBtn>
-                <ActionBtn color="blue" onClick={() => setShowAskForm(true)} disabled={isActing}>
-                  Needs review
-                </ActionBtn>
-              </>
-            )}
-            {isAwaiting && (
-              <ActionBtn color="blue" onClick={onResolve} disabled={isActing}>Resolve</ActionBtn>
-            )}
-            {(isReadyForZoho || isZohoFailed) && (
-              <ActionBtn color="teal" onClick={onPushZoho} disabled={isActing}>
-                {isZohoFailed ? `Retry Zoho${zohoPushSuffix}` : `Push to Zoho${zohoPushSuffix}`}
-              </ActionBtn>
-            )}
-            {!canReview && !isAwaiting && !isReadyForZoho && !isZohoFailed && (
-              <span className="text-xs text-charcoal/40">—</span>
-            )}
-          </div>
+          <RowActions
+            canReview={canReview}
+            isAwaiting={isAwaiting}
+            isReadyForZoho={isReadyForZoho}
+            isZohoFailed={isZohoFailed}
+            zohoPushSuffix={zohoPushSuffix}
+            isActing={isActing}
+            onApprove={() => onReview('approve')}
+            onReject={() => onReview('reject')}
+            onAsk={() => setShowAskForm(true)}
+            onResolve={onResolve}
+            onPushZoho={onPushZoho}
+          />
         </td>
       </tr>
 
@@ -1544,23 +1535,20 @@ function ExpenseCard({
           receipts={expense.receipts}
           onOpen={onOpenReceipt}
         />
-        {canReview && (
-          <>
-            <ActionBtn color="green" size="touch" onClick={() => onReview('approve')} disabled={isActing}>Approve</ActionBtn>
-            <ActionBtn color="red" size="touch" onClick={() => onReview('reject')} disabled={isActing}>Reject</ActionBtn>
-            <ActionBtn color="blue" size="touch" onClick={() => setShowAskForm(true)} disabled={isActing}>
-              Needs review
-            </ActionBtn>
-          </>
-        )}
-        {isAwaiting && (
-          <ActionBtn color="blue" size="touch" onClick={onResolve} disabled={isActing}>Resolve</ActionBtn>
-        )}
-        {(isReadyForZoho || isZohoFailed) && (
-          <ActionBtn color="teal" size="touch" onClick={onPushZoho} disabled={isActing}>
-            {isZohoFailed ? `Retry Zoho${zohoPushSuffix}` : `Push to Zoho${zohoPushSuffix}`}
-          </ActionBtn>
-        )}
+        <RowActions
+          touch
+          canReview={canReview}
+          isAwaiting={isAwaiting}
+          isReadyForZoho={isReadyForZoho}
+          isZohoFailed={isZohoFailed}
+          zohoPushSuffix={zohoPushSuffix}
+          isActing={isActing}
+          onApprove={() => onReview('approve')}
+          onReject={() => onReview('reject')}
+          onAsk={() => setShowAskForm(true)}
+          onResolve={onResolve}
+          onPushZoho={onPushZoho}
+        />
       </div>
       {showAskForm && (
         <div className="mt-2 rounded-lg bg-brand-50 p-3">
@@ -1579,27 +1567,90 @@ function ExpenseCard({
 
 // ── Action button ─────────────────────────────────────────────────────────────
 
+function RowActions({
+  touch = false,
+  canReview,
+  isAwaiting,
+  isReadyForZoho,
+  isZohoFailed,
+  zohoPushSuffix,
+  isActing,
+  onApprove,
+  onReject,
+  onAsk,
+  onResolve,
+  onPushZoho,
+}: {
+  touch?: boolean;
+  canReview: boolean;
+  isAwaiting: boolean;
+  isReadyForZoho: boolean;
+  isZohoFailed: boolean;
+  zohoPushSuffix: string;
+  isActing: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onAsk: () => void;
+  onResolve: () => void;
+  onPushZoho: () => void;
+}) {
+  if (!canReview && !isAwaiting && !isReadyForZoho && !isZohoFailed) {
+    return <span className="text-xs text-charcoal/40">—</span>;
+  }
+
+  const link = touch
+    ? 'inline-flex min-h-11 items-center text-xs font-medium'
+    : 'text-xs font-medium';
+
+  return (
+    <div className={`flex items-center gap-3 ${touch ? 'flex-wrap' : 'whitespace-nowrap'}`}>
+      {canReview && (
+        <>
+          <ActionBtn color="green" size={touch ? 'touch' : 'xs'} onClick={onApprove} disabled={isActing}>
+            Approve
+          </ActionBtn>
+          <button type="button" onClick={onReject} disabled={isActing} className={`${link} text-danger hover:underline disabled:opacity-50`}>
+            Reject
+          </button>
+          <button type="button" onClick={onAsk} disabled={isActing} className={`${link} text-muted hover:text-ink hover:underline disabled:opacity-50`}>
+            Needs review
+          </button>
+        </>
+      )}
+      {isAwaiting && (
+        <ActionBtn color="blue" size={touch ? 'touch' : 'xs'} onClick={onResolve} disabled={isActing}>
+          Resolve
+        </ActionBtn>
+      )}
+      {(isReadyForZoho || isZohoFailed) && (
+        <ActionBtn color="teal" size={touch ? 'touch' : 'xs'} onClick={onPushZoho} disabled={isActing}>
+          {isZohoFailed ? `Retry Zoho${zohoPushSuffix}` : `Push to Zoho${zohoPushSuffix}`}
+        </ActionBtn>
+      )}
+    </div>
+  );
+}
+
 function ActionBtn({
   color, onClick, children, disabled, size = 'xs',
 }: { color: 'green' | 'red' | 'blue' | 'teal' | 'gray'; onClick: () => void; children: React.ReactNode; disabled?: boolean; size?: 'xs' | 'touch' }) {
-  // Primary verbs (approve, push) are solid; destructive/secondary verbs are
-  // outlined so the row reads at a glance without becoming a wall of color.
   const styles = {
-    green: 'border-transparent bg-brand-500 text-cream hover:bg-success',
-    red: 'border-danger/30 bg-white text-danger hover:border-danger/50 hover:bg-danger/10',
-    blue: 'border-ink/15 bg-white text-charcoal/80 hover:border-ink/25 hover:bg-ink/[0.03]',
+    green: 'border-transparent bg-success text-cream hover:opacity-90',
+    red: 'border-danger/30 bg-white text-danger hover:bg-danger/10',
+    blue: 'border-ink/15 bg-white text-charcoal/80 hover:bg-ink/[0.03]',
     teal: 'border-transparent bg-brand-500 text-cream hover:bg-brand-600',
     gray: 'border-ink/10 bg-cream text-muted hover:bg-brand-50',
   };
   const sizes = {
-    xs: 'px-3 py-1.5 text-xs',
+    xs: 'px-2.5 py-1 text-xs',
     touch: 'min-h-11 px-3.5 py-1.5 text-xs',
   };
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`cursor-pointer rounded-md border font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${sizes[size]} ${styles[color]}`}
+      className={`cursor-pointer rounded-md border font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${sizes[size]} ${styles[color]}`}
     >
       {children}
     </button>
