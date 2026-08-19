@@ -438,7 +438,11 @@ export const auditLogs = pgTable('audit_logs', {
   id: uuid('id').primaryKey().defaultRandom(),
   entityType: text('entity_type').notNull(),
   entityId: text('entity_id').notNull(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  // Intentionally NOT a foreign key: audit rows are append-only (a trigger
+  // rejects UPDATE/DELETE), so an FK cascade like set-null can never run —
+  // it made every user who appears in the log undeletable. The actor id is
+  // a historical snapshot that must survive user deletion anyway.
+  userId: uuid('user_id'),
   action: text('action').notNull(),
   before: jsonb('before'),
   after: jsonb('after'),

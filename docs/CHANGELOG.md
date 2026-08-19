@@ -7,6 +7,10 @@
 - The modal holds everything: name + role editing (self-role locked), the org profile fields, Deactivate/Reactivate, Reset password, Resend invite (invited accounts), and a danger-zone Delete using the existing two-stage deactivate-first flow. One-time secrets (temp passwords, invite links) show inside the modal and persist above the table if the modal is closed before they're dismissed.
 - UsersTab extracted from Admin.tsx into `settings/UsersSection.tsx` (Admin.tsx: 1,821 → 880 lines).
 
+### Fixed
+- **User deletion no longer fails for anyone in the audit log** (migration 0026): `audit_logs.user_id` had an `ON DELETE SET NULL` FK, but the append-only trigger rejects that UPDATE — so deleting any user who ever appeared in the audit trail crashed with a 23000. The FK is dropped; audit rows keep the actor's id as a historical snapshot, which an audit trail should do anyway.
+- Removed the seed/test accounts from production (accountant/admin/developer/user/partner@midas.local). `admin@company.com` is kept deactivated: it owns transactions and an expense synced to Zoho Books, which the purge path correctly refuses to delete.
+
 ### Expenses page: robust filtering + trade-show/daily tags
 - Every expense row is tagged **Trade Show** (with the event name when known, e.g. "Champs Summer LV 2026") or **Daily**, using the same rule the review pages already use (daily = entered in Midas or via the browser extension).
 - New always-visible Type toggle (All / Trade Show / Daily) beside search, plus a collapsible Filters panel: date range (replaces the month dropdown), amount min/max, category, event, payment method, source, reimbursement — and employee + company for accountant/admin. Applied filters show as removable chips.
