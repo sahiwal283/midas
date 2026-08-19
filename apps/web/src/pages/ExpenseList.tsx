@@ -1,28 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, AlertCircle, ChevronLeft, ChevronRight, Search, Trash2 } from 'lucide-react';
+import { Plus, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, Search, SlidersHorizontal, Tent, Trash2, X } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
-import { StatusBadge, ReimbursementBadge } from '../components/StatusBadge';
+import { StatusBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 import { flattenTree, descendantIdSet } from '../lib/categoryTree';
+import { isDailyExpense } from '../lib/expenseScope';
 import { roleAllowed } from '../lib/roles';
 
 const PAGE_SIZE = 10;
 
 type StatusTab = 'all' | 'needs_reply' | 'under_review' | 'approved' | 'rejected' | 'draft';
 
-type ReimbFilter = '' | 'pending' | 'approved' | 'paid';
-
-const REIMB_CHIPS: Array<{ id: ReimbFilter; label: string }> = [
-  { id: '', label: 'All' },
-  { id: 'pending', label: 'Pending' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'paid', label: 'Paid' },
-];
+type ExpenseType = '' | 'trade_show' | 'daily';
 
 const STATUS_TABS: Array<{ id: StatusTab; label: string }> = [
   { id: 'all', label: 'All' },
@@ -31,6 +25,12 @@ const STATUS_TABS: Array<{ id: StatusTab; label: string }> = [
   { id: 'approved', label: 'Approved' },
   { id: 'rejected', label: 'Rejected' },
   { id: 'draft', label: 'Drafts' },
+];
+
+const TYPE_OPTIONS: Array<{ id: ExpenseType; label: string }> = [
+  { id: '', label: 'All' },
+  { id: 'trade_show', label: 'Trade Show' },
+  { id: 'daily', label: 'Daily' },
 ];
 
 const NEXT_ACTION: Record<string, { text: string; urgent: boolean }> = {
@@ -64,16 +64,37 @@ function matchesStatusTab(expense: Expense, tab: StatusTab): boolean {
   }
 }
 
-function monthKey(date: string): string {
-  // expense.date is YYYY-MM-DD
-  return date.slice(0, 7);
+// ── Filters ───────────────────────────────────────────────────────────────────
+
+interface ListFilters {
+  type: ExpenseType;
+  from: string;
+  to: string;
+  amountMin: string;
+  amountMax: string;
+  categoryId: string;
+  event: string;
+  paymentMethodId: string;
+  sourceApp: string;
+  reimbursement: string;
+  userId: string;
+  company: string;
 }
 
-function formatMonthLabel(ym: string): string {
-  const [y, m] = ym.split('-').map(Number);
-  if (!y || !m) return ym;
-  return new Date(y, m - 1, 1).toLocaleString(undefined, { month: 'short', year: 'numeric' });
-}
+const EMPTY_FILTERS: ListFilters = {
+  type: '',
+  from: '',
+  to: '',
+  amountMin: '',
+  amountMax: '',
+  categoryId: '',
+  event: '',
+  paymentMethodId: '',
+  sourceApp: '',
+  reimbursement: '',
+  userId: '',
+  company: '',
+};
 
 function NextActionCell({ expense }: { expense: Expense }) {
   const action = NEXT_ACTION[expense.status];
@@ -88,6 +109,24 @@ function NextActionCell({ expense }: { expense: Expense }) {
     );
   }
   return <span className="text-gray-500">{action.text}</span>;
+}
+
+/** Trade Show (with event name when known) / Daily tag. */
+function ExpenseTypeChip({ expense, compact = false }: { expense: Expense; compact?: boolean }) {
+  if (isDailyExpense(expense)) {
+    return (
+      <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+        Daily
+      </span>
+    );
+  }
+  const label = !compact && expense.sourceLabel ? expense.sourceLabel : 'Trade Show';
+  return (
+    <span className="inline-flex max-w-52 items-center gap-1 truncate rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">
+      <Tent className="h-3 w-3 shrink-0" />
+      <span className="truncate">{label}</span>
+    </span>
+  );
 }
 
 export function ExpenseList() {
@@ -105,39 +144,34 @@ export function ExpenseList() {
 
   const [tab, setTab] = useState<StatusTab>('all');
   const [query, setQuery] = useState('');
-  const [month, setMonth] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [sourceApp, setSourceApp] = useState('');
-  const [reimbFilter, setReimbFilter] = useState<ReimbFilter>('');
+  const [filters, setFilters] = useState<ListFilters>(EMPTY_FILTERS);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [quickViewId, setQuickViewId] = useState<string | null>(null);
   const [forceZoho, setForceZoho] = useState(false);
   const isAdmin = roleAllowed(user?.role, ['admin']);
+  const isPrivileged = roleAllowed(user?.role, ['admin', 'accountant']);
   const canBulkDelete = roleAllowed(user?.role, ['admin', 'accountant', 'user']);
 
-  const monthOptions = useMemo(() => {
-    const keys = new Set<string>();
-    for (const e of expenses) {
-      if (e.date) keys.add(monthKey(e.date));
-    }
-    return [...keys].sort((a, b) => b.localeCompare(a));
-  }, [expenses]);
+  function setFilter<K extends keyof ListFilters>(key: K, value: ListFilters[K]) {
+    setFilters((f) => ({ ...f, [key]: value }));
+  }
 
   // The full active tree, indented — parents with no direct expenses must still be
   // selectable so they can roll up their children.
   const categoryOptions = useMemo(
     () => flattenTree(allCategories).map(({ cat, depth }) => ({
       id: cat.id,
-      name: `${' '.repeat(depth * 3)}${depth > 0 ? '└ ' : ''}${cat.name}`,
+      name: `${' '.repeat(depth * 3)}${depth > 0 ? '└ ' : ''}${cat.name}`,
     })),
     [allCategories],
   );
 
   // Filtering by a parent category includes every descendant.
   const categoryIdSet = useMemo(
-    () => (categoryId ? descendantIdSet(allCategories, categoryId) : null),
-    [categoryId, allCategories],
+    () => (filters.categoryId ? descendantIdSet(allCategories, filters.categoryId) : null),
+    [filters.categoryId, allCategories],
   );
 
   const tabCounts = useMemo(() => {
@@ -157,13 +191,45 @@ export function ExpenseList() {
     return counts;
   }, [expenses]);
 
+  // Option lists derived from the loaded data — only offer values that can
+  // actually match at least one row.
   const sourceOptions = useMemo(() => {
     const keys = new Set<string>();
+    for (const e of expenses) if (e.sourceApp) keys.add(e.sourceApp);
+    return [...keys].sort();
+  }, [expenses]);
+
+  const eventOptions = useMemo(() => {
+    const keys = new Set<string>();
     for (const e of expenses) {
-      if (e.sourceApp) keys.add(e.sourceApp);
+      if (!isDailyExpense(e) && e.sourceLabel) keys.add(e.sourceLabel);
     }
     return [...keys].sort();
   }, [expenses]);
+
+  const paymentOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of expenses) {
+      if (e.paymentMethod) {
+        map.set(e.paymentMethod.id, `${e.paymentMethod.label}${e.paymentMethod.lastFour ? ` ···${e.paymentMethod.lastFour}` : ''}`);
+      }
+    }
+    return [...map.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [expenses]);
+
+  const employeeOptions = useMemo(() => {
+    if (!isPrivileged) return [];
+    const map = new Map<string, string>();
+    for (const e of expenses) if (e.user) map.set(e.user.id, e.user.name);
+    return [...map.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [expenses, isPrivileged]);
+
+  const companyOptions = useMemo(() => {
+    if (!isPrivileged) return [];
+    const keys = new Set<string>();
+    for (const e of expenses) if (e.zohoEntity) keys.add(e.zohoEntity);
+    return [...keys].sort();
+  }, [expenses, isPrivileged]);
 
   const hasReimbursements = useMemo(
     () => expenses.some((e) => e.reimbursementStatus !== 'not_requested'),
@@ -172,19 +238,30 @@ export function ExpenseList() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const min = filters.amountMin !== '' ? Number(filters.amountMin) : null;
+    const max = filters.amountMax !== '' ? Number(filters.amountMax) : null;
     return expenses.filter((e) => {
       if (!matchesStatusTab(e, tab)) return false;
-      if (month && monthKey(e.date) !== month) return false;
+      if (filters.type === 'daily' && !isDailyExpense(e)) return false;
+      if (filters.type === 'trade_show' && isDailyExpense(e)) return false;
+      if (filters.from && e.date < filters.from) return false;
+      if (filters.to && e.date > filters.to) return false;
+      if (min !== null && Number(e.amount) < min) return false;
+      if (max !== null && Number(e.amount) > max) return false;
       if (categoryIdSet && (!e.categoryId || !categoryIdSet.has(e.categoryId))) return false;
-      if (sourceApp && e.sourceApp !== sourceApp) return false;
-      if (reimbFilter && e.reimbursementStatus !== reimbFilter) return false;
+      if (filters.event && e.sourceLabel !== filters.event) return false;
+      if (filters.paymentMethodId && e.paymentMethodId !== filters.paymentMethodId) return false;
+      if (filters.sourceApp && e.sourceApp !== filters.sourceApp) return false;
+      if (filters.reimbursement && e.reimbursementStatus !== filters.reimbursement) return false;
+      if (filters.userId && e.userId !== filters.userId) return false;
+      if (filters.company && e.zohoEntity !== filters.company) return false;
       if (q) {
         const hay = `${e.merchant} ${e.description ?? ''} ${e.category?.name ?? ''} ${e.sourceLabel ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [expenses, tab, month, categoryIdSet, sourceApp, reimbFilter, query]);
+  }, [expenses, tab, filters, categoryIdSet, query]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -196,15 +273,12 @@ export function ExpenseList() {
 
   useEffect(() => {
     setPage(1);
-  }, [tab, month, categoryId, sourceApp, reimbFilter, query]);
+    setSelected(new Set());
+  }, [tab, filters, query]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
-
-  useEffect(() => {
-    setSelected(new Set());
-  }, [tab, month, categoryId, sourceApp, reimbFilter, query]);
 
   const bulkDeleteMutation = useMutation({
     mutationFn: () => expenseApi.bulkDelete([...selected], forceZoho && isAdmin),
@@ -227,6 +301,39 @@ export function ExpenseList() {
     () => filtered.reduce((sum, e) => sum + Number(e.amount || 0), 0),
     [filtered],
   );
+
+  // Active-filter chips (Type lives in the segmented toggle, not the panel,
+  // but still shows as a chip so one row summarises everything applied).
+  const activeChips = useMemo(() => {
+    const chips: Array<{ key: keyof ListFilters; label: string }> = [];
+    if (filters.type) chips.push({ key: 'type', label: filters.type === 'daily' ? 'Type: Daily' : 'Type: Trade Show' });
+    if (filters.from) chips.push({ key: 'from', label: `From ${filters.from}` });
+    if (filters.to) chips.push({ key: 'to', label: `To ${filters.to}` });
+    if (filters.amountMin) chips.push({ key: 'amountMin', label: `Min $${filters.amountMin}` });
+    if (filters.amountMax) chips.push({ key: 'amountMax', label: `Max $${filters.amountMax}` });
+    if (filters.categoryId) {
+      const name = flattenTree(allCategories).find(({ cat }) => cat.id === filters.categoryId)?.cat.name;
+      chips.push({ key: 'categoryId', label: name ?? 'Category' });
+    }
+    if (filters.event) chips.push({ key: 'event', label: filters.event });
+    if (filters.paymentMethodId) {
+      const label = paymentOptions.find((p) => p.id === filters.paymentMethodId)?.label;
+      chips.push({ key: 'paymentMethodId', label: label ?? 'Payment method' });
+    }
+    if (filters.sourceApp) chips.push({ key: 'sourceApp', label: `Source: ${filters.sourceApp}` });
+    if (filters.reimbursement) {
+      const label = REIMBURSEMENT_OPTIONS.find((o) => o.value === filters.reimbursement)?.label;
+      chips.push({ key: 'reimbursement', label: `Reimb: ${label ?? filters.reimbursement}` });
+    }
+    if (filters.userId) {
+      const name = employeeOptions.find((e) => e.id === filters.userId)?.name;
+      chips.push({ key: 'userId', label: name ?? 'Employee' });
+    }
+    if (filters.company) chips.push({ key: 'company', label: filters.company });
+    return chips;
+  }, [filters, allCategories, paymentOptions, employeeOptions]);
+
+  const panelFilterCount = activeChips.filter((c) => c.key !== 'type').length;
 
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -252,6 +359,9 @@ export function ExpenseList() {
   function selectAllFiltered() {
     setSelected(new Set(filtered.map((e) => e.id)));
   }
+
+  const fieldClass = 'w-full min-h-11 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 md:min-h-0';
+  const labelClass = 'mb-1 block text-xs font-medium text-gray-500';
 
   return (
     <div className="p-4 lg:p-8">
@@ -323,89 +433,173 @@ export function ExpenseList() {
         })}
       </div>
 
-      {/* Reimbursement chips */}
-      {hasReimbursements && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-gray-400">Reimbursements</span>
-          {REIMB_CHIPS.map((c) => {
-            const active = reimbFilter === c.id;
-            return (
+      {/* Toolbar — search + type toggle always visible, everything else in the panel */}
+      <div className="mb-3 rounded-xl border border-gray-200 bg-white p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search merchant, category, event, notes…"
+              className="w-full min-h-11 rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 md:min-h-0"
+            />
+          </div>
+          <div className="flex shrink-0 rounded-lg border border-gray-200 bg-gray-100 p-0.5">
+            {TYPE_OPTIONS.map((t) => (
               <button
-                key={c.label}
+                key={t.label}
                 type="button"
-                onClick={() => setReimbFilter(c.id)}
-                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                  active
-                    ? 'border-brand-300 bg-brand-100 text-brand-800'
-                    : 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100'
+                onClick={() => setFilter('type', t.id)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filters.type === t.id
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-800'
                 }`}
               >
-                {c.label}
+                {t.label}
               </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Filters — search full-width, the two selects share one row on phones */}
-      <div className="mb-3 grid grid-cols-2 gap-2 sm:flex sm:items-center">
-        <div className="relative col-span-2 sm:flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search merchant, category, notes…"
-            className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-          />
-        </div>
-        <select
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-auto"
-        >
-          <option value="">All months</option>
-          {monthOptions.map((ym) => (
-            <option key={ym} value={ym}>{formatMonthLabel(ym)}</option>
-          ))}
-        </select>
-        <select
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-auto"
-        >
-          <option value="">All categories</option>
-          {categoryOptions.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-        {sourceOptions.length > 0 && (
-          <select
-            value={sourceApp}
-            onChange={(e) => setSourceApp(e.target.value)}
-            className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-auto"
-          >
-            <option value="">All sources</option>
-            {sourceOptions.map((s) => (
-              <option key={s} value={s}>{s}</option>
             ))}
-          </select>
-        )}
-        {(query || month || categoryId || sourceApp || reimbFilter || tab !== 'all') && (
+          </div>
           <button
             type="button"
-            onClick={() => {
-              setQuery('');
-              setMonth('');
-              setCategoryId('');
-              setSourceApp('');
-              setReimbFilter('');
-              setTab('all');
-            }}
-            className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            onClick={() => setPanelOpen((o) => !o)}
+            aria-expanded={panelOpen}
+            className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 md:min-h-0"
           >
-            Clear
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+            {panelFilterCount > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-500 px-1 text-xs font-semibold text-white">
+                {panelFilterCount}
+              </span>
+            )}
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${panelOpen ? 'rotate-180' : ''}`} />
           </button>
+        </div>
+
+        {panelOpen && (
+          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-gray-100 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <span className={labelClass}>Date range</span>
+              <div className="flex items-center gap-1.5">
+                <input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} className={fieldClass} aria-label="Date from" />
+                <span className="text-xs text-gray-400">to</span>
+                <input type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} className={fieldClass} aria-label="Date to" />
+              </div>
+            </div>
+            <div>
+              <span className={labelClass}>Amount</span>
+              <div className="flex items-center gap-1.5">
+                <input type="number" min="0" step="0.01" value={filters.amountMin} onChange={(e) => setFilter('amountMin', e.target.value)} placeholder="Min $" className={fieldClass} aria-label="Amount minimum" />
+                <span className="text-xs text-gray-400">–</span>
+                <input type="number" min="0" step="0.01" value={filters.amountMax} onChange={(e) => setFilter('amountMax', e.target.value)} placeholder="Max $" className={fieldClass} aria-label="Amount maximum" />
+              </div>
+            </div>
+            <div>
+              <span className={labelClass}>Category</span>
+              <select value={filters.categoryId} onChange={(e) => setFilter('categoryId', e.target.value)} className={fieldClass}>
+                <option value="">All categories</option>
+                {categoryOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            {eventOptions.length > 0 && (
+              <div>
+                <span className={labelClass}>Event</span>
+                <select value={filters.event} onChange={(e) => setFilter('event', e.target.value)} className={fieldClass}>
+                  <option value="">All events</option>
+                  {eventOptions.map((ev) => (
+                    <option key={ev} value={ev}>{ev}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {paymentOptions.length > 0 && (
+              <div>
+                <span className={labelClass}>Payment method</span>
+                <select value={filters.paymentMethodId} onChange={(e) => setFilter('paymentMethodId', e.target.value)} className={fieldClass}>
+                  <option value="">All payment methods</option>
+                  {paymentOptions.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {sourceOptions.length > 0 && (
+              <div>
+                <span className={labelClass}>Source</span>
+                <select value={filters.sourceApp} onChange={(e) => setFilter('sourceApp', e.target.value)} className={fieldClass}>
+                  <option value="">All sources</option>
+                  {sourceOptions.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {hasReimbursements && (
+              <div>
+                <span className={labelClass}>Reimbursement</span>
+                <select value={filters.reimbursement} onChange={(e) => setFilter('reimbursement', e.target.value)} className={fieldClass}>
+                  <option value="">Any</option>
+                  {REIMBURSEMENT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {employeeOptions.length > 0 && (
+              <div>
+                <span className={labelClass}>Employee</span>
+                <select value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)} className={fieldClass}>
+                  <option value="">All employees</option>
+                  {employeeOptions.map((emp) => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {companyOptions.length > 0 && (
+              <div>
+                <span className={labelClass}>Company</span>
+                <select value={filters.company} onChange={(e) => setFilter('company', e.target.value)} className={fieldClass}>
+                  <option value="">All companies</option>
+                  {companyOptions.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(activeChips.length > 0 || query || tab !== 'all') && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            {activeChips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={() => setFilter(chip.key, '')}
+                className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800 hover:bg-brand-100"
+              >
+                {chip.label}
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setFilters(EMPTY_FILTERS);
+                setQuery('');
+                setTab('all');
+              }}
+              className="rounded-full px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            >
+              Clear all
+            </button>
+          </div>
         )}
       </div>
 
@@ -481,7 +675,10 @@ export function ExpenseList() {
                     </p>
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-3">
-                    <p className="text-xs text-gray-500">{expense.date}{expense.category?.name ? ` · ${expense.category.name}` : ''}</p>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <ExpenseTypeChip expense={expense} compact />
+                      <p className="min-w-0 truncate text-xs text-gray-500">{expense.date}{expense.category?.name ? ` · ${expense.category.name}` : ''}</p>
+                    </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <ReimbursementBadge status={expense.reimbursementStatus} />
                       <StatusBadge status={expense.status} variant="user" zohoExpenseId={expense.zohoExpenseId} />
@@ -506,6 +703,7 @@ export function ExpenseList() {
                     </th>
                   )}
                   <th className="px-6 py-3">Merchant</th>
+                  <th className="px-6 py-3">Type</th>
                   <th className="px-6 py-3">Date</th>
                   <th className="px-6 py-3">Category</th>
                   <th className="px-6 py-3 text-right">Amount</th>
@@ -537,9 +735,9 @@ export function ExpenseList() {
                       {expense.sourceApp === 'browser_extension' && (
                         <span className="mt-0.5 inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">Extension</span>
                       )}
-                      {expense.sourceLabel && expense.sourceApp && expense.sourceApp !== 'browser_extension' && (
-                        <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{expense.sourceLabel}</p>
-                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <ExpenseTypeChip expense={expense} />
                     </td>
                     <td className="px-6 py-4 text-gray-600">{expense.date}</td>
                     <td className="px-6 py-4 text-gray-600">{expense.category?.name ?? '—'}</td>

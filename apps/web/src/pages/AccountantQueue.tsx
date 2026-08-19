@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, ChevronDown, Clock, RefreshCw, SlidersHorizontal, XCircle, Send, FileX, Tag, CreditCard, Building2, Banknote, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, Clock, RefreshCw, Search as SearchIcon, SlidersHorizontal, Send, FileX, Tag, CreditCard, Building2, Banknote, X } from 'lucide-react';
 import { accountantApi, expenseApi } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { StatusBadge, ZohoPushBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
@@ -253,10 +253,10 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     return base;
   }, [filters, activeLane, page, scope]);
   const hasActiveFilters = Object.keys(filtersToParams(filters)).length > 0;
-  // Mobile keeps the queue above the fold: everything but search collapses
-  // behind a Filters toggle. Search is excluded from the badge count because
-  // it stays visible in the collapsed row.
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  // The queue stays above the fold at every size: everything but search
+  // collapses behind a Filters toggle. Search is excluded from the badge count
+  // because it stays visible in the collapsed row.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const activeFilterCount = Object.keys(filtersToParams(filters)).filter((k) => k !== 'search').length;
 
   // Bulk selection + result toasts
@@ -304,6 +304,32 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     queryFn: () => expenseApi.paymentMethods(),
     staleTime: 60_000,
   });
+
+  // One removable chip per applied filter — keeps applied state visible while
+  // the panel itself stays collapsed.
+  const activeChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; clear: () => void }> = [];
+    const add = (key: keyof QueueFilters, label: string, cleared: string | boolean = '') =>
+      chips.push({ key, label, clear: () => setFilters((f) => ({ ...f, [key]: cleared })) });
+    if (filters.userId) add('userId', employees.find((e) => e.id === filters.userId)?.name ?? 'Employee');
+    if (filters.company) add('company', filters.company);
+    if (filters.categoryId) add('categoryId', categories.find((c) => c.id === filters.categoryId)?.name ?? 'Category');
+    if (filters.paymentMethodId) add('paymentMethodId', paymentMethods.find((p) => p.id === filters.paymentMethodId)?.label ?? 'Payment method');
+    if (filters.from) add('from', `From ${filters.from}`);
+    if (filters.to) add('to', `To ${filters.to}`);
+    if (filters.amountMin) add('amountMin', `Min $${filters.amountMin}`);
+    if (filters.amountMax) add('amountMax', `Max $${filters.amountMax}`);
+    if (filters.reimbursementStatus) {
+      add('reimbursementStatus', `Reimb: ${REIMBURSEMENT_OPTIONS.find((o) => o.value === filters.reimbursementStatus)?.label ?? filters.reimbursementStatus}`);
+    }
+    if (filters.zohoStatus) add('zohoStatus', `Zoho: ${filters.zohoStatus.replace(/_/g, ' ')}`);
+    if (filters.sourceApp) add('sourceApp', humanizeSourceApp(filters.sourceApp));
+    if (filters.ocrNeedsReview) add('ocrNeedsReview', 'OCR needs review', false);
+    if (filters.missingReceipt) add('missingReceipt', 'Missing receipt', false);
+    if (filters.missingCategory) add('missingCategory', 'Missing category', false);
+    if (filters.missingPayment) add('missingPayment', 'Missing payment', false);
+    return chips;
+  }, [filters, employees, categories, paymentMethods]);
 
   const { data: zohoHealth } = useQuery({
     queryKey: ['zoho-service-health'],
@@ -495,14 +521,6 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     setFilters((f) => ({ ...f, [key]: value }));
   }
 
-  // Summary cards — the 4 most actionable queues
-  const summaryLanes: { id: LaneId; color: string }[] = [
-    { id: 'needs_review', color: 'yellow' },
-    { id: 'awaiting_user', color: 'amber' },
-    { id: 'reimbursement_pending', color: 'orange' },
-    { id: 'ready_for_zoho', color: 'teal' },
-  ];
-
   const filterSelectClass = 'min-h-11 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none md:min-h-0';
   const filterInputClass = 'min-h-11 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:border-brand-500 focus:outline-none md:min-h-0';
 
@@ -575,23 +593,16 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         </div>
       )}
 
-      {/* Summary stat cards — hidden on phones: the lane chips below carry the
-          same counts, and vertical space is the scarce resource there. */}
-      <div className="mb-6 hidden grid-cols-2 gap-3 md:grid lg:grid-cols-4">
-        {summaryLanes.map(({ id, color }) => (
-          <SummaryCard
-            key={id}
-            label={LANES[id].label}
-            count={laneCounts[id] ?? 0}
-            color={color}
-            onClick={() => setActiveLane(id)}
-            active={activeLane === id}
-          />
-        ))}
-      </div>
+      {/* Desktop: lane rail on the left, queue on the right. Phones keep the
+          horizontal lane chips — the rail would eat the whole viewport there. */}
+      <div className="flex items-start gap-6">
+        <aside className="sticky top-4 hidden w-52 shrink-0 lg:block">
+          <LaneRail activeLane={activeLane} laneCounts={laneCounts} onSelect={setActiveLane} />
+        </aside>
+        <div className="min-w-0 flex-1">
 
-      {/* Queue lane tabs — grouped */}
-      <div className="mb-4 space-y-2">
+      {/* Queue lane tabs — grouped (phones/tablets only; the rail covers lg+) */}
+      <div className="mb-4 space-y-2 lg:hidden">
         {/* Primary attention queues */}
         <LaneGroup
           label="Needs Attention"
@@ -618,21 +629,24 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         />
       </div>
 
-      {/* Filter bar — on phones only search stays visible; everything else
+      {/* Filter bar — search stays visible at every size; everything else
           collapses behind the Filters toggle so the queue stays above the fold. */}
-      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-3 md:p-4">
-        <div className="flex items-center gap-2 md:hidden">
-          <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search merchant or description…"
-            className={`${filterInputClass} min-w-0 flex-1`}
-          />
+      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-3">
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search merchant or description…"
+              className={`${filterInputClass} w-full pl-9`}
+            />
+          </div>
           <button
             type="button"
-            onClick={() => setMobileFiltersOpen((o) => !o)}
-            aria-expanded={mobileFiltersOpen}
-            className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 active:bg-gray-50"
+            onClick={() => setFiltersOpen((o) => !o)}
+            aria-expanded={filtersOpen}
+            className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-50 md:min-h-0"
           >
             <SlidersHorizontal className="h-4 w-4" />
             Filters
@@ -641,18 +655,12 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
                 {activeFilterCount}
               </span>
             )}
-            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
           </button>
         </div>
 
-        <div className={`${mobileFiltersOpen ? 'mt-2' : 'hidden'} md:mt-0 md:block`}>
+        <div className={filtersOpen ? 'mt-3 border-t border-gray-100 pt-3' : 'hidden'}>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3 lg:grid-cols-4">
-          <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search merchant or description…"
-            className={`${filterInputClass} hidden md:block md:col-span-2`}
-          />
           <select value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)} className={filterSelectClass}>
             <option value="">All employees</option>
             {employees.map((emp) => (
@@ -775,17 +783,49 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
           <p className="mt-2 text-xs text-amber-600">Filters apply to the review queue lanes — the All Expenses lane shows every expense.</p>
         )}
         </div>
+
+        {/* Applied filters stay visible while the panel is collapsed */}
+        {!filtersOpen && activeChips.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            {activeChips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={chip.clear}
+                className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800 hover:bg-brand-100"
+              >
+                {chip.label}
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="rounded-full px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Lane description */}
-      {activeLane !== 'all' && (
-        <p className="mb-3 text-xs text-gray-400">
-          {LANES[activeLane].description}
-          {(activeLane === 'ready_for_zoho' || activeLane === 'zoho_failed') && zohoLaneNote
-            ? ` ${zohoLaneNote}`
-            : ''}
-        </p>
-      )}
+      {/* Active lane heading */}
+      <div className="mb-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+          {LANES[activeLane].label}
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+            {activeLane === 'all' ? totalRows : (laneCounts[activeLane] ?? 0)}
+          </span>
+        </h2>
+        {activeLane !== 'all' && (
+          <p className="mt-0.5 text-xs text-gray-400">
+            {LANES[activeLane].description}
+            {(activeLane === 'ready_for_zoho' || activeLane === 'zoho_failed') && zohoLaneNote
+              ? ` ${zohoLaneNote}`
+              : ''}
+          </p>
+        )}
+      </div>
 
       {/* Bulk action bar */}
       {selectedRows.length > 0 && (
@@ -919,6 +959,9 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
           </div>
         </div>
       )}
+
+        </div>
+      </div>
 
       {quickViewId && (
         <ExpenseQuickViewModal
@@ -1111,27 +1154,70 @@ function LaneGroup({
   );
 }
 
-// ── Summary card ──────────────────────────────────────────────────────────────
+// ── Lane rail (desktop) ───────────────────────────────────────────────────────
 
-function SummaryCard({
-  label, count, color, onClick, active,
-}: { label: string; count: number; color: string; onClick: () => void; active: boolean }) {
-  const colorMap: Record<string, string> = {
-    yellow: 'border-yellow-200 bg-yellow-50 text-yellow-800 hover:bg-yellow-100',
-    amber: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100',
-    blue: 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100',
-    red: 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100',
-    orange: 'border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100',
-    teal: 'border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100',
-  };
+const RAIL_GROUPS: Array<{ label: string; lanes: LaneId[] }> = [
+  { label: 'Needs Attention', lanes: ['needs_review', 'awaiting_user', 'zoho_failed'] },
+  { label: 'Missing Fields', lanes: ['missing_receipt', 'missing_category', 'missing_payment_method', 'missing_entity'] },
+  { label: 'Ready & Processing', lanes: ['ready_for_zoho', 'reimbursement_pending', 'all'] },
+];
+
+function LaneRail({
+  activeLane,
+  laneCounts,
+  onSelect,
+}: {
+  activeLane: LaneId;
+  laneCounts: Partial<Record<LaneId, number>>;
+  onSelect: (id: LaneId) => void;
+}) {
   return (
-    <button
-      onClick={onClick}
-      className={`rounded-xl border-2 p-4 text-left cursor-pointer transition-colors w-full ${colorMap[color] ?? colorMap.yellow} ${active ? 'ring-2 ring-offset-1 ring-current' : ''}`}
-    >
-      <p className="text-xs font-medium opacity-80">{label}</p>
-      <p className="mt-1 text-2xl font-bold">{count}</p>
-    </button>
+    <nav className="space-y-5 rounded-xl border border-gray-200 bg-white p-3">
+      {RAIL_GROUPS.map((group) => (
+        <div key={group.label}>
+          <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">{group.label}</p>
+          <div className="mt-1.5 space-y-0.5">
+            {group.lanes.map((lane) => {
+              const count = lane === 'all' ? undefined : (laneCounts[lane] ?? 0);
+              const active = activeLane === lane;
+              const urgent = count !== undefined && count > 0;
+              return (
+                <button
+                  key={lane}
+                  type="button"
+                  onClick={() => onSelect(lane)}
+                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                    active
+                      ? 'bg-brand-50 font-semibold text-brand-800'
+                      : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {LANES[lane].icon && (
+                      <span className={active ? 'text-brand-600' : 'text-gray-400'}>{LANES[lane].icon}</span>
+                    )}
+                    <span className="truncate">{LANES[lane].label}</span>
+                  </span>
+                  {count !== undefined && (
+                    <span
+                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-semibold ${
+                        active
+                          ? 'bg-brand-100 text-brand-700'
+                          : urgent
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-100 text-gray-400'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </nav>
   );
 }
 
@@ -1496,22 +1582,24 @@ function ExpenseCard({
 function ActionBtn({
   color, onClick, children, disabled, size = 'xs',
 }: { color: 'green' | 'red' | 'blue' | 'teal' | 'gray'; onClick: () => void; children: React.ReactNode; disabled?: boolean; size?: 'xs' | 'touch' }) {
+  // Primary verbs (approve, push) are solid; destructive/secondary verbs are
+  // outlined so the row reads at a glance without becoming a wall of color.
   const styles = {
-    green: 'bg-green-50 text-green-700 hover:bg-green-100 border-green-200',
-    red: 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200',
-    blue: 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200',
-    teal: 'bg-teal-50 text-teal-700 hover:bg-teal-100 border-teal-200',
-    gray: 'bg-gray-50 text-gray-500 hover:bg-gray-100 border-gray-200',
+    green: 'border-transparent bg-green-600 text-white hover:bg-green-700',
+    red: 'border-red-300 bg-white text-red-700 hover:border-red-400 hover:bg-red-50',
+    blue: 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50',
+    teal: 'border-transparent bg-teal-600 text-white hover:bg-teal-700',
+    gray: 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100',
   };
   const sizes = {
-    xs: 'px-2.5 py-1 text-xs',
-    touch: 'min-h-11 px-3 py-1.5 text-xs',
+    xs: 'px-3 py-1.5 text-xs',
+    touch: 'min-h-11 px-3.5 py-1.5 text-xs',
   };
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded border font-medium disabled:opacity-50 ${sizes[size]} ${styles[color]}`}
+      className={`rounded-md border font-semibold shadow-sm transition-colors disabled:opacity-50 ${sizes[size]} ${styles[color]}`}
     >
       {children}
     </button>

@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.46.2 (2026-08-19)
+## 0.47.0 (2026-08-19)
+
+### Expenses page: robust filtering + trade-show/daily tags
+- Every expense row is tagged **Trade Show** (with the event name when known, e.g. "Champs Summer LV 2026") or **Daily**, using the same rule the review pages already use (daily = entered in Midas or via the browser extension).
+- New always-visible Type toggle (All / Trade Show / Daily) beside search, plus a collapsible Filters panel: date range (replaces the month dropdown), amount min/max, category, event, payment method, source, reimbursement — and employee + company for accountant/admin. Applied filters show as removable chips.
+
+### Review pages: enterprise layout
+- Desktop gets a left lane rail (Needs Attention / Missing Fields / Ready & Processing) replacing the four summary cards and three chip rows; the table starts far higher on the page. Phones keep the chip rows.
+- All filters collapse behind a Filters toggle on desktop too (search stays inline); applied filters remain visible as removable chips while collapsed. Active lane shows a proper heading with its count.
+- Quick actions are prominent: Approve and Push to Zoho are solid green/teal, Reject is a red outline, Needs review a neutral outline.
 
 ### Mobile: information-forward review queue and expense list
 - **Review queue**: on phones, all filters except search collapse behind a Filters toggle with an active-count badge; summary stat cards are hidden (the lane chips carry the same counts); each lane group is a single scrollable chip row. The queue itself now starts near the top of the screen.

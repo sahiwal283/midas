@@ -1,6 +1,6 @@
 {
   "name": "@midas/shared",
-  "version": "0.46.2",
+  "version": "0.47.0",
   "private": true,
   "main": "./src/types/index.ts",
   "types": "./src/types/index.ts",
