@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.47.0 (2026-08-19)
+## 0.48.0 (2026-08-19)
+
+### Users settings: one Manage button per row
+- The six per-row action buttons and inline role dropdown are gone. Each row shows name, email, role + auth badge, status, last login, and a single **Manage** button that opens a detail modal.
+- The modal holds everything: name + role editing (self-role locked), the org profile fields, Deactivate/Reactivate, Reset password, Resend invite (invited accounts), and a danger-zone Delete using the existing two-stage deactivate-first flow. One-time secrets (temp passwords, invite links) show inside the modal and persist above the table if the modal is closed before they're dismissed.
+- UsersTab extracted from Admin.tsx into `settings/UsersSection.tsx` (Admin.tsx: 1,821 → 880 lines).
 
 ### Expenses page: robust filtering + trade-show/daily tags
 - Every expense row is tagged **Trade Show** (with the event name when known, e.g. "Champs Summer LV 2026") or **Daily**, using the same rule the review pages already use (daily = entered in Midas or via the browser extension).
