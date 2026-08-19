@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, ClipboardList, Settings, LogOut, Briefcase,
-  BarChart3, Activity, PlusCircle, Upload, Heart,
+  BarChart3, Activity, Heart,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
@@ -62,10 +62,6 @@ export function Sidebar() {
           <NavLink to="/expenses" className={linkClass}>
             <ReceiptText className="h-4 w-4" />
             Expenses
-          </NavLink>
-          <NavLink to="/expenses/new" className={linkClass}>
-            <PlusCircle className="h-4 w-4" />
-            Add Transaction
           </NavLink>
         </div>
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.52.2 (2026-08-19)
+
+### Sidebar: drop Add Transaction
+- The chooser is still at `/expenses/new` from the Dashboard and Expenses buttons. Mobile keeps the camera FAB.
+
 ## 0.52.1 (2026-08-19)
 
 ### Add Transaction: purchase order is a first-class choice
