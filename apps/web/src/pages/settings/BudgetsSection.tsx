@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../api/client';
 import { companyApi } from '../../api/companies';
 import { expenseApi } from '../../api/expenses';
+import { CategoryPicker } from '../../components/CategoryPicker';
 import { useAuth } from '../../contexts/AuthContext';
 
 type Budget = {
@@ -100,12 +101,15 @@ export function BudgetsSection() {
           </label>
           <label className="text-sm">
             Category (optional)
-            <select className={`${inputCls} mt-1`} value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
-              <option value="">All categories</option>
-              {(categories.data ?? []).map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <CategoryPicker
+              className="mt-1"
+              categories={categories.data ?? []}
+              value={form.categoryId}
+              onChange={(id) => setForm({ ...form, categoryId: id })}
+              placeholder="All categories"
+              emptyLabel="All categories"
+              inputClassName={inputCls}
+            />
           </label>
           <div className="flex items-end">
             <button

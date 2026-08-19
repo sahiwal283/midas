@@ -9,6 +9,7 @@ import type {
 import { PENDING_CAPTURE_KEY } from '../shared/types';
 import { getConfig } from '../shared/config';
 import { api, ApiError } from './api';
+import { SearchableSelect } from './SearchableSelect';
 
 // ── State machine ─────────────────────────────────────────────────────────────
 
@@ -429,12 +430,13 @@ function ExpenseFormScreen({
         )}
         {zohoOn && !accountsLoading && !accountsFailed && accounts.length > 0 && (
           <Field label="Expense category">
-            <select value={form.zohoExpenseAccountId} onChange={(e) => setAccount(e.target.value)} style={styles.input}>
-              <option value="">— Select category (optional) —</option>
-              {accounts.map((a) => (
-                <option key={a.accountId} value={a.accountId}>{a.accountName}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={form.zohoExpenseAccountId}
+              onChange={setAccount}
+              placeholder="Search categories…"
+              style={styles.input}
+              options={accounts.map((a) => ({ value: a.accountId, label: a.accountName }))}
+            />
           </Field>
         )}
 

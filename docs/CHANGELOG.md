@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.49.0 (2026-08-19)
+
+### Searchable category dropdowns
+- Category pickers are now type-to-search comboboxes instead of a native `<select>` that dumps the full COA as an unscrolled list. Typing filters by category name or parent path ("parking" finds "Show Operations › Parking Fees").
+- Applied everywhere a category is chosen: new expense form, expense edit, Expenses filters, Event/Daily Review filters, budget category, and the browser-extension expense form.
+- Opening the picker starts a fresh search so an already-selected category no longer hides the rest of the list.
+
 ## 0.48.0 (2026-08-19)
 
 ### Users settings: one Manage button per row

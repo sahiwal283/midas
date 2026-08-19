@@ -6,6 +6,7 @@ import { expenseApi } from '../api/expenses';
 import { StatusBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
+import { CategoryPicker } from '../components/CategoryPicker';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 import { flattenTree, descendantIdSet } from '../lib/categoryTree';
@@ -157,16 +158,6 @@ export function ExpenseList() {
   function setFilter<K extends keyof ListFilters>(key: K, value: ListFilters[K]) {
     setFilters((f) => ({ ...f, [key]: value }));
   }
-
-  // The full active tree, indented — parents with no direct expenses must still be
-  // selectable so they can roll up their children.
-  const categoryOptions = useMemo(
-    () => flattenTree(allCategories).map(({ cat, depth }) => ({
-      id: cat.id,
-      name: `${' '.repeat(depth * 3)}${depth > 0 ? '└ ' : ''}${cat.name}`,
-    })),
-    [allCategories],
-  );
 
   // Filtering by a parent category includes every descendant.
   const categoryIdSet = useMemo(
@@ -497,14 +488,16 @@ export function ExpenseList() {
                 <input type="number" min="0" step="0.01" value={filters.amountMax} onChange={(e) => setFilter('amountMax', e.target.value)} placeholder="Max $" className={fieldClass} aria-label="Amount maximum" />
               </div>
             </div>
-            <div>
+            <div className="relative z-10">
               <span className={labelClass}>Category</span>
-              <select value={filters.categoryId} onChange={(e) => setFilter('categoryId', e.target.value)} className={fieldClass}>
-                <option value="">All categories</option>
-                {categoryOptions.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <CategoryPicker
+                categories={allCategories}
+                value={filters.categoryId}
+                onChange={(id) => setFilter('categoryId', id)}
+                placeholder="All categories"
+                emptyLabel="All categories"
+                inputClassName={fieldClass}
+              />
             </div>
             {eventOptions.length > 0 && (
               <div>

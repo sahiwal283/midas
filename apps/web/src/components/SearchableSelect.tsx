@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 export type SearchableOption = { value: string; label: string; hint?: string };
 
 const MAX_VISIBLE = 80;
 
+const DEFAULT_INPUT =
+  'w-full rounded border border-brand-200 px-3 py-3 text-sm lg:py-2';
+
 /**
- * Combobox-style select: type to filter a long list (Zoho vendors, items,
- * chart-of-accounts). Arrow keys move the highlight, Enter picks, Escape closes.
+ * Combobox-style select: type to filter a long list (categories, Zoho vendors,
+ * items, chart-of-accounts). Opening starts a fresh search so the previous
+ * selection does not block the list. Arrow keys move the highlight, Enter
+ * picks, Escape closes.
  */
 export function SearchableSelect({
   options,
@@ -15,6 +21,9 @@ export function SearchableSelect({
   placeholder = 'Search…',
   disabled,
   className = '',
+  inputClassName,
+  id,
+  'aria-label': ariaLabel,
 }: {
   options: SearchableOption[];
   value: string;
@@ -22,6 +31,9 @@ export function SearchableSelect({
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  inputClassName?: string;
+  id?: string;
+  'aria-label'?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -30,10 +42,6 @@ export function SearchableSelect({
   const listRef = useRef<HTMLUListElement>(null);
 
   const selected = options.find((o) => o.value === value);
-
-  useEffect(() => {
-    if (!open) setQuery(selected?.label ?? '');
-  }, [open, selected?.label, value]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -49,14 +57,13 @@ export function SearchableSelect({
     return options.filter((o) => (
       o.label.toLowerCase().includes(q)
       || (o.hint?.toLowerCase().includes(q) ?? false)
-      || o.value.includes(q)
+      || o.value.toLowerCase().includes(q)
     ));
   }, [options, query]);
 
   const filtered = useMemo(() => matches.slice(0, MAX_VISIBLE), [matches]);
   const hiddenCount = matches.length - filtered.length;
 
-  // Keep the highlight in range as the filter narrows.
   useEffect(() => { setHighlight(0); }, [query, open]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-idx="${highlight}"]`)
@@ -66,13 +73,14 @@ export function SearchableSelect({
   function choose(v: string) {
     onChange(v);
     setOpen(false);
+    setQuery('');
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (disabled) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (!open) { setOpen(true); return; }
+      if (!open) { setOpen(true); setQuery(''); return; }
       setHighlight((h) => {
         if (filtered.length === 0) return 0;
         const next = e.key === 'ArrowDown' ? h + 1 : h - 1;
@@ -88,49 +96,59 @@ export function SearchableSelect({
     if (e.key === 'Escape' && open) {
       e.preventDefault();
       setOpen(false);
+      setQuery('');
     }
   }
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
       <input
+        id={id}
         type="text"
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
+        aria-label={ariaLabel ?? placeholder}
+        autoComplete="off"
         disabled={disabled}
-        className="w-full rounded border border-brand-200 px-3 py-3 text-sm lg:py-2"
+        className={`${inputClassName ?? DEFAULT_INPUT} !pr-9`}
         placeholder={placeholder}
         value={open ? query : (selected?.label ?? '')}
         onFocus={() => {
           setOpen(true);
-          setQuery(selected?.label ?? '');
+          setQuery('');
         }}
         onKeyDown={onKeyDown}
         onChange={(e) => {
-          setQuery(e.target.value);
+          const next = e.target.value;
+          setQuery(next);
           setOpen(true);
-          if (!e.target.value) onChange('');
+          if (!next) onChange('');
         }}
+      />
+      <ChevronDown
+        className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+        aria-hidden
       />
       {open && !disabled && (
         <ul
           ref={listRef}
           role="listbox"
-          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-brand-200 bg-white text-sm shadow-lg"
+          className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-brand-200 bg-white text-sm shadow-lg"
         >
           {filtered.length === 0 ? (
             <li className="px-3 py-2 text-gray-400">No matches</li>
           ) : (
             <>
               {filtered.map((o, idx) => (
-                <li key={o.value} data-idx={idx} role="option" aria-selected={o.value === value}>
+                <li key={o.value || '__empty'} data-idx={idx} role="option" aria-selected={o.value === value}>
                   <button
                     type="button"
                     className={`w-full px-3 py-2 text-left hover:bg-brand-50 ${
                       idx === highlight ? 'bg-brand-50' : ''
                     } ${o.value === value ? 'font-medium' : ''}`}
                     onMouseEnter={() => setHighlight(idx)}
+                    onMouseDown={(ev) => ev.preventDefault()}
                     onClick={() => choose(o.value)}
                   >
                     <span className="block truncate">{o.label}</span>

@@ -8,6 +8,7 @@ import { StatusBadge, ZohoPushBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS }
 import { ZohoErrorCategoryChip } from '../components/ZohoSyncCard';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
+import { CategoryPicker } from '../components/CategoryPicker';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 
@@ -673,12 +674,16 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
               <option key={c.id} value={c.name}>{c.name}</option>
             ))}
           </select>
-          <select value={filters.categoryId} onChange={(e) => setFilter('categoryId', e.target.value)} className={filterSelectClass}>
-            <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          <div className="relative z-10">
+            <CategoryPicker
+              categories={categories}
+              value={filters.categoryId}
+              onChange={(id) => setFilter('categoryId', id)}
+              placeholder="All categories"
+              emptyLabel="All categories"
+              inputClassName={`${filterSelectClass} w-full`}
+            />
+          </div>
           <select value={filters.paymentMethodId} onChange={(e) => setFilter('paymentMethodId', e.target.value)} className={filterSelectClass}>
             <option value="">All payment methods</option>
             {paymentMethods.map((pm) => (

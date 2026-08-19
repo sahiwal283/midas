@@ -494,6 +494,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
                   categories={categories}
                   value={form.categoryId}
                   onChange={(id) => setForm((f) => ({ ...f, categoryId: id }))}
+                  inputClassName={inputCls}
                 />
               </div>
             </>

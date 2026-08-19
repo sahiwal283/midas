@@ -591,6 +591,7 @@ export function ExpenseNew() {
               categories={categories}
               value={form.categoryId}
               onChange={(id) => { setCategoryAutoSuggested(false); set('categoryId', id); }}
+              inputClassName={inputCls}
             />
             {categoryAutoSuggested && !!form.categoryId && (
               <p className="mt-1 text-xs text-charcoal/40">Suggested from the receipt — change if wrong.</p>
