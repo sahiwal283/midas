@@ -276,26 +276,26 @@ export function ExpenseList() {
 
       {/* Summary strip */}
       {!isLoading && expenses.length > 0 && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+        <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
             <p className="text-xs font-medium text-gray-500">Showing total</p>
-            <p className="mt-0.5 text-xl font-bold text-gray-900">
+            <p className="mt-0.5 text-lg font-bold text-gray-900 sm:text-xl">
               ${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
             <p className="text-xs font-medium text-gray-500">Matching</p>
-            <p className="mt-0.5 text-xl font-bold text-gray-900">{filtered.length}</p>
+            <p className="mt-0.5 text-lg font-bold text-gray-900 sm:text-xl">{filtered.length}</p>
           </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 col-span-2 sm:col-span-1">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 sm:px-4 sm:py-3">
             <p className="text-xs font-medium text-amber-800">Needs reply</p>
-            <p className="mt-0.5 text-xl font-bold text-amber-900">{actionNeeded}</p>
+            <p className="mt-0.5 text-lg font-bold text-amber-900 sm:text-xl">{actionNeeded}</p>
           </div>
         </div>
       )}
 
-      {/* Status tabs */}
-      <div className="mb-3 flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1">
+      {/* Status tabs — single scrollable row on phones so they never stack */}
+      <div className="mb-3 flex gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-gray-100 p-1 sm:flex-wrap sm:overflow-visible">
         {STATUS_TABS.map((t) => {
           const count = tabCounts[t.id];
           const active = tab === t.id;
@@ -304,7 +304,7 @@ export function ExpenseList() {
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 active
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
@@ -347,9 +347,9 @@ export function ExpenseList() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
+      {/* Filters — search full-width, the two selects share one row on phones */}
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:flex sm:items-center">
+        <div className="relative col-span-2 sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             type="search"
@@ -362,7 +362,7 @@ export function ExpenseList() {
         <select
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-auto"
         >
           <option value="">All months</option>
           {monthOptions.map((ym) => (
@@ -372,7 +372,7 @@ export function ExpenseList() {
         <select
           value={categoryId}
           onChange={(e) => setCategoryId(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-auto"
         >
           <option value="">All categories</option>
           {categoryOptions.map((c) => (
@@ -383,7 +383,7 @@ export function ExpenseList() {
           <select
             value={sourceApp}
             onChange={(e) => setSourceApp(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-auto"
           >
             <option value="">All sources</option>
             {sourceOptions.map((s) => (

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Clock, RefreshCw, XCircle, Send, FileX, Tag, CreditCard, Building2, Banknote, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, Clock, RefreshCw, SlidersHorizontal, XCircle, Send, FileX, Tag, CreditCard, Building2, Banknote, X } from 'lucide-react';
 import { accountantApi, expenseApi } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { StatusBadge, ZohoPushBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
@@ -253,6 +253,11 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     return base;
   }, [filters, activeLane, page, scope]);
   const hasActiveFilters = Object.keys(filtersToParams(filters)).length > 0;
+  // Mobile keeps the queue above the fold: everything but search collapses
+  // behind a Filters toggle. Search is excluded from the badge count because
+  // it stays visible in the collapsed row.
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const activeFilterCount = Object.keys(filtersToParams(filters)).filter((k) => k !== 'search').length;
 
   // Bulk selection + result toasts
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -570,8 +575,9 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         </div>
       )}
 
-      {/* Summary stat cards */}
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Summary stat cards — hidden on phones: the lane chips below carry the
+          same counts, and vertical space is the scarce resource there. */}
+      <div className="mb-6 hidden grid-cols-2 gap-3 md:grid lg:grid-cols-4">
         {summaryLanes.map(({ id, color }) => (
           <SummaryCard
             key={id}
@@ -612,14 +618,40 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         />
       </div>
 
-      {/* Filter bar */}
-      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
+      {/* Filter bar — on phones only search stays visible; everything else
+          collapses behind the Filters toggle so the queue stays above the fold. */}
+      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-3 md:p-4">
+        <div className="flex items-center gap-2 md:hidden">
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search merchant or description…"
+            className={`${filterInputClass} min-w-0 flex-1`}
+          />
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen((o) => !o)}
+            aria-expanded={mobileFiltersOpen}
+            className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 active:bg-gray-50"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-500 px-1 text-xs font-semibold text-white">
+                {activeFilterCount}
+              </span>
+            )}
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+
+        <div className={`${mobileFiltersOpen ? 'mt-2' : 'hidden'} md:mt-0 md:block`}>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3 lg:grid-cols-4">
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search merchant or description…"
-            className={`${filterInputClass} md:col-span-2`}
+            className={`${filterInputClass} hidden md:block md:col-span-2`}
           />
           <select value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)} className={filterSelectClass}>
             <option value="">All employees</option>
@@ -742,6 +774,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         {activeLane === 'all' && hasActiveFilters && (
           <p className="mt-2 text-xs text-amber-600">Filters apply to the review queue lanes — the All Expenses lane shows every expense.</p>
         )}
+        </div>
       </div>
 
       {/* Lane description */}
@@ -1040,9 +1073,10 @@ function LaneGroup({
   onSelect: (id: LaneId) => void;
 }) {
   return (
-    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:flex-wrap">
-      <span className="mr-1 text-xs font-semibold text-gray-400 shrink-0 sm:w-28">{label}</span>
-      <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1 flex-wrap">
+    <div className="flex items-center gap-1 sm:flex-wrap">
+      {/* Group label yields to lane chips on phones — the chips are self-explanatory */}
+      <span className="mr-1 hidden text-xs font-semibold text-gray-400 shrink-0 sm:inline sm:w-28">{label}</span>
+      <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-gray-100 p-1 sm:flex-wrap sm:overflow-visible">
         {lanes.map((lane) => {
           const count = lane === 'all' ? undefined : (laneCounts[lane] ?? 0);
           const urgent = count !== undefined && count > 0;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.46.2 (2026-08-19)
+
+### Mobile: information-forward review queue and expense list
+- **Review queue**: on phones, all filters except search collapse behind a Filters toggle with an active-count badge; summary stat cards are hidden (the lane chips carry the same counts); each lane group is a single scrollable chip row. The queue itself now starts near the top of the screen.
+- **My Expenses**: summary cards fit one row, status tabs scroll in a single row instead of stacking, and the month/category selects share a row. Desktop unchanged on both pages.
+
 ## 0.46.1 (2026-08-18)
 
 ### Fixed
