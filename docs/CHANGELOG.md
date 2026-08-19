@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.55.0 (2026-08-19)
+
+### Settings: Payment Methods filtered by company
+- The company dropdown now shows that company's cards plus an Unassigned group. Other brands stay hidden.
+- Each row has a Company control so you can move a card. Changing company clears its Zoho paid-through mapping (account ids are per org).
+- Mapping a Zoho account no longer overwrites the card's company from the page filter. Add Method prefills the company you are viewing.
+
 ## 0.54.0 (2026-08-19)
 
 ### Queue actions and dashboard hierarchy

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Fragment } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, CreditCard, AlertCircle } from 'lucide-react';
 import { paymentMethodsApi, expenseApi } from '../../api/expenses';
@@ -8,6 +8,7 @@ import { SearchableSelect, type SearchableOption } from '../../components/Search
 import { useAuth } from '../../contexts/AuthContext';
 import client from '../../api/client';
 import type { PaymentMethod, User } from '../../types';
+import { groupPaymentMethodsForCompany, patchForCompanyMove } from '@midas/shared';
 
 const BRAND_LABELS: Record<string, string> = {
   visa: 'Visa',
@@ -20,6 +21,33 @@ const BRAND_LABELS: Record<string, string> = {
 };
 
 const inputCls = 'w-full rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 lg:py-2';
+
+function CompanySelect({
+  value,
+  companies,
+  onChange,
+  disabled,
+}: {
+  value: string | null;
+  companies: Array<{ id: string; name: string }>;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <select
+      value={value ?? ''}
+      disabled={disabled}
+      aria-label="Company"
+      onChange={(e) => onChange(e.target.value)}
+      className="min-h-11 w-full max-w-[14rem] rounded-lg border border-ink/15 bg-white px-2 py-1.5 text-xs font-medium text-ink focus:border-brand-500 focus:outline-none disabled:opacity-60 lg:min-h-0"
+    >
+      <option value="">Unassigned</option>
+      {companies.map((c) => (
+        <option key={c.id} value={c.name}>{c.name}</option>
+      ))}
+    </select>
+  );
+}
 
 interface ZohoPaidThroughAccount {
   accountId: string;
@@ -97,6 +125,11 @@ export function PaymentMethodsSection() {
   const accounts: ZohoPaidThroughAccount[] = accountData?.accounts ?? [];
   const accountName = (id: string) => accounts.find((a) => a.accountId === id)?.accountName ?? null;
 
+  const { belonging, unassigned } = useMemo(
+    () => groupPaymentMethodsForCompany(methods, company),
+    [methods, company],
+  );
+
   /** Account ids already claimed by some payment method (any company). */
   const claimedAccountIds = useMemo(
     () => new Set(methods.map((m) => m.zohoAccountName).filter(Boolean) as string[]),
@@ -127,13 +160,25 @@ export function PaymentMethodsSection() {
     mutationFn: (v: { id: string; zohoAccountName: string }) =>
       paymentMethodsApi.update(v.id, {
         zohoAccountName: v.zohoAccountName,
-        // The paid-through account belongs to this company's Zoho org, so the
-        // card's default entity follows the mapping.
-        defaultZohoEntity: company,
       }),
     onSuccess: () => { invalidate(); setError(''); },
     onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not save the Zoho mapping'),
   });
+
+  const moveMutation = useMutation({
+    mutationFn: (v: { id: string; defaultZohoEntity: string | null; zohoAccountName?: null }) =>
+      paymentMethodsApi.update(v.id, {
+        defaultZohoEntity: v.defaultZohoEntity,
+        ...(v.zohoAccountName === null ? { zohoAccountName: null } : {}),
+      }),
+    onSuccess: () => { invalidate(); setError(''); },
+    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not move this card'),
+  });
+
+  function moveToCompany(pm: PaymentMethod, nextEntity: string) {
+    const patch = patchForCompanyMove(pm, nextEntity);
+    moveMutation.mutate({ id: pm.id, ...patch });
+  }
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ['admin-users'],
@@ -162,7 +207,7 @@ export function PaymentMethodsSection() {
       setShowForm(false);
       setError('');
       setForm({
-        label: '', lastFour: '', brand: '', zohoAccountName: '', defaultZohoEntity: '',
+        label: '', lastFour: '', brand: '', zohoAccountName: '', defaultZohoEntity: company,
         requiresReimbursement: false, isCompanyWide: true,
       });
     },
@@ -190,11 +235,14 @@ export function PaymentMethodsSection() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <p className="text-sm text-muted">
-          Manage company cards and payment methods. Pick a company to match each card to its
-          Zoho Books paid-through account — no more copying account ids by hand.
+          Cards for this company, plus unassigned cards you can attach. Other companies are hidden —
+          switch the dropdown to work those lists.
         </p>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => {
+            setForm((f) => ({ ...f, defaultZohoEntity: company }));
+            setShowForm(true);
+          }}
           className="flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 sm:w-auto lg:min-h-0"
         >
           <Plus className="h-4 w-4" />
@@ -356,91 +404,75 @@ export function PaymentMethodsSection() {
             <p className="text-sm text-muted">No payment methods yet.</p>
             <p className="mt-1 text-xs text-charcoal/40">Add company cards so employees can tag expenses correctly.</p>
           </div>
+        ) : belonging.length === 0 && unassigned.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <p className="text-sm text-muted">No cards for {company} yet.</p>
+            <p className="mt-1 text-xs text-charcoal/40">Unassigned cards appear here. Switch company to see other brands.</p>
+          </div>
         ) : (
           <>
             {/* Mobile cards */}
             <div className="divide-y divide-ink/5 md:hidden">
-              {methods.map((pm) => (
-                <div key={pm.id} className="space-y-3 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <CreditCard className="h-4 w-4 shrink-0 text-charcoal/40" />
-                    <span className="font-medium text-ink">{pm.label}</span>
-                    {pm.lastFour && <span className="text-charcoal/40">···{pm.lastFour}</span>}
-                    {pm.requiresReimbursement && (
-                      <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                        Reimbursable
-                      </span>
-                    )}
-                    <span className={`ml-auto inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}>
-                      {pm.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-charcoal/70">
-                    <span>{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : 'No brand'}</span>
-                    <span aria-hidden="true">·</span>
-                    {pm.defaultZohoEntity ? (
-                      <span className="inline-flex rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-                        {pm.defaultZohoEntity}
-                      </span>
-                    ) : (
-                      <span className="text-charcoal/40">No company</span>
-                    )}
-                    <span aria-hidden="true">·</span>
-                    <span>{pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}</span>
-                  </div>
-                  <div>
-                    <SearchableSelect
-                      options={accountOptionsFor(pm)}
-                      value={pm.zohoAccountName ?? ''}
-                      onChange={(accountId) => {
-                        if (accountId && accountId !== pm.zohoAccountName) {
-                          mapMutation.mutate({ id: pm.id, zohoAccountName: accountId });
-                        }
-                      }}
-                      placeholder="Match Zoho account…"
-                      disabled={accountsLoading || accountsFailed}
-                    />
-                    {pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed && (
-                      <p className="mt-1 font-mono text-[11px] text-charcoal/40">
-                        id {pm.zohoAccountName} — not in {company}'s account list
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingId((id) => (id === pm.id ? null : pm.id))}
-                      className="min-h-11 flex-1 rounded-lg border border-brand-200 bg-brand-50 text-xs font-medium text-brand-700 hover:bg-brand-100"
-                    >
-                      {editingId === pm.id ? 'Close' : 'Edit'}
-                    </button>
-                    {pm.isActive && (
-                      <button
-                        onClick={() => setDeactivateTarget(pm)}
-                        disabled={deactivateMutation.isPending}
-                        className="min-h-11 flex-1 rounded-lg border border-ink/10 text-xs font-medium text-muted hover:text-danger disabled:opacity-50"
-                      >
-                        Deactivate
-                      </button>
-                    )}
-                  </div>
-                  {editingId === pm.id && (
-                    <div className="rounded-lg bg-cream p-3">
-                      <PaymentMethodEditor
-                        pm={pm}
-                        users={users}
-                        canAssign={isAdmin}
-                        onClose={() => setEditingId(null)}
-                        onSaved={() => { invalidate(); setEditingId(null); setError(''); }}
-                        onError={setError}
-                      />
-                    </div>
-                  )}
-                </div>
+              {belonging.length > 0 && (
+                <p className="bg-brand-50/80 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                  {company}
+                </p>
+              )}
+              {belonging.map((pm) => (
+                <MethodCard
+                  key={pm.id}
+                  pm={pm}
+                  userName={userName}
+                  accountOptions={accountOptionsFor(pm)}
+                  zohoDisabled={!pm.defaultZohoEntity || accountsLoading || accountsFailed}
+                  zohoMismatch={!!pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed}
+                  companyLabel={company}
+                  companies={zohoCompanies}
+                  editing={editingId === pm.id}
+                  isAdmin={isAdmin}
+                  users={users}
+                  deactivatePending={deactivateMutation.isPending || moveMutation.isPending}
+                  onMove={(next) => moveToCompany(pm, next)}
+                  onMap={(accountId) => mapMutation.mutate({ id: pm.id, zohoAccountName: accountId })}
+                  onToggleEdit={() => setEditingId((id) => (id === pm.id ? null : pm.id))}
+                  onDeactivate={() => setDeactivateTarget(pm)}
+                  onCloseEdit={() => setEditingId(null)}
+                  onSaved={() => { invalidate(); setEditingId(null); setError(''); }}
+                  onError={setError}
+                />
+              ))}
+              {unassigned.length > 0 && (
+                <p className="bg-brand-50/80 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                  Unassigned
+                </p>
+              )}
+              {unassigned.map((pm) => (
+                <MethodCard
+                  key={pm.id}
+                  pm={pm}
+                  userName={userName}
+                  accountOptions={accountOptionsFor(pm)}
+                  zohoDisabled
+                  zohoMismatch={false}
+                  companyLabel={company}
+                  companies={zohoCompanies}
+                  editing={editingId === pm.id}
+                  isAdmin={isAdmin}
+                  users={users}
+                  deactivatePending={deactivateMutation.isPending || moveMutation.isPending}
+                  onMove={(next) => moveToCompany(pm, next)}
+                  onMap={(accountId) => mapMutation.mutate({ id: pm.id, zohoAccountName: accountId })}
+                  onToggleEdit={() => setEditingId((id) => (id === pm.id ? null : pm.id))}
+                  onDeactivate={() => setDeactivateTarget(pm)}
+                  onCloseEdit={() => setEditingId(null)}
+                  onSaved={() => { invalidate(); setEditingId(null); setError(''); }}
+                  onError={setError}
+                />
               ))}
             </div>
             <table className="hidden w-full text-sm md:table">
             <thead>
-              <tr className="border-b border-ink/10 text-left text-xs font-semibold uppercase tracking-wider text-muted">
+              <tr className="border-b border-ink/10 bg-brand-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
                 <th className="px-6 py-3">Label</th>
                 <th className="px-6 py-3">Brand</th>
                 <th className="px-6 py-3">Company</th>
@@ -451,92 +483,65 @@ export function PaymentMethodsSection() {
               </tr>
             </thead>
             <tbody className="divide-y divide-ink/5">
-              {methods.map((pm) => (
-                <Fragment key={pm.id}>
-                  <tr className="hover:bg-ink/[0.03]">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <CreditCard className="h-4 w-4 text-charcoal/40" />
-                        <span className="font-medium text-ink">{pm.label}</span>
-                        {pm.lastFour && <span className="text-charcoal/40">···{pm.lastFour}</span>}
-                        {pm.requiresReimbursement && (
-                          <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                            Reimbursable
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-charcoal/70">{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : '—'}</td>
-                    <td className="px-6 py-4">
-                      {pm.defaultZohoEntity ? (
-                        <span className="inline-flex rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                          {pm.defaultZohoEntity}
-                        </span>
-                      ) : (
-                        <span className="text-charcoal/40">—</span>
-                      )}
-                    </td>
-                    <td className="min-w-[16rem] px-6 py-4">
-                      <SearchableSelect
-                        options={accountOptionsFor(pm)}
-                        value={pm.zohoAccountName ?? ''}
-                        onChange={(accountId) => {
-                          if (accountId && accountId !== pm.zohoAccountName) {
-                            mapMutation.mutate({ id: pm.id, zohoAccountName: accountId });
-                          }
-                        }}
-                        placeholder="Match Zoho account…"
-                        disabled={accountsLoading || accountsFailed}
-                      />
-                      {pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed && (
-                        <p className="mt-1 font-mono text-[11px] text-charcoal/40">
-                          id {pm.zohoAccountName} — not in {company}'s account list
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-charcoal/70">
-                      {pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}>
-                        {pm.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => setEditingId((id) => (id === pm.id ? null : pm.id))}
-                          className="text-xs font-medium text-brand-700 hover:underline"
-                        >
-                          {editingId === pm.id ? 'Close' : 'Edit'}
-                        </button>
-                        {pm.isActive && (
-                          <button
-                            onClick={() => setDeactivateTarget(pm)}
-                            disabled={deactivateMutation.isPending}
-                            className="text-xs text-charcoal/40 hover:text-danger disabled:opacity-50"
-                          >
-                            Deactivate
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {editingId === pm.id && (
-                    <tr className="bg-cream">
-                      <td colSpan={7} className="px-6 py-4">
-                        <PaymentMethodEditor
-                          pm={pm}
-                          users={users}
-                          canAssign={isAdmin}
-                          onClose={() => setEditingId(null)}
-                          onSaved={() => { invalidate(); setEditingId(null); setError(''); }}
-                          onError={setError}
-                        />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
+              {belonging.length > 0 && (
+                <tr>
+                  <td colSpan={7} className="bg-brand-50/50 px-6 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    {company}
+                  </td>
+                </tr>
+              )}
+              {belonging.map((pm) => (
+                <MethodTableRows
+                  key={pm.id}
+                  pm={pm}
+                  userName={userName}
+                  accountOptions={accountOptionsFor(pm)}
+                  zohoDisabled={!pm.defaultZohoEntity || accountsLoading || accountsFailed}
+                  zohoMismatch={!!pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed}
+                  companyLabel={company}
+                  companies={zohoCompanies}
+                  editing={editingId === pm.id}
+                  isAdmin={isAdmin}
+                  users={users}
+                  deactivatePending={deactivateMutation.isPending || moveMutation.isPending}
+                  onMove={(next) => moveToCompany(pm, next)}
+                  onMap={(accountId) => mapMutation.mutate({ id: pm.id, zohoAccountName: accountId })}
+                  onToggleEdit={() => setEditingId((id) => (id === pm.id ? null : pm.id))}
+                  onDeactivate={() => setDeactivateTarget(pm)}
+                  onCloseEdit={() => setEditingId(null)}
+                  onSaved={() => { invalidate(); setEditingId(null); setError(''); }}
+                  onError={setError}
+                />
+              ))}
+              {unassigned.length > 0 && (
+                <tr>
+                  <td colSpan={7} className="bg-brand-50/50 px-6 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    Unassigned — attach to {company} or leave personal
+                  </td>
+                </tr>
+              )}
+              {unassigned.map((pm) => (
+                <MethodTableRows
+                  key={pm.id}
+                  pm={pm}
+                  userName={userName}
+                  accountOptions={accountOptionsFor(pm)}
+                  zohoDisabled
+                  zohoMismatch={false}
+                  companyLabel={company}
+                  companies={zohoCompanies}
+                  editing={editingId === pm.id}
+                  isAdmin={isAdmin}
+                  users={users}
+                  deactivatePending={deactivateMutation.isPending || moveMutation.isPending}
+                  onMove={(next) => moveToCompany(pm, next)}
+                  onMap={(accountId) => mapMutation.mutate({ id: pm.id, zohoAccountName: accountId })}
+                  onToggleEdit={() => setEditingId((id) => (id === pm.id ? null : pm.id))}
+                  onDeactivate={() => setDeactivateTarget(pm)}
+                  onCloseEdit={() => setEditingId(null)}
+                  onSaved={() => { invalidate(); setEditingId(null); setError(''); }}
+                  onError={setError}
+                />
               ))}
             </tbody>
             </table>
@@ -603,9 +608,202 @@ export function PaymentMethodsSection() {
   );
 }
 
-function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }: {
+interface MethodViewProps {
+  pm: PaymentMethod;
+  userName: (id: string | null) => string;
+  accountOptions: SearchableOption[];
+  zohoDisabled: boolean;
+  zohoMismatch: boolean;
+  companyLabel: string;
+  companies: Array<{ id: string; name: string }>;
+  editing: boolean;
+  isAdmin: boolean;
+  users: User[];
+  deactivatePending: boolean;
+  onMove: (next: string) => void;
+  onMap: (accountId: string) => void;
+  onToggleEdit: () => void;
+  onDeactivate: () => void;
+  onCloseEdit: () => void;
+  onSaved: () => void;
+  onError: (msg: string) => void;
+}
+
+function MethodCard(props: MethodViewProps) {
+  const { pm, userName, accountOptions, zohoDisabled, zohoMismatch, companyLabel, companies, editing, isAdmin, users, deactivatePending } = props;
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <CreditCard className="h-4 w-4 shrink-0 text-charcoal/40" />
+        <span className="font-medium text-ink">{pm.label}</span>
+        {pm.lastFour && <span className="text-charcoal/40">···{pm.lastFour}</span>}
+        {pm.requiresReimbursement && (
+          <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+            Reimbursable
+          </span>
+        )}
+        <span className={`ml-auto inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}>
+          {pm.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-charcoal/70">
+        <span>{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : 'No brand'}</span>
+        <span aria-hidden="true">·</span>
+        <span>{pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}</span>
+      </div>
+      <CompanySelect
+        value={pm.defaultZohoEntity}
+        companies={companies}
+        onChange={props.onMove}
+        disabled={deactivatePending}
+      />
+      <div>
+        <SearchableSelect
+          options={accountOptions}
+          value={pm.zohoAccountName ?? ''}
+          onChange={(accountId) => {
+            if (accountId && accountId !== pm.zohoAccountName) props.onMap(accountId);
+          }}
+          placeholder={pm.defaultZohoEntity ? 'Match Zoho account…' : 'Assign a company first'}
+          disabled={zohoDisabled}
+        />
+        {zohoMismatch && (
+          <p className="mt-1 font-mono text-[11px] text-danger">
+            id {pm.zohoAccountName} — not in {companyLabel}&apos;s account list
+          </p>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={props.onToggleEdit}
+          className="min-h-11 flex-1 rounded-lg border border-brand-200 bg-brand-50 text-xs font-medium text-brand-700 hover:bg-brand-100"
+        >
+          {editing ? 'Close' : 'Edit'}
+        </button>
+        {pm.isActive && (
+          <button
+            type="button"
+            onClick={props.onDeactivate}
+            disabled={deactivatePending}
+            className="min-h-11 flex-1 rounded-lg border border-ink/10 text-xs font-medium text-muted hover:text-danger disabled:opacity-50"
+          >
+            Deactivate
+          </button>
+        )}
+      </div>
+      {editing && (
+        <div className="rounded-lg bg-cream p-3">
+          <PaymentMethodEditor
+            pm={pm}
+            users={users}
+            companies={companies}
+            canAssign={isAdmin}
+            onClose={props.onCloseEdit}
+            onSaved={props.onSaved}
+            onError={props.onError}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MethodTableRows(props: MethodViewProps) {
+  const { pm, userName, accountOptions, zohoDisabled, zohoMismatch, companyLabel, companies, editing, isAdmin, users, deactivatePending } = props;
+  return (
+    <>
+      <tr className="hover:bg-ink/[0.03]">
+        <td className="px-6 py-4">
+          <div className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-charcoal/40" />
+            <span className="font-medium text-ink">{pm.label}</span>
+            {pm.lastFour && <span className="text-charcoal/40">···{pm.lastFour}</span>}
+            {pm.requiresReimbursement && (
+              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                Reimbursable
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-6 py-4 text-charcoal/70">{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : '—'}</td>
+        <td className="px-6 py-4">
+          <CompanySelect
+            value={pm.defaultZohoEntity}
+            companies={companies}
+            onChange={props.onMove}
+            disabled={deactivatePending}
+          />
+        </td>
+        <td className="min-w-[16rem] px-6 py-4">
+          <SearchableSelect
+            options={accountOptions}
+            value={pm.zohoAccountName ?? ''}
+            onChange={(accountId) => {
+              if (accountId && accountId !== pm.zohoAccountName) props.onMap(accountId);
+            }}
+            placeholder={pm.defaultZohoEntity ? 'Match Zoho account…' : 'Assign a company first'}
+            disabled={zohoDisabled}
+          />
+          {zohoMismatch && (
+            <p className="mt-1 font-mono text-[11px] text-danger">
+              id {pm.zohoAccountName} — not in {companyLabel}&apos;s account list
+            </p>
+          )}
+        </td>
+        <td className="px-6 py-4 text-charcoal/70">
+          {pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}
+        </td>
+        <td className="px-6 py-4">
+          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}>
+            {pm.isActive ? 'Active' : 'Inactive'}
+          </span>
+        </td>
+        <td className="px-6 py-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={props.onToggleEdit}
+              className="text-xs font-medium text-brand-700 hover:underline"
+            >
+              {editing ? 'Close' : 'Edit'}
+            </button>
+            {pm.isActive && (
+              <button
+                type="button"
+                onClick={props.onDeactivate}
+                disabled={deactivatePending}
+                className="text-xs text-charcoal/40 hover:text-danger disabled:opacity-50"
+              >
+                Deactivate
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+      {editing && (
+        <tr className="bg-cream">
+          <td colSpan={7} className="px-6 py-4">
+            <PaymentMethodEditor
+              pm={pm}
+              users={users}
+              companies={companies}
+              canAssign={isAdmin}
+              onClose={props.onCloseEdit}
+              onSaved={props.onSaved}
+              onError={props.onError}
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function PaymentMethodEditor({ pm, users, companies, canAssign, onClose, onSaved, onError }: {
   pm: PaymentMethod;
   users: User[];
+  companies: Array<{ id: string; name: string }>;
   canAssign: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -623,20 +821,23 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => paymentMethodsApi.update(pm.id, {
-      label: form.label,
-      lastFour: form.lastFour || undefined,
-      brand: form.brand || undefined,
-      zohoAccountName: form.zohoAccountName || undefined,
-      defaultZohoEntity: form.defaultZohoEntity || null,
-      requiresReimbursement: form.requiresReimbursement,
-      ...(canAssign
-        ? {
-            isCompanyWide: form.assignment === 'company',
-            assignedUserId: form.assignment === 'assigned' && form.assignedUserId ? form.assignedUserId : null,
-          }
-        : {}),
-    }),
+    mutationFn: () => {
+      const move = patchForCompanyMove(pm, form.defaultZohoEntity);
+      return paymentMethodsApi.update(pm.id, {
+        label: form.label,
+        lastFour: form.lastFour || undefined,
+        brand: form.brand || undefined,
+        zohoAccountName: move.zohoAccountName === null ? null : (form.zohoAccountName || undefined),
+        defaultZohoEntity: move.defaultZohoEntity,
+        requiresReimbursement: form.requiresReimbursement,
+        ...(canAssign
+          ? {
+              isCompanyWide: form.assignment === 'company',
+              assignedUserId: form.assignment === 'assigned' && form.assignedUserId ? form.assignedUserId : null,
+            }
+          : {}),
+      });
+    },
     onSuccess: onSaved,
     onError: (err: any) => onError(err?.response?.data?.error?.message ?? 'Could not update payment method'),
   });
@@ -683,13 +884,13 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-charcoal/80">Default company</label>
-          <input
-            value={form.defaultZohoEntity}
-            onChange={(e) => set('defaultZohoEntity', e.target.value)}
-            placeholder="e.g. Nirvana Kulture"
-            className={inputCls}
-          />
+          <label className="mb-1 block text-xs font-medium text-charcoal/80">Company</label>
+          <select value={form.defaultZohoEntity} onChange={(e) => set('defaultZohoEntity', e.target.value)} className={inputCls}>
+            <option value="">Unassigned</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
         </div>
         <div className="flex items-end pb-2">
           <label className="flex items-center gap-2 text-sm text-charcoal/80">

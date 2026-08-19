@@ -252,7 +252,7 @@ export const paymentMethodsApi = {
     label?: string;
     lastFour?: string;
     brand?: string;
-    zohoAccountName?: string;
+    zohoAccountName?: string | null;
     defaultZohoEntity?: string | null;
     requiresReimbursement?: boolean;
     isCompanyWide?: boolean;

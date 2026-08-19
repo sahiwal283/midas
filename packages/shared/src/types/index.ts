@@ -1,4 +1,5 @@
 export { MIDAS_VERSION } from '../version';
+export { groupPaymentMethodsForCompany, patchForCompanyMove } from './paymentMethodGroups';
 
 // ── Roles ────────────────────────────────────────────────────────────────────
 

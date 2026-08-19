@@ -14,7 +14,7 @@ const createSchema = z.object({
   label: z.string().min(1).max(100),
   lastFour: z.string().length(4).regex(/^\d{4}$/).optional(),
   brand: z.enum(['visa', 'mastercard', 'amex', 'discover', 'debit', 'cash', 'other']).optional(),
-  zohoAccountName: z.string().optional(),
+  zohoAccountName: z.string().max(200).optional().nullable(),
   defaultZohoEntity: z.string().max(200).optional().nullable(),
   requiresReimbursement: z.boolean().optional(),
   isCompanyWide: z.boolean().default(true),
