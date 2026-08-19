@@ -20,13 +20,26 @@ export interface QueueFilters {
   missingReceipt?: boolean;
   missingCategory?: boolean;
   missingPayment?: boolean;
+  /** Flag-derived lanes that cannot be expressed as a single column. */
+  readyForZoho?: boolean;
+  missingEntity?: boolean;
+  /** Needs reimbursement or approved (pending payment). */
+  reimbursementOpen?: boolean;
   /** expense | purchase_order — Phase 1 type filter */
   transactionType?: 'expense' | 'purchase_order';
   scope?: 'event' | 'daily';
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const BOOL_KEYS = ['ocrNeedsReview', 'missingReceipt', 'missingCategory', 'missingPayment'] as const;
+const BOOL_KEYS = [
+  'ocrNeedsReview',
+  'missingReceipt',
+  'missingCategory',
+  'missingPayment',
+  'readyForZoho',
+  'missingEntity',
+  'reimbursementOpen',
+] as const;
 
 export function parseQueueFilters(q: Record<string, string | undefined>): QueueFilters {
   const f: QueueFilters = {};

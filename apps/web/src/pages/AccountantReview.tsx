@@ -120,30 +120,36 @@ function ReadinessLine({ ok, label }: { ok: boolean; label: string }) {
 }
 
 function ZohoReadinessCard({ expense }: { expense: Expense }) {
+  if (expense.zohoExpenseId) return null;
+
   const hasReceipt = (expense.receipts?.length ?? 0) > 0;
   const hasCategory = !!(expense.categoryId || expense.zohoExpenseAccountId);
   const hasPayment = !!expense.paymentMethodId;
   const hasCompany = !!expense.zohoEntity;
-  const notSynced = !expense.zohoExpenseId;
-  const ready = hasReceipt && hasCategory && hasPayment && hasCompany && notSynced && expense.status === 'approved';
+  const ready = hasReceipt && hasCategory && hasPayment && hasCompany && expense.status === 'approved';
+  const failed: string[] = [];
+  if (!hasReceipt) failed.push('Receipt attached');
+  if (!hasCategory) failed.push('Category set');
+  if (!hasPayment) failed.push('Payment method set');
+  if (!hasCompany) failed.push('Company set');
+  if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') failed.push('Approved');
 
   return (
     <div className={`rounded-xl border p-4 ${ready ? 'border-teal-200 bg-teal-50' : 'border-gray-200 bg-white'}`}>
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700">
-        Zoho Readiness
+        Zoho push
         {ready
           ? <span className="text-xs font-medium text-teal-700">Ready</span>
-          : <span className="text-xs font-medium text-gray-400">Not ready</span>}
+          : <span className="text-xs font-medium text-gray-500">Not ready</span>}
       </h2>
-      <ul className="space-y-1.5">
-        <ReadinessLine ok={hasReceipt} label="Receipt attached" />
-        <ReadinessLine ok={hasCategory} label="Category set" />
-        <ReadinessLine ok={hasPayment} label="Payment method set" />
-        <ReadinessLine ok={hasCompany} label="Company set" />
-        <ReadinessLine ok={notSynced} label="Not already synced" />
-      </ul>
-      {expense.zohoExpenseId && (
-        <p className="mt-2 break-all text-xs text-gray-500">Zoho ID: {expense.zohoExpenseId}</p>
+      {ready ? (
+        <p className="text-xs text-teal-800">All push checks passed.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {failed.map((label) => (
+            <ReadinessLine key={label} ok={false} label={label} />
+          ))}
+        </ul>
       )}
     </div>
   );

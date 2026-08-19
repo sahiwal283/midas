@@ -35,6 +35,7 @@ describe('evaluateZohoReadiness — ready expense', () => {
   it('returns ready=true with all fields present and approved', () => {
     const result = evaluateZohoReadiness(base);
     expect(result.ready).toBe(true);
+    expect(result.synced).toBe(false);
     expect(result.missing).toHaveLength(0);
     expect(result.mappedPayload).not.toBeNull();
   });
@@ -45,10 +46,11 @@ describe('evaluateZohoReadiness — ready expense', () => {
     expect(result.warnings).toContain('Zoho is in mock mode — no live writes will occur');
   });
 
-  it('includes all 11 checks', () => {
+  it('includes push-gate checks without treating sync as a failure', () => {
     const result = evaluateZohoReadiness(base);
-    expect(result.checks).toHaveLength(11);
+    expect(result.checks).toHaveLength(10);
     expect(result.checks.every((c) => c.pass)).toBe(true);
+    expect(result.checks.some((c) => c.label === 'Not already synced')).toBe(false);
   });
 
   it('maps payload correctly', () => {
@@ -75,10 +77,11 @@ describe('evaluateZohoReadiness — missing fields', () => {
     expect(result.mappedPayload).toBeNull();
   });
 
-  it('not ready when already synced', () => {
+  it('marks already-synced expenses as done, not as a missing field', () => {
     const result = evaluateZohoReadiness({ ...base, zohoExpenseId: 'Z-123' });
     expect(result.ready).toBe(false);
-    expect(result.missing).toContain('already synced to Zoho');
+    expect(result.synced).toBe(true);
+    expect(result.missing).toHaveLength(0);
   });
 
   it('not ready without category', () => {

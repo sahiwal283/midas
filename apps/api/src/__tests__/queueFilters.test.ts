@@ -22,6 +22,18 @@ describe('parseQueueFilters', () => {
     expect(parseQueueFilters({ zohoStatus: 'weird' })).toEqual({});
   });
 
+  it('accepts flag-derived lane params', () => {
+    expect(parseQueueFilters({
+      readyForZoho: 'true',
+      missingEntity: '1',
+      reimbursementOpen: 'true',
+    })).toEqual({
+      readyForZoho: true,
+      missingEntity: true,
+      reimbursementOpen: true,
+    });
+  });
+
   it('accepts the two valid scopes', () => {
     expect(parseQueueFilters({ scope: 'event' })).toEqual({ scope: 'event' });
     expect(parseQueueFilters({ scope: 'daily' })).toEqual({ scope: 'daily' });

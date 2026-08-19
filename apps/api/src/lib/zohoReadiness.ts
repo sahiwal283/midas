@@ -22,6 +22,8 @@ export interface ZohoMappedPayload {
 
 export interface ZohoReadinessResult {
   ready: boolean;
+  /** True when Midas already has a Zoho Books id — not a failure, just already done. */
+  synced: boolean;
   missing: string[];
   warnings: string[];
   zohoMode: 'mock' | 'dry-run' | 'live';
@@ -65,7 +67,6 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
 
   const checks: ZohoReadinessCheck[] = [
     { label: 'Approved', pass: isApproved },
-    { label: 'Not already synced', pass: !alreadySynced },
     { label: 'Merchant name', pass: hasMerchant },
     { label: 'Amount > 0', pass: hasAmount },
     { label: 'Expense date', pass: hasDate },
@@ -78,7 +79,6 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   ];
 
   if (!isApproved) missing.push('expense must be approved');
-  if (alreadySynced) missing.push('already synced to Zoho');
   if (!hasMerchant) missing.push('merchant name');
   if (!hasAmount) missing.push('valid amount');
   if (!hasDate) missing.push('expense date');
@@ -99,7 +99,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
     warnings.push(`payment method maps to Zoho account: ${expense.paymentMethod.zohoAccountName}`);
   }
 
-  const ready = missing.length === 0;
+  const ready = missing.length === 0 && !alreadySynced;
   const brand = resolveBrandFromEntity(expense.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND;
 
   const mappedPayload: ZohoMappedPayload | null = ready ? {
@@ -117,5 +117,14 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
 
   const servicePayload = buildZohoServicePayload(expense);
 
-  return { ready, missing, warnings, zohoMode: mode, mappedPayload, servicePayload, checks };
+  return {
+    ready,
+    synced: alreadySynced,
+    missing,
+    warnings,
+    zohoMode: mode,
+    mappedPayload,
+    servicePayload,
+    checks,
+  };
 }

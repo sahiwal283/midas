@@ -30,7 +30,6 @@ interface LaneDef {
   label: string;
   icon: React.ReactNode;
   description: string;
-  filter: (e: Expense) => boolean;
 }
 
 const LANES: Record<LaneId, LaneDef> = {
@@ -38,62 +37,51 @@ const LANES: Record<LaneId, LaneDef> = {
     label: 'Pending approval',
     icon: <Clock className="h-3.5 w-3.5" />,
     description: 'Submitted — ready to Approve, Reject, or request further review',
-    filter: (e) => e.status === 'pending' || e.status === 'in_review',
   },
   awaiting_user: {
     label: 'Needs further review',
     icon: <AlertCircle className="h-3.5 w-3.5" />,
     description: 'Accountant asked for more information — waiting on employee',
-    filter: (e) => e.status === 'awaiting_info',
   },
   missing_receipt: {
     label: 'Missing Receipt',
     icon: <FileX className="h-3.5 w-3.5" />,
     description: 'Approved expenses without a receipt attached',
-    filter: (e) => e.status === 'approved' && (e.flags ?? []).includes('missing_receipt'),
   },
   missing_category: {
     label: 'Missing Expense Account',
     icon: <Tag className="h-3.5 w-3.5" />,
     description: 'Approved expenses without a Zoho expense account (or Midas category) — cannot push to Zoho',
-    filter: (e) => e.status === 'approved' && (e.flags ?? []).includes('needs_category'),
   },
   missing_payment_method: {
     label: 'Missing Payment',
     icon: <CreditCard className="h-3.5 w-3.5" />,
     description: 'Approved expenses without a payment method — required for Zoho',
-    filter: (e) => e.status === 'approved' && (e.flags ?? []).includes('needs_payment_method'),
   },
   missing_entity: {
     label: 'Missing Company',
     icon: <Building2 className="h-3.5 w-3.5" />,
     description: 'Approved but company not set',
-    filter: (e) => e.status === 'approved' && (e.flags ?? []).includes('needs_entity'),
   },
   ready_for_zoho: {
     label: 'Ready for Zoho',
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
     description: 'All required fields complete — ready to push to Zoho.',
-    filter: (e) => (e.flags ?? []).includes('ready_for_zoho'),
   },
   zoho_failed: {
     label: 'Zoho Failed',
     icon: <RefreshCw className="h-3.5 w-3.5" />,
     description: 'Zoho sync failed — needs retry.',
-    filter: (e) => e.status === 'zoho_sync_failed' || e.integrationStatus === 'failed',
   },
   reimbursement_pending: {
     label: 'Reimbursement',
     icon: <Banknote className="h-3.5 w-3.5" />,
     description: 'Personal-card expenses waiting for reimbursement (needs reimbursement / approved pending payment)',
-    filter: (e) =>
-      e.reimbursementStatus === 'pending' || e.reimbursementStatus === 'approved',
   },
   all: {
     label: 'All Expenses',
     icon: null,
     description: 'Every expense in the system',
-    filter: () => true,
   },
 };
 
@@ -180,17 +168,19 @@ function laneToServerParams(lane: LaneId): Record<string, string> {
     case 'awaiting_user':
       return { status: 'awaiting_info' };
     case 'missing_receipt':
-      return { missingReceipt: 'true' };
+      return { status: 'approved', missingReceipt: 'true' };
     case 'missing_category':
-      return { missingCategory: 'true' };
+      return { status: 'approved', missingCategory: 'true' };
     case 'missing_payment_method':
-      return { missingPayment: 'true' };
+      return { status: 'approved', missingPayment: 'true' };
+    case 'missing_entity':
+      return { missingEntity: 'true' };
+    case 'ready_for_zoho':
+      return { readyForZoho: 'true' };
     case 'zoho_failed':
       return { status: 'zoho_sync_failed' };
     case 'reimbursement_pending':
-      return { reimbursementStatus: 'pending' };
-    case 'missing_entity':
-    case 'ready_for_zoho':
+      return { reimbursementOpen: 'true' };
     case 'all':
       return {};
     default: {
@@ -243,11 +233,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
 
   const queryParams = useMemo(() => {
     const base: Record<string, string> = { ...filtersToParams(filters), ...laneToServerParams(activeLane), scope };
-    if (activeLane === 'ready_for_zoho' || activeLane === 'missing_entity') {
-      // Flag-based lanes still filter client-side; pull a larger page.
-      base.page = '1';
-      base.pageSize = '200';
-    } else if (activeLane !== 'all') {
+    if (activeLane !== 'all') {
       base.page = String(page);
       base.pageSize = String(PAGE_SIZE);
     }
@@ -459,16 +445,16 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     + (laneCounts.ready_for_zoho ?? 0)
     + (laneCounts.zoho_failed ?? 0);
 
-  const serverFilteredLane = !['ready_for_zoho', 'missing_entity', 'all'].includes(activeLane);
-  const displayData = activeLane === 'all'
-    ? allExpenses
-    : serverFilteredLane
-      ? queue
-      : queue.filter(LANES[activeLane].filter);
+  const displayData = activeLane === 'all' ? allExpenses : queue;
 
   const isLoading = activeLane === 'all' ? allLoading : queueLoading;
   const totalPages = activeLane === 'all' ? 1 : (queuePage?.totalPages ?? 1);
   const totalRows = activeLane === 'all' ? allExpenses.length : (queuePage?.total ?? displayData.length);
+  const pageFrom = totalRows === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const pageTo = Math.min(page * PAGE_SIZE, totalRows);
+
+  const readyLaneCount = laneCounts.ready_for_zoho ?? 0;
+  const readyLaneAmount = queueSummary?.byScope?.[scope]?.readyForZohoAmount ?? 0;
 
   // Bulk selection — resolved against currently loaded rows
   const selectedRows = sourceData.filter((e) => selected.has(e.id));
@@ -496,11 +482,9 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     });
   }
 
-  // Ready-for-Zoho card — computed from currently loaded queue rows
-  const readyRows = activeLane === 'ready_for_zoho'
-    ? displayData.filter((e) => e.zohoReady)
-    : [];
-  const readyTotal = readyRows.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  // Ready-for-Zoho card — totals from the summary (the whole lane), push is this page.
+  const readyRows = activeLane === 'ready_for_zoho' ? displayData : [];
+  const readyTotal = readyLaneAmount;
 
   // Source app options for the filter — scoped so this page never offers a
   // value that is guaranteed to return zero rows here. `browser_extension`
@@ -532,21 +516,22 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
 
   return (
     <div className="p-4 lg:p-8">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">{title}</h1>
-          <p className="mt-1 text-sm text-charcoal/55">{subtitle}</p>
-          <p className="mt-1 text-sm text-charcoal/55">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink lg:text-3xl">{title}</h1>
+          <p className="mt-1 text-sm text-gray-600">{subtitle}</p>
+          <p className="mt-0.5 text-sm text-gray-500">
             {totalActive > 0
-              ? `${totalActive} item${totalActive !== 1 ? 's' : ''} need attention`
+              ? `${totalActive.toLocaleString()} item${totalActive !== 1 ? 's' : ''} need attention`
               : 'All queues clear — nothing urgent.'}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <Link to="/integration-health" className="rounded-lg border border-ink/10 bg-white px-3 py-1.5 font-medium text-ink shadow-panel hover:border-brand-500/40">
-            Integration health
-          </Link>
-        </div>
+        <Link
+          to="/integration-health"
+          className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:border-gray-300 hover:bg-gray-50 lg:min-h-0"
+        >
+          Integration health
+        </Link>
       </div>
 
       {/* Result toast */}
@@ -571,25 +556,25 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
       )}
 
       {/* Ready-for-Zoho card */}
-      {readyRows.length > 0 && (
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 p-4">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 text-teal-600" />
-            <div>
-              <p className="text-sm font-semibold text-teal-900">
-                Ready for Zoho — {readyRows.length} expense{readyRows.length !== 1 ? 's' : ''} · {fmtMoney(readyTotal)}
-              </p>
-              {zohoLaneNote && <p className="mt-0.5 text-xs text-teal-700">{zohoLaneNote}</p>}
-            </div>
+      {activeLane === 'ready_for_zoho' && readyLaneCount > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-teal-950">
+              {readyLaneCount.toLocaleString()} ready · {fmtMoney(readyTotal)}
+            </p>
+            {zohoLaneNote && <p className="mt-0.5 text-xs text-teal-800">{zohoLaneNote}</p>}
           </div>
           <button
+            type="button"
             onClick={() => bulkPushMutation.mutate(readyRows.map((e) => e.id))}
-            disabled={bulkPushMutation.isPending}
-            className="min-h-11 w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:min-h-0 sm:w-auto"
+            disabled={bulkPushMutation.isPending || readyRows.length === 0}
+            className="min-h-11 w-full cursor-pointer rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:w-auto"
           >
             {bulkPushMutation.isPending
               ? 'Pushing…'
-              : `Push ${readyRows.length} to Zoho${zohoPushSuffix}`}
+              : readyRows.length === readyLaneCount
+                ? `Push ${readyRows.length} to Zoho${zohoPushSuffix}`
+                : `Push ${readyRows.length} on this page${zohoPushSuffix}`}
           </button>
         </div>
       )}
@@ -597,7 +582,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
       {/* Desktop: lane rail on the left, queue on the right. Phones keep the
           horizontal lane chips — the rail would eat the whole viewport there. */}
       <div className="flex items-start gap-6">
-        <aside className="sticky top-4 hidden w-52 shrink-0 lg:block">
+        <aside className="sticky top-4 hidden w-60 shrink-0 lg:block">
           <LaneRail activeLane={activeLane} laneCounts={laneCounts} onSelect={setActiveLane} />
         </aside>
         <div className="min-w-0 flex-1">
@@ -816,14 +801,14 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
 
       {/* Active lane heading */}
       <div className="mb-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900">
           {LANES[activeLane].label}
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-            {activeLane === 'all' ? totalRows : (laneCounts[activeLane] ?? 0)}
+          <span className="rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-gray-700">
+            {activeLane === 'all' ? totalRows.toLocaleString() : (laneCounts[activeLane] ?? 0).toLocaleString()}
           </span>
         </h2>
         {activeLane !== 'all' && (
-          <p className="mt-0.5 text-xs text-gray-400">
+          <p className="mt-0.5 text-sm text-gray-500">
             {LANES[activeLane].description}
             {(activeLane === 'ready_for_zoho' || activeLane === 'zoho_failed') && zohoLaneNote
               ? ` ${zohoLaneNote}`
@@ -872,6 +857,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
                 key={expense.id}
                 expense={expense}
                 selected={selected.has(expense.id)}
+                hideReadyFlag={activeLane === 'ready_for_zoho'}
                 onToggleSelect={() => toggleRow(expense.id)}
                 onOpenReceipt={setQuickViewId}
                 onReview={(action, note, requestType, internalNote) =>
@@ -892,8 +878,8 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
           <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                <th className="w-10 px-4 py-3">
+              <tr className="border-b border-gray-200 bg-gray-50/80 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="w-10 px-4 py-2.5">
                   <input
                     type="checkbox"
                     checked={allOnPageSelected}
@@ -902,13 +888,13 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
                     aria-label="Select all"
                   />
                 </th>
-                <th className="px-5 py-3">Merchant / Employee</th>
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3 text-right">Amount</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Receipt</th>
-                <th className="px-5 py-3">Flags</th>
-                <th className="px-5 py-3">Quick Actions</th>
+                <th className="px-4 py-2.5">Merchant / Employee</th>
+                <th className="px-4 py-2.5">Date</th>
+                <th className="px-4 py-2.5 text-right">Amount</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5">Receipt</th>
+                <th className="px-4 py-2.5">Flags</th>
+                <th className="px-4 py-2.5">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -917,6 +903,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
                   key={expense.id}
                   expense={expense}
                   selected={selected.has(expense.id)}
+                  hideReadyFlag={activeLane === 'ready_for_zoho'}
                   onToggleSelect={() => toggleRow(expense.id)}
                   onOpenReceipt={setQuickViewId}
                   onReview={(action, note, requestType, internalNote) =>
@@ -939,29 +926,33 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         )}
       </div>
 
-      {activeLane !== 'all' && totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-          <p>
-            Page {page} of {totalPages} · {totalRows} total
+      {activeLane !== 'all' && totalRows > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+          <p className="tabular-nums">
+            {totalPages > 1
+              ? `Showing ${pageFrom}–${pageTo} of ${totalRows.toLocaleString()}`
+              : `${totalRows.toLocaleString()} expense${totalRows !== 1 ? 's' : ''}`}
           </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="min-h-11 rounded-lg border border-gray-200 bg-white px-3 py-1.5 disabled:opacity-40 sm:min-h-0"
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="min-h-11 rounded-lg border border-gray-200 bg-white px-3 py-1.5 disabled:opacity-40 sm:min-h-0"
-            >
-              Next
-            </button>
-          </div>
+          {totalPages > 1 && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="min-h-11 cursor-pointer rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-0"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="min-h-11 cursor-pointer rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-0"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1127,12 +1118,11 @@ function LaneGroup({
       <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-gray-100 p-1 sm:flex-wrap sm:overflow-visible">
         {lanes.map((lane) => {
           const count = lane === 'all' ? undefined : (laneCounts[lane] ?? 0);
-          const urgent = count !== undefined && count > 0;
           return (
             <button
               key={lane}
               onClick={() => onSelect(lane)}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap ${
+              className={`flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap ${
                 activeLane === lane
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
@@ -1141,13 +1131,7 @@ function LaneGroup({
               {LANES[lane].icon && <span className="opacity-60">{LANES[lane].icon}</span>}
               {LANES[lane].label}
               {count !== undefined && (
-                <span className={`rounded-full px-1.5 py-0.5 text-xs ${
-                  activeLane === lane
-                    ? 'bg-brand-100 text-brand-700'
-                    : urgent
-                    ? 'bg-yellow-200 text-yellow-800'
-                    : 'bg-gray-200 text-gray-500'
-                }`}>
+                <span className={`rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums ${countBadgeClass(lane, count, activeLane === lane)}`}>
                   {count}
                 </span>
               )}
@@ -1161,6 +1145,15 @@ function LaneGroup({
 
 // ── Lane rail (desktop) ───────────────────────────────────────────────────────
 
+const ATTENTION_LANES: LaneId[] = ['needs_review', 'awaiting_user', 'zoho_failed'];
+
+function countBadgeClass(lane: LaneId, count: number, active: boolean): string {
+  if (active) return 'bg-brand-100 text-brand-800';
+  if (count === 0) return 'bg-gray-100 text-gray-400';
+  if (ATTENTION_LANES.includes(lane)) return 'bg-amber-100 text-amber-800';
+  if (lane === 'ready_for_zoho') return 'bg-teal-50 text-teal-800';
+  return 'bg-gray-100 text-gray-600';
+}
 const RAIL_GROUPS: Array<{ label: string; lanes: LaneId[] }> = [
   { label: 'Needs Attention', lanes: ['needs_review', 'awaiting_user', 'zoho_failed'] },
   { label: 'Missing Fields', lanes: ['missing_receipt', 'missing_category', 'missing_payment_method', 'missing_entity'] },
@@ -1185,33 +1178,26 @@ function LaneRail({
             {group.lanes.map((lane) => {
               const count = lane === 'all' ? undefined : (laneCounts[lane] ?? 0);
               const active = activeLane === lane;
-              const urgent = count !== undefined && count > 0;
               return (
                 <button
                   key={lane}
                   type="button"
                   onClick={() => onSelect(lane)}
-                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                  className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
                     active
                       ? 'bg-brand-50 font-semibold text-brand-800'
                       : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
-                  <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex min-w-0 items-start gap-2">
                     {LANES[lane].icon && (
-                      <span className={active ? 'text-brand-600' : 'text-gray-400'}>{LANES[lane].icon}</span>
+                      <span className={`mt-0.5 ${active ? 'text-brand-600' : 'text-gray-400'}`}>{LANES[lane].icon}</span>
                     )}
-                    <span className="truncate">{LANES[lane].label}</span>
+                    <span className="leading-snug">{LANES[lane].label}</span>
                   </span>
                   {count !== undefined && (
                     <span
-                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-semibold ${
-                        active
-                          ? 'bg-brand-100 text-brand-700'
-                          : urgent
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-gray-100 text-gray-400'
-                      }`}
+                      className={`shrink-0 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums ${countBadgeClass(lane, count, active)}`}
                     >
                       {count}
                     </span>
@@ -1273,6 +1259,7 @@ const REQUEST_TYPE_OPTIONS = [
 interface ExpenseRowProps {
   expense: Expense;
   selected: boolean;
+  hideReadyFlag?: boolean;
   onToggleSelect: () => void;
   onOpenReceipt: (expenseId: string) => void;
   onReview: (action: 'approve' | 'reject' | 'request_info', note?: string, requestType?: string, internalNote?: string) => void;
@@ -1283,9 +1270,13 @@ interface ExpenseRowProps {
 }
 
 /** Status/flag facts the desktop row and mobile card both branch on — keep in one place. */
-function deriveRowState(expense: Expense) {
+function deriveRowState(expense: Expense, hideReadyFlag = false) {
   return {
-    flags: (expense.flags ?? []).filter((f) => f !== 'zoho_synced' && f !== 'from_extension'),
+    flags: (expense.flags ?? []).filter((f) =>
+      f !== 'zoho_synced'
+      && f !== 'from_extension'
+      && !(hideReadyFlag && f === 'ready_for_zoho')
+    ),
     isFromExtension: (expense.flags ?? []).includes('from_extension'),
     canReview: expense.status === 'pending' || expense.status === 'in_review',
     isAwaiting: expense.status === 'awaiting_info',
@@ -1362,6 +1353,7 @@ function AskForm({
 function ExpenseRow({
   expense,
   selected,
+  hideReadyFlag,
   onToggleSelect,
   onOpenReceipt,
   onReview,
@@ -1373,12 +1365,12 @@ function ExpenseRow({
   const [showAskForm, setShowAskForm] = useState(false);
 
   const { flags, isFromExtension, canReview, isAwaiting, isReadyForZoho, isZohoFailed, needsReimb } =
-    deriveRowState(expense);
+    deriveRowState(expense, hideReadyFlag);
 
   return (
     <>
       <tr className={selected ? 'bg-brand-50/50' : 'hover:bg-gray-50'}>
-        <td className="w-10 px-4 py-3">
+        <td className="w-10 px-4 py-2.5">
           <input
             type="checkbox"
             checked={selected}
@@ -1387,30 +1379,30 @@ function ExpenseRow({
             aria-label={`Select ${expense.merchant}`}
           />
         </td>
-        <td className="px-5 py-3">
+        <td className="px-4 py-2.5">
           <Link to={`/accountant/${expense.id}`} className="font-medium text-gray-900 hover:text-brand-700">
             {expense.merchant}
           </Link>
-          <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs text-gray-400">{expense.user?.name ?? '—'}</span>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+            <span>{expense.user?.name ?? '—'}</span>
             {isFromExtension && (
-              <span className="rounded bg-blue-100 px-1 py-0.5 text-xs text-blue-700">Extension</span>
+              <span className="rounded bg-blue-100 px-1 py-0.5 text-blue-700">Extension</span>
             )}
             {expense.category && (
-              <span className="text-xs text-gray-400">· {expense.category.name}</span>
+              <span>· {expense.category.name}</span>
             )}
             {expense.paymentMethod && (
-              <span className="text-xs text-gray-400">
+              <span>
                 · {expense.paymentMethod.label}{expense.paymentMethod.lastFour ? ` ···${expense.paymentMethod.lastFour}` : ''}
               </span>
             )}
           </div>
         </td>
-        <td className="px-5 py-3 text-gray-600">{expense.date}</td>
-        <td className="px-5 py-3 text-right font-medium text-gray-900">
+        <td className="whitespace-nowrap px-4 py-2.5 text-gray-600 tabular-nums">{expense.date}</td>
+        <td className="px-4 py-2.5 text-right font-medium tabular-nums text-gray-900">
           {expense.currency} {Number(expense.amount).toFixed(2)}
         </td>
-        <td className="px-5 py-3">
+        <td className="px-4 py-2.5">
           <div className="flex flex-col items-start gap-1">
             <StatusBadge status={expense.status} variant="accountant" />
             <ZohoPushBadge
@@ -1421,20 +1413,20 @@ function ExpenseRow({
             {needsReimb && <ReimbursementBadge status={expense.reimbursementStatus} />}
           </div>
         </td>
-        <td className="px-5 py-3">
+        <td className="px-4 py-2.5">
           <ReceiptDetailsButton
             expenseId={expense.id}
             receipts={expense.receipts}
             onOpen={onOpenReceipt}
           />
         </td>
-        <td className="px-5 py-3">
+        <td className="px-4 py-2.5">
           <div className="flex flex-wrap items-center gap-1">
             {flags.map((f) => <FlagBadge key={f} flag={f} />)}
             <OcrQueueBadge receipts={expense.receipts ?? []} />
           </div>
         </td>
-        <td className="px-5 py-3">
+        <td className="px-4 py-2.5">
           <div className="flex items-center gap-1.5 flex-wrap">
             {canReview && (
               <>
@@ -1462,7 +1454,7 @@ function ExpenseRow({
 
       {showAskForm && (
         <tr className="bg-blue-50">
-          <td colSpan={8} className="px-5 py-3">
+          <td colSpan={8} className="px-4 py-3">
             <AskForm
               onSubmit={(note, requestType, internalNote) => {
                 onReview('request_info', note, requestType, internalNote);
@@ -1482,6 +1474,7 @@ function ExpenseRow({
 function ExpenseCard({
   expense,
   selected,
+  hideReadyFlag,
   onToggleSelect,
   onOpenReceipt,
   onReview,
@@ -1493,7 +1486,7 @@ function ExpenseCard({
   const [showAskForm, setShowAskForm] = useState(false);
 
   const { flags, isFromExtension, canReview, isAwaiting, isReadyForZoho, isZohoFailed, needsReimb } =
-    deriveRowState(expense);
+    deriveRowState(expense, hideReadyFlag);
 
   return (
     <div className={`px-4 py-3 ${selected ? 'bg-brand-50/50' : ''}`}>
@@ -1604,7 +1597,7 @@ function ActionBtn({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-md border font-semibold shadow-sm transition-colors disabled:opacity-50 ${sizes[size]} ${styles[color]}`}
+      className={`cursor-pointer rounded-md border font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${sizes[size]} ${styles[color]}`}
     >
       {children}
     </button>

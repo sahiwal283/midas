@@ -392,6 +392,8 @@ export interface ZohoMappedPayload {
 
 export interface ZohoReadinessResult {
   ready: boolean;
+  /** True when Midas already has a Zoho Books id — not a failure, just already done. */
+  synced: boolean;
   missing: string[];
   warnings: string[];
   zohoMode: 'mock' | 'dry-run' | 'live';

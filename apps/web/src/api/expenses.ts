@@ -190,8 +190,11 @@ export const accountantApi = {
   }) =>
     client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/review`, data).then((r) => r.data.expense),
 
-  updateReimbursement: (id: string, data: { status: string; note?: string }) =>
+  updateReimbursement: (id: string, data: { status: string; note?: string; confirmSynced?: boolean }) =>
     client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/reimbursement`, data).then((r) => r.data.expense),
+
+  updateCategory: (id: string, data: { categoryId: string; confirmSynced?: boolean }) =>
+    client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/category`, data).then((r) => r.data.expense),
 
   setZohoEntity: (id: string, zohoEntity: string) =>
     client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/zoho-entity`, { zohoEntity }).then((r) => r.data.expense),

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.52.0 (2026-08-19)
+
+### Review queues: Ready for Zoho count/pagination, denser professional layout
+- Ready for Zoho (and Missing Company) were client-filtered leftover pages of the mixed queue, with page forced to 1. The rail could say 35, the table 4, and pagination "378 total / page 1 of 4" while Next did nothing. Those lanes now filter and paginate on the server, so the heading, table, and pager agree.
+- Missing-field lanes are approved-only (matching the copy). Reimbursement includes both "needs reimbursement" and "approved pending payment".
+- Layout: wrapping lane labels (no truncated "Pending appro…"), wider rail, attention vs ready count colors, tighter table rows, readable metadata, tabular amounts, "Showing 1–50 of N" pager. The bulk Zoho bar uses the lane total and pushes the current page.
+
+## 0.51.0 (2026-08-19)
+
+### Expense detail: safer reimbursement, recategorize after Zoho, quieter sidebar
+- Reimbursement is no longer a live dropdown. Accountants see the current status plus **Change**; saving is explicit. If the expense is already in Zoho Books, a confirm step is required — Midas updates, Zoho does not.
+- Accountants can recategorize from the quick-view modal and the full page (searchable picker), including expenses already pushed to Zoho. Same confirm: Midas-only, Zoho is not rewritten. This is how older "Office Supplies" rows get a more specific COA after the chart was expanded.
+- Full-page Zoho readiness no longer treats "already synced" as a red X. Pushed expenses hide the checklist (the Zoho card already shows Created + ID). Unpushed expenses show only the blocking items, collapsed. Recent activity defaults to the last three events; Details is collapsed.
+
 ## 0.50.0 (2026-08-19)
 
 ### Reports: Daily vs Trade Show, never mixed

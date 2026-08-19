@@ -10,9 +10,11 @@ import { companyApi } from '../api/companies';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { compressReceiptImage } from '../lib/receiptCompress';
 import { VendorCombobox } from '../components/VendorCombobox';
-import { StatusBadge, ReimbursementBadge, ZohoPushBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
+import { StatusBadge, ReimbursementBadge, ZohoPushBadge } from '../components/StatusBadge';
 import { ReceiptPreview } from '../components/ReceiptPreview';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
+import { ReimbursementControl } from '../components/ReimbursementControl';
+import { CategoryRecode } from '../components/CategoryRecode';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, MessageRequestType, AuditLogEntry } from '../types';
 import { roleAllowed } from '../lib/roles';
@@ -79,18 +81,22 @@ function StatusBanner({ status, isPrivileged }: { status: string; isPrivileged: 
 
 // ── Zoho readiness panel (accountant/admin only) ──────────────────────────────
 
-function ZohoReadinessPanel({ expenseId }: { expenseId: string }) {
+function ZohoReadinessPanel({ expense }: { expense: Expense }) {
+  const alreadySynced = Boolean(expense.zohoExpenseId);
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['zoho-readiness', expenseId],
-    queryFn: () => expenseApi.zohoReadiness(expenseId),
+    queryKey: ['zoho-readiness', expense.id],
+    queryFn: () => expenseApi.zohoReadiness(expense.id),
     staleTime: 30_000,
+    enabled: !alreadySynced,
   });
+
+  if (alreadySynced) return null;
 
   if (isLoading) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">Zoho Readiness</h2>
-        <p className="text-xs text-gray-400">Evaluating…</p>
+        <h2 className="mb-2 text-sm font-semibold text-gray-700">Zoho push</h2>
+        <p className="text-xs text-gray-400">Checking whether this can be pushed…</p>
       </div>
     );
   }
@@ -98,55 +104,47 @@ function ZohoReadinessPanel({ expenseId }: { expenseId: string }) {
   if (isError || !data) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">Zoho Readiness</h2>
-        <p className="text-xs text-red-500">Could not load readiness data.</p>
+        <h2 className="mb-2 text-sm font-semibold text-gray-700">Zoho push</h2>
+        <p className="text-xs text-red-500">Could not load push status.</p>
       </div>
     );
   }
 
-  const { ready, checks, missing, warnings, zohoMode, mappedPayload } = data;
-  const modeColor = zohoMode === 'live' ? 'text-red-700 bg-red-50' : zohoMode === 'dry-run' ? 'text-blue-700 bg-blue-50' : 'text-amber-700 bg-amber-50';
-  const modeLabel = zohoMode === 'live' ? 'Live mode — real Zoho writes enabled' : zohoMode === 'dry-run' ? 'Dry-run mode — no live Zoho writes' : 'Mock mode — no real sync occurs';
+  const { ready, checks, warnings, mappedPayload } = data;
+  const failed = checks.filter((c) => !c.pass);
+  const extraWarnings = warnings.filter((w) => !w.includes('mode'));
 
   return (
     <div className={`rounded-xl border p-4 ${ready ? 'border-teal-200 bg-teal-50' : 'border-gray-200 bg-white'}`}>
-      <h2 className="mb-1 text-sm font-semibold text-gray-700 flex items-center gap-2">
-        Zoho Readiness
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+        Zoho push
         {ready
           ? <span className="text-xs font-medium text-teal-700">Ready</span>
-          : <span className="text-xs font-medium text-gray-400">Not ready</span>
-        }
+          : <span className="text-xs font-medium text-gray-500">Not ready</span>}
       </h2>
 
-      <p className={`mb-3 rounded px-2 py-1 text-xs ${modeColor}`}>{modeLabel}</p>
-
-      <ul className="space-y-1.5">
-        {checks.map((c) => (
-          <li key={c.label} className={`flex items-center gap-2 text-xs ${c.pass ? 'text-green-700' : 'text-red-600'}`}>
-            {c.pass
-              ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
-              : <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-            }
-            {c.label}
-          </li>
-        ))}
-      </ul>
-
-      {missing.length > 0 && (
-        <div className="mt-3 rounded bg-red-50 border border-red-200 px-2 py-1.5">
-          <p className="text-xs font-semibold text-red-700 mb-1">Missing:</p>
-          <ul className="space-y-0.5">
-            {missing.map((m) => (
-              <li key={m} className="text-xs text-red-600">• {m}</li>
+      {ready ? (
+        <p className="mt-1 text-xs text-teal-800">All push checks passed. Use the Zoho card below to send it.</p>
+      ) : (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-800">
+            {failed.length === 1 ? '1 item blocking push' : `${failed.length} items blocking push`}
+          </summary>
+          <ul className="mt-2 space-y-1.5">
+            {failed.map((c) => (
+              <li key={c.label} className="flex items-center gap-2 text-xs text-red-600">
+                <XCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />
+                {c.label}
+              </li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
 
-      {warnings.length > 0 && (
+      {extraWarnings.length > 0 && (
         <div className="mt-2 space-y-1">
-          {warnings.filter((w) => !w.includes('mode')).map((w) => (
-            <p key={w} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">{w}</p>
+          {extraWarnings.map((w) => (
+            <p key={w} className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">{w}</p>
           ))}
         </div>
       )}
@@ -156,7 +154,7 @@ function ZohoReadinessPanel({ expenseId }: { expenseId: string }) {
           <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
             Proposed Zoho payload (preview only)
           </summary>
-          <div className="mt-2 rounded bg-gray-50 border border-gray-200 p-2 text-xs text-gray-600 space-y-1 break-words">
+          <div className="mt-2 space-y-1 break-words rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-600">
             <p><span className="font-medium">Merchant:</span> {mappedPayload.merchant}</p>
             <p><span className="font-medium">Amount:</span> {mappedPayload.currency} {mappedPayload.amount}</p>
             <p><span className="font-medium">Date:</span> {mappedPayload.date}</p>
@@ -167,10 +165,6 @@ function ZohoReadinessPanel({ expenseId }: { expenseId: string }) {
             {mappedPayload.description && <p><span className="font-medium">Description:</span> {mappedPayload.description}</p>}
           </div>
         </details>
-      )}
-
-      {!ready && zohoMode !== 'live' && (
-        <p className="mt-3 text-xs text-gray-400">No live Zoho write — resolve missing items above first.</p>
       )}
     </div>
   );
@@ -252,6 +246,7 @@ const ACTION_LABELS: Record<string, string> = {
   'review.request_info': 'Info requested',
   'info_request_resolved': 'Requests resolved',
   'reimbursement.updated': 'Reimbursement updated',
+  'category.updated': 'Category updated',
   'zoho.pushed': 'Pushed to Zoho',
   'zoho.failed': 'Zoho push failed',
   'zoho_entity.set': 'Company set',
@@ -277,10 +272,13 @@ const ACTION_COLORS: Record<string, string> = {
 };
 
 function RecentActivity({ expenseId }: { expenseId: string }) {
+  const [expanded, setExpanded] = useState(false);
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ['expense-audit', expenseId],
     queryFn: () => accountantApi.getAuditTrail(expenseId),
   });
+
+  const visible = expanded ? entries : entries.slice(0, 3);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -290,26 +288,37 @@ function RecentActivity({ expenseId }: { expenseId: string }) {
       ) : entries.length === 0 ? (
         <p className="text-xs text-gray-400">No activity recorded yet.</p>
       ) : (
-        <ol className="space-y-2">
-          {entries.map((entry: AuditLogEntry) => {
-            const label = ACTION_LABELS[entry.action] ?? entry.action;
-            const color = ACTION_COLORS[entry.action] ?? 'bg-gray-100 text-gray-600';
-            const who = entry.actorName ?? 'System';
-            const when = new Date(entry.createdAt).toLocaleString(undefined, {
-              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-            });
-            return (
-              <li key={entry.id} className="flex items-start gap-2 text-xs">
-                <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-medium ${color}`}>
-                  {label}
-                </span>
-                <span className="text-gray-500 leading-5">
-                  {who} · {when}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
+        <>
+          <ol className="space-y-2">
+            {visible.map((entry: AuditLogEntry) => {
+              const label = ACTION_LABELS[entry.action] ?? entry.action;
+              const color = ACTION_COLORS[entry.action] ?? 'bg-gray-100 text-gray-600';
+              const who = entry.actorName ?? 'System';
+              const when = new Date(entry.createdAt).toLocaleString(undefined, {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+              });
+              return (
+                <li key={entry.id} className="flex items-start gap-2 text-xs">
+                  <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-medium ${color}`}>
+                    {label}
+                  </span>
+                  <span className="leading-5 text-gray-500">
+                    {who} · {when}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          {entries.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-2 min-h-11 cursor-pointer text-xs font-medium text-brand-600 hover:text-brand-800 lg:min-h-0"
+            >
+              {expanded ? 'Show less' : `Show all ${entries.length}`}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -582,14 +591,6 @@ export function ExpenseDetail() {
   const resolveMutation = useMutation({
     mutationFn: () => accountantApi.resolveRequest(id!),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['expense', id] }),
-  });
-
-  const reimbursementMutation = useMutation({
-    mutationFn: (status: string) => accountantApi.updateReimbursement(id!, { status }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['expense', id] });
-      qc.invalidateQueries({ queryKey: ['expense-audit', id] });
-    },
   });
 
   const zohoRetryMutation = useMutation({
@@ -997,34 +998,32 @@ export function ExpenseDetail() {
             <EditDetailsCard expense={expense} mode={editMode} />
           )}
 
-          {/* Reimbursement — accountant/admin only */}
+          {/* Category recode — accountant/admin, including after Zoho push */}
           {isPrivileged && (
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h2 className="mb-2 text-sm font-semibold text-gray-700">
-                Reimbursement
-                {expense.paymentMethod?.requiresReimbursement || /personal/i.test(expense.paymentMethod?.label ?? '')
-                  ? ' — personal card'
-                  : ''}
-              </h2>
-              <select
-                value={expense.reimbursementStatus}
-                disabled={reimbursementMutation.isPending}
-                onChange={(e) => reimbursementMutation.mutate(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none disabled:opacity-60 lg:py-2"
-              >
-                {REIMBURSEMENT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <p className="mt-2 text-xs text-gray-400">
-                Personal-card expenses should move through Needs reimbursement → Approved (pending payment) → Paid.
-              </p>
-            </div>
+            <CategoryRecode
+              expenseId={expense.id}
+              categoryId={expense.categoryId}
+              categoryName={expense.category?.name ?? expense.zohoExpenseAccountName ?? null}
+              zohoExpenseId={expense.zohoExpenseId}
+            />
           )}
 
-          {/* Zoho readiness — accountant/admin only */}
+          {/* Reimbursement — accountant/admin only */}
           {isPrivileged && (
-            <ZohoReadinessPanel expenseId={expense.id} />
+            <ReimbursementControl
+              expenseId={expense.id}
+              status={expense.reimbursementStatus}
+              zohoExpenseId={expense.zohoExpenseId}
+              personalCard={
+                Boolean(expense.paymentMethod?.requiresReimbursement)
+                || /personal/i.test(expense.paymentMethod?.label ?? '')
+              }
+            />
+          )}
+
+          {/* Zoho push blockers — hidden once already in Zoho */}
+          {isPrivileged && (
+            <ZohoReadinessPanel expense={expense} />
           )}
 
           {/* Zoho sync history — accountant/admin/developer only */}
@@ -1041,9 +1040,11 @@ export function ExpenseDetail() {
           {isPrivileged && <RecentActivity expenseId={expense.id} />}
 
           {/* Details */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm">
-            <h2 className="mb-3 font-semibold text-gray-700">Details</h2>
-            <dl className="space-y-2 text-gray-600">
+          <details className="rounded-xl border border-gray-200 bg-white text-sm">
+            <summary className="cursor-pointer p-5 font-semibold text-gray-700">
+              Details
+            </summary>
+            <dl className="space-y-2 px-5 pb-5 text-gray-600">
               <Row label="Submitted by" value={expense.user?.name ?? '—'} />
               <Row label="Created" value={new Date(expense.createdAt).toLocaleDateString()} />
               <Row label="Last updated" value={new Date(expense.updatedAt).toLocaleDateString()} />
@@ -1071,7 +1072,7 @@ export function ExpenseDetail() {
               {expense.sourceLabel && <Row label="Source label" value={expense.sourceLabel} />}
               {expense.sourceType && <Row label="Source type" value={expense.sourceType} />}
             </dl>
-          </div>
+          </details>
         </div>
       </div>
     </div>

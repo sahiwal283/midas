@@ -7,9 +7,10 @@ import {
   StatusBadge,
   ReimbursementBadge,
   ZohoPushBadge,
-  REIMBURSEMENT_OPTIONS,
 } from './StatusBadge';
 import { ReceiptPreview } from './ReceiptPreview';
+import { ReimbursementControl } from './ReimbursementControl';
+import { CategoryRecode } from './CategoryRecode';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ReimbursementStatus } from '../types';
 import type { UserRole } from '@midas/shared';
@@ -97,11 +98,6 @@ export function ExpenseQuickViewModal({
     onSuccess: () => invalidate(),
   });
 
-  const reimbursementMutation = useMutation({
-    mutationFn: (status: string) => accountantApi.updateReimbursement(expenseId, { status }),
-    onSuccess: () => invalidate(),
-  });
-
   const del = expense ? canDeleteExpense(expense, user?.role, user?.id) : { allowed: false, needsForce: false };
   const receipts = expense?.receipts ?? [];
   const activeReceipt = receipts[receiptIndex] ?? receipts[0];
@@ -149,7 +145,9 @@ export function ExpenseQuickViewModal({
                 <Field label="Date" value={expense.date} />
                 <Field label="Amount" value={`${expense.currency} ${Number(expense.amount).toFixed(2)}`} />
                 <Field label="Merchant" value={expense.merchant} />
-                <Field label="Category" value={expense.category?.name ?? '—'} />
+                {!isPrivileged && (
+                  <Field label="Category" value={expense.category?.name ?? '—'} />
+                )}
                 <Field
                   label="Card used"
                   value={
@@ -160,6 +158,16 @@ export function ExpenseQuickViewModal({
                 />
                 <Field label="Submitted by" value={expense.user?.name ?? '—'} />
               </div>
+
+              {isPrivileged && (
+                <CategoryRecode
+                  expenseId={expense.id}
+                  categoryId={expense.categoryId}
+                  categoryName={expense.category?.name ?? expense.zohoExpenseAccountName ?? null}
+                  zohoExpenseId={expense.zohoExpenseId}
+                  variant="inline"
+                />
+              )}
 
               {expense.description && (
                 <div>
@@ -194,21 +202,13 @@ export function ExpenseQuickViewModal({
               </div>
 
               {isPrivileged ? (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Reimbursement{personalCard ? ' (personal card)' : ''}
-                  </p>
-                  <select
-                    value={expense.reimbursementStatus}
-                    disabled={reimbursementMutation.isPending}
-                    onChange={(e) => reimbursementMutation.mutate(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none disabled:opacity-60"
-                  >
-                    {REIMBURSEMENT_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
+                <ReimbursementControl
+                  expenseId={expense.id}
+                  status={expense.reimbursementStatus as ReimbursementStatus}
+                  zohoExpenseId={expense.zohoExpenseId}
+                  personalCard={personalCard}
+                  variant="inline"
+                />
               ) : (
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Reimbursement</p>

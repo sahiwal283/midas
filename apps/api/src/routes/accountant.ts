@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { eq, and, or, inArray, desc, isNotNull, isNull, ilike, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users, closedPeriods, transactions } from '../db/schema';
+import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users, closedPeriods, transactions, expenseCategories } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
@@ -12,6 +12,7 @@ import { roleAllowed } from '../lib/roles';
 import { pushExpenseToZoho } from '../lib/zohoPush';
 import { parseQueueFilters, partitionBulkReview } from '../lib/queueFilters';
 import { requireQueueScope, scopeCondition } from '../lib/queueScope';
+import { missingEntityCondition, readyForZohoCondition } from '../lib/queueLane';
 import { splitRowsByScope } from '../lib/queueSummaryBuckets';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
@@ -20,6 +21,7 @@ import { syncExpenseToTransaction } from '../lib/syncExpenseTransaction';
 import { pushPurchaseOrderToZoho } from '../lib/zohoPoPush';
 import { assertActiveCompany, isCompanyZohoEnabled } from '../lib/companies';
 import { zohoEnabledByCompanyName } from '../lib/companyZoho';
+import { resolveCategoryEntityAccountId } from '../lib/categoryZohoAccounts';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -47,6 +49,14 @@ const reviewSchema = z.discriminatedUnion('action', [
 const reimbursementSchema = z.object({
   status: z.enum(['not_requested', 'pending', 'approved', 'rejected', 'paid']),
   note: z.string().optional(),
+  /** Required when the expense already has a Zoho Books id. */
+  confirmSynced: z.boolean().optional(),
+});
+
+const categorySchema = z.object({
+  categoryId: z.string().uuid(),
+  /** Required when the expense already has a Zoho Books id. */
+  confirmSynced: z.boolean().optional(),
 });
 
 type StatusValue = (typeof expenseStatusEnum.enumValues)[number];
@@ -89,7 +99,11 @@ router.get('/queue', asyncHandler(async (req, res) => {
   if (f.to) conds.push(lte(expenses.date, f.to));
   if (f.categoryId) conds.push(eq(expenses.categoryId, f.categoryId));
   if (f.paymentMethodId) conds.push(eq(expenses.paymentMethodId, f.paymentMethodId));
-  if (f.reimbursementStatus) conds.push(sql`${expenses.reimbursementStatus} = ${f.reimbursementStatus}`);
+  if (f.reimbursementStatus) {
+    conds.push(sql`${expenses.reimbursementStatus} = ${f.reimbursementStatus}`);
+  } else if (f.reimbursementOpen) {
+    conds.push(inArray(expenses.reimbursementStatus, ['pending', 'approved']));
+  }
   if (f.company) conds.push(eq(expenses.zohoEntity, f.company));
   if (f.sourceApp) conds.push(eq(expenses.sourceApp, f.sourceApp));
   if (f.zohoStatus === 'synced') conds.push(eq(expenses.integrationStatus, 'synced'));
@@ -99,6 +113,8 @@ router.get('/queue', asyncHandler(async (req, res) => {
   if (f.ocrNeedsReview) conds.push(sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id} and r.ocr_needs_review = true)`);
   if (f.missingCategory) conds.push(and(isNull(expenses.categoryId), isNull(expenses.zohoExpenseAccountId))!);
   if (f.missingPayment) conds.push(isNull(expenses.paymentMethodId));
+  if (f.readyForZoho) conds.push(readyForZohoCondition());
+  if (f.missingEntity) conds.push(missingEntityCondition());
   if (f.transactionType === 'expense' || f.transactionType === 'purchase_order') {
     if (f.transactionType === 'purchase_order') {
       res.json({ expenses: [], page, pageSize, total: 0, totalPages: 0 });
@@ -229,10 +245,20 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
         ...row,
         companyZohoEnabled: row.zohoEntity ? zohoByCompany.get(row.zohoEntity) : undefined,
       } as Parameters<typeof computeFlags>[0]);
+      const approved = row.status === 'approved';
       for (const flag of flags) {
+        if (flag === 'reimbursement_pending') continue;
+        if (
+          (flag === 'missing_receipt' || flag === 'needs_category'
+            || flag === 'needs_payment_method' || flag === 'needs_entity')
+          && !approved
+        ) continue;
         if (flag in counts) counts[flag]++;
       }
       if (flags.includes('ready_for_zoho')) readyForZohoAmount += Number(row.amount || 0);
+      if (row.reimbursementStatus === 'pending' || row.reimbursementStatus === 'approved') {
+        counts.reimbursement_pending++;
+      }
       if (row.reimbursementStatus === 'pending') {
         reimbursementPendingAmount += Number(row.amount || 0);
         // Distinct employees, not a row count — see reimbursementEmployees note below.
@@ -573,13 +599,28 @@ router.patch('/expenses/:id/reimbursement', asyncHandler(async (req, res) => {
     throw createError(closedPeriodMessage(periodOf(expense.date)), 409, 'PERIOD_CLOSED');
   }
 
-  const { status, note } = reimbursementSchema.parse(req.body);
+  const { status, note, confirmSynced } = reimbursementSchema.parse(req.body);
   const before = { reimbursementStatus: expense.reimbursementStatus };
+
+  if (status === expense.reimbursementStatus && !note) {
+    res.json({ expense });
+    return;
+  }
+
+  if (expense.zohoExpenseId && !confirmSynced) {
+    throw createError(
+      'This expense is already in Zoho Books. Confirm to update reimbursement in Midas only — Zoho is not changed.',
+      409,
+      'CONFIRM_SYNCED',
+    );
+  }
 
   const [updated] = await db.update(expenses)
     .set({ reimbursementStatus: status, updatedAt: new Date() })
     .where(eq(expenses.id, req.params.id))
     .returning();
+
+  await syncExpenseToTransaction(updated);
 
   if (note) {
     await db.insert(expenseMessages).values({
@@ -607,6 +648,67 @@ router.patch('/expenses/:id/reimbursement', asyncHandler(async (req, res) => {
       amount: expense.amount,
     });
   }
+
+  res.json({ expense: updated });
+}));
+
+// ── Category recode (allowed after Zoho push — Midas only, does not write Zoho) ─
+
+router.patch('/expenses/:id/category', asyncHandler(async (req, res) => {
+  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
+  if (!expense) throw notFound('Expense not found');
+
+  const { categoryId, confirmSynced } = categorySchema.parse(req.body);
+
+  if (categoryId === expense.categoryId) {
+    res.json({ expense });
+    return;
+  }
+
+  if (expense.zohoExpenseId && !confirmSynced) {
+    throw createError(
+      'This expense is already in Zoho Books. Confirm to recategorize in Midas only — Zoho is not changed.',
+      409,
+      'CONFIRM_SYNCED',
+    );
+  }
+
+  const category = await db.query.expenseCategories.findFirst({
+    where: and(eq(expenseCategories.id, categoryId), eq(expenseCategories.isActive, true)),
+  });
+  if (!category) throw createError('Category not found or inactive', 400, 'VALIDATION_ERROR');
+
+  const zohoAccountId = await resolveCategoryEntityAccountId(categoryId, expense.zohoEntity);
+  const before = {
+    categoryId: expense.categoryId,
+    zohoExpenseAccountId: expense.zohoExpenseAccountId,
+    zohoExpenseAccountName: expense.zohoExpenseAccountName,
+  };
+
+  const [updated] = await db.update(expenses)
+    .set({
+      categoryId,
+      zohoExpenseAccountId: zohoAccountId,
+      zohoExpenseAccountName: category.name,
+      updatedAt: new Date(),
+    })
+    .where(eq(expenses.id, req.params.id))
+    .returning();
+
+  await syncExpenseToTransaction(updated);
+
+  await auditLog({
+    entityType: 'expense',
+    entityId: expense.id,
+    userId: req.user!.id,
+    action: 'category.updated',
+    before,
+    after: {
+      categoryId,
+      zohoExpenseAccountId: zohoAccountId,
+      zohoExpenseAccountName: category.name,
+    },
+  });
 
   res.json({ expense: updated });
 }));
