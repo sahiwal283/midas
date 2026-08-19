@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, CheckCircle2, Sparkles } from 'lucide-react';
+import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, CheckCircle2, Sparkles, ClipboardList } from 'lucide-react';
 import { expenseApi, type DuplicateMatch } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { CategoryPicker } from '../components/CategoryPicker';
@@ -383,15 +383,17 @@ export function ExpenseNew() {
     return (
       <div className="p-4 lg:p-8">
         <div className="mx-auto max-w-xl">
-          <h1 className="font-display text-3xl font-semibold text-ink">Add Expense</h1>
+          <h1 className="font-display text-3xl font-semibold text-ink">Add Transaction</h1>
           <StepHint current={1} total={3} label="Choose how to start" />
-          <p className="mt-2 text-sm text-charcoal/55">Start with the receipt — we&apos;ll read it for you.</p>
+          <p className="mt-2 text-sm text-charcoal/55">
+            A receipt expense, or a purchase order with vendor line items.
+          </p>
 
           <div className="mt-6 space-y-3">
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}
-              className="flex w-full items-center gap-4 rounded-xl border-2 border-brand-500/30 bg-brand-500/10 p-5 text-left hover:border-brand-500"
+              className="flex w-full cursor-pointer items-center gap-4 rounded-xl border-2 border-brand-500/30 bg-brand-500/10 p-5 text-left hover:border-brand-500"
             >
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-500 text-cream">
                 <Camera className="h-6 w-6" />
@@ -405,7 +407,7 @@ export function ExpenseNew() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex w-full items-center gap-4 rounded-xl border border-ink/10 bg-white p-5 text-left shadow-panel hover:border-brand-500/40"
+              className="flex w-full cursor-pointer items-center gap-4 rounded-xl border border-ink/10 bg-white p-5 text-left shadow-panel hover:border-brand-500/40"
             >
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink/[0.05] text-charcoal/70">
                 <Upload className="h-6 w-6" />
@@ -419,7 +421,7 @@ export function ExpenseNew() {
             <button
               type="button"
               onClick={() => setStep('form')}
-              className="flex w-full items-center gap-4 rounded-xl border border-ink/10 bg-white p-5 text-left shadow-panel hover:border-brand-500/40"
+              className="flex w-full cursor-pointer items-center gap-4 rounded-xl border border-ink/10 bg-white p-5 text-left shadow-panel hover:border-brand-500/40"
             >
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink/[0.05] text-charcoal/70">
                 <PencilLine className="h-6 w-6" />
@@ -429,15 +431,20 @@ export function ExpenseNew() {
                 <span className="block text-sm text-charcoal/55">Type the details, attach the receipt later</span>
               </span>
             </button>
-          </div>
 
-          {/* POs live here too so "Add Transaction" needs no separate chooser page. */}
-          <p className="mt-5 text-center text-sm text-charcoal/60">
-            Ordering from a vendor with line items?{' '}
-            <Link to="/transactions/po/new" className="font-medium text-brand-700 hover:underline">
-              Create a purchase order instead
+            <Link
+              to="/transactions/po/new"
+              className="flex w-full cursor-pointer items-center gap-4 rounded-xl border border-ink/10 bg-white p-5 text-left shadow-panel hover:border-brand-500/40"
+            >
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink/[0.05] text-charcoal/70">
+                <ClipboardList className="h-6 w-6" />
+              </span>
+              <span>
+                <span className="block font-semibold text-ink">Purchase order</span>
+                <span className="block text-sm text-charcoal/55">Vendor order with line items — no receipt to scan</span>
+              </span>
             </Link>
-          </p>
+          </div>
 
           <input ref={fileInputRef} type="file" accept="image/*,.pdf,.heic,.heif" className="hidden" onChange={handleFile} />
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />

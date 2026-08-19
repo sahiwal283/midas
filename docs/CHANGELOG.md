@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.52.1 (2026-08-19)
+
+### Add Transaction: purchase order is a first-class choice
+- Purchase order is a fourth chooser card (same size as Scan / Upload / Manual), not a footnote link. The page title matches the sidebar.
+
 ## 0.52.0 (2026-08-19)
 
 ### Review queues: Ready for Zoho count/pagination, denser professional layout
