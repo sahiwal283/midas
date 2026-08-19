@@ -3,7 +3,14 @@ import client from './client';
 export interface ReportRow { name: string; spend: number; count: number }
 
 export interface ReportSummary {
-  totals: { spend: number; count: number; avg: number; reimbursementPending: number };
+  totals: {
+    spend: number;
+    count: number;
+    avg: number;
+    reimbursementPending: number;
+    largest: number;
+    smallest: number;
+  };
   byTransactionType?: Array<{ type: string; spend: number; count: number }>;
   ops?: {
     pendingReview: number;
@@ -28,6 +35,7 @@ export interface ReportSummary {
   byCategory: ReportRow[];
   byEntity: ReportRow[];
   bySourceApp?: ReportRow[];
+  byEvent?: ReportRow[];
   byPaymentMethod: ReportRow[];
   topVendors: ReportRow[];
   topUsers: ReportRow[];
@@ -43,6 +51,6 @@ export interface ReportSummary {
 export type ReportType = 'daily' | 'event';
 
 export const reportApi = {
-  summary: (p: { from: string; to: string; entity?: string; type?: ReportType }) =>
+  summary: (p: { from: string; to: string; entity?: string; type: ReportType }) =>
     client.get<ReportSummary>('/reports/summary', { params: p }).then((r) => r.data),
 };

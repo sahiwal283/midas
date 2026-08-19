@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { and, count, eq, gte, inArray, isNull, lte, ne, not, or, sql, sum } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, lte, not, sql, sum } from 'drizzle-orm';
 import { db } from '../db/index';
 import { budgets, expenses, paymentMethods, users, transactions } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
@@ -7,6 +7,7 @@ import { asyncHandler, createError } from '../middleware/error';
 import { granularityFor, periodKey, fillPeriods } from '../lib/reportBuckets';
 import { rollUpByTopAncestor, descendantIds } from '../lib/categoryTree';
 import { normalizeMerchant } from '../lib/merchants';
+import { scopeCondition } from '../lib/queueScope';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -17,7 +18,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // (everything except drafts and rejected) within [from, to].
 router.get('/summary', asyncHandler(async (req, res) => {
   const { from, to, entity, type } = req.query as Record<string, string | undefined>;
-  if (type !== undefined && type !== 'daily' && type !== 'event') {
+  if (type !== 'daily' && type !== 'event') {
     throw createError("type must be 'daily' or 'event'", 400, 'INVALID_TYPE');
   }
   if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to) || from > to) {
@@ -26,6 +27,7 @@ router.get('/summary', asyncHandler(async (req, res) => {
   const spanDays = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
   if (spanDays > 366) throw createError('Range must be at most 366 days', 400, 'INVALID_RANGE');
 
+  const typeFilter = scopeCondition(type);
   const scope = and(
     // Company-wide Reports is business spend only — partner spend has its own tab.
     eq(expenses.expenseKind, 'business'),
@@ -33,14 +35,9 @@ router.get('/summary', asyncHandler(async (req, res) => {
     gte(expenses.date, from),
     lte(expenses.date, to),
     ...(entity ? [eq(expenses.zohoEntity, entity)] : []),
-    // Daily = entered in Midas or via the extension; event = any external app
-    // (trade_show, …) — the same boundary the auto-push feature uses.
-    ...(type === 'daily'
-      ? [or(isNull(expenses.sourceApp), eq(expenses.sourceApp, 'browser_extension'))]
-      : []),
-    ...(type === 'event'
-      ? [and(sql`${expenses.sourceApp} is not null`, ne(expenses.sourceApp, 'browser_extension'))]
-      : []),
+    // Daily and trade-show spend never share a report. Same boundary as the
+    // review queues (entered in Midas / extension vs pushed from an external app).
+    typeFilter,
   );
 
   const num = (v: unknown) => Number(v ?? 0);
@@ -49,6 +46,8 @@ router.get('/summary', asyncHandler(async (req, res) => {
     spend: sum(expenses.amount),
     n: count(),
     reimb: sql<string>`coalesce(sum(${expenses.amount}) filter (where ${expenses.reimbursementStatus} = 'pending'), 0)`,
+    largest: sql<string>`coalesce(max(${expenses.amount}), 0)`,
+    smallest: sql<string>`coalesce(min(${expenses.amount}), 0)`,
   }).from(expenses).where(scope);
 
   const byDate = await db.select({ date: expenses.date, spend: sum(expenses.amount), n: count() })
@@ -77,6 +76,12 @@ router.get('/summary', asyncHandler(async (req, res) => {
     spend: sum(expenses.amount),
     n: count(),
   }).from(expenses).where(scope).groupBy(expenses.sourceApp);
+
+  const byEventRows = await db.select({
+    name: expenses.sourceLabel,
+    spend: sum(expenses.amount),
+    n: count(),
+  }).from(expenses).where(scope).groupBy(expenses.sourceLabel);
 
   const byPm = await db.select({ name: paymentMethods.label, spend: sum(expenses.amount), n: count() })
     .from(expenses).leftJoin(paymentMethods, eq(expenses.paymentMethodId, paymentMethods.id))
@@ -139,14 +144,15 @@ router.get('/summary', asyncHandler(async (req, res) => {
   }).from(transactions).where(txScope).groupBy(transactions.type);
 
   const [opsPending] = await db.select({ n: count() }).from(expenses)
-    .where(and(inArray(expenses.status, ['pending', 'in_review']), eq(expenses.expenseKind, 'business')));
+    .where(and(inArray(expenses.status, ['pending', 'in_review']), eq(expenses.expenseKind, 'business'), typeFilter));
   const [opsAwaiting] = await db.select({ n: count() }).from(expenses)
-    .where(and(eq(expenses.status, 'awaiting_info'), eq(expenses.expenseKind, 'business')));
+    .where(and(eq(expenses.status, 'awaiting_info'), eq(expenses.expenseKind, 'business'), typeFilter));
   const [opsZohoFailed] = await db.select({ n: count() }).from(expenses)
-    .where(and(eq(expenses.status, 'approved'), eq(expenses.integrationStatus, 'failed'), eq(expenses.expenseKind, 'business')));
+    .where(and(eq(expenses.status, 'approved'), eq(expenses.integrationStatus, 'failed'), eq(expenses.expenseKind, 'business'), typeFilter));
   const [opsOcrReview] = await db.select({ n: count() }).from(expenses)
     .where(and(
       eq(expenses.expenseKind, 'business'),
+      typeFilter,
       sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id} and r.ocr_needs_review = true)`,
     ));
   const [opsPoQueue] = await db.select({ n: count() }).from(transactions)
@@ -210,7 +216,14 @@ router.get('/summary', asyncHandler(async (req, res) => {
   }
 
   res.json({
-    totals: { spend: spendTotal, count: n, avg: n > 0 ? spendTotal / n : 0, reimbursementPending: num(totalsRow?.reimb) },
+    totals: {
+      spend: spendTotal,
+      count: n,
+      avg: n > 0 ? spendTotal / n : 0,
+      reimbursementPending: num(totalsRow?.reimb),
+      largest: num(totalsRow?.largest),
+      smallest: num(totalsRow?.smallest),
+    },
     byTransactionType: byTxType.map((r) => ({
       type: r.type,
       spend: num(r.spend),
@@ -236,6 +249,7 @@ router.get('/summary', asyncHandler(async (req, res) => {
       })),
       'Midas (manual)',
     ),
+    byEvent: mapRows(byEventRows, 'Unlabeled show'),
     byPaymentMethod: mapRows(byPm, 'Unspecified'),
     topVendors,
     topUsers: mapRows(topUsers, 'Unknown'),

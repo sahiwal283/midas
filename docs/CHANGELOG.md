@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.50.0 (2026-08-19)
+
+### Reports: Daily vs Trade Show, never mixed
+- The Reports page is two exclusive views. A pill toggle at the top switches **Daily** and **Trade Show**; there is no combined "All" and the API now requires `type=daily|event` so the two streams cannot merge.
+- Layout matches the trade-show app's reports rhythm: navy hero ribbon (total + count / average / largest / outstanding), section kickers ("Where the money went", "What you've spent most on"), company total cards, horizontal category bars (donut dropped — too many COA slices), and a **Show league table** on the Trade Show view (spend by event name).
+- Export CSV downloads the current view's breakdowns. Date presets and company filter stay. Queue health and budgets stay on Daily, where they belong.
+
 ## 0.49.0 (2026-08-19)
 
 ### Searchable category dropdowns
