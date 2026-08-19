@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.54.0 (2026-08-19)
+
+### Queue actions and dashboard hierarchy
+- Approve is a compact green action, not a navy block copied into every row. Reject and Needs review sit beside it as text.
+- Dashboard stats use icon wells and a gold spine when something needs a reply. Recent expenses show status badges instead of gray labels.
+
 ## 0.53.0 (2026-08-19)
 
 ### UI: one professional system across every page
