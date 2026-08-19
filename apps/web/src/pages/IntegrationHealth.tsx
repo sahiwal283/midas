@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle2, XCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { accountantApi } from '../api/expenses';
 import api from '../api/client';
+import { PageHeader } from '../components/PageHeader';
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -64,14 +65,14 @@ export function IntegrationHealth() {
   const live = !!h?.readyForLivePush;
 
   return (
-    <div className="mx-auto max-w-3xl p-4 lg:p-8">
+    <div className="page mx-auto max-w-3xl">
       <Link to="/accountant/daily" className="text-sm font-medium text-brand-700 hover:text-brand-800">
         ← Accountant workspace
       </Link>
-      <h1 className="mt-2 font-display text-3xl font-semibold text-ink">Integration Health</h1>
-      <p className="mb-6 mt-1 text-sm text-charcoal/55">
-        Soft probe of Zoho Integration Service — never creates Books records.
-      </p>
+      <PageHeader
+        title="Integration Health"
+        subtitle="Soft probe of Zoho Integration Service — never creates Books records."
+      />
 
       {syncMsg && (
         <div className="mb-4 rounded-lg border border-brand-500/25 bg-brand-500/10 px-4 py-2 text-sm text-ink">

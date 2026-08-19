@@ -127,7 +127,7 @@ export function SearchableSelect({
         }}
       />
       <ChevronDown
-        className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+        className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-charcoal/40"
         aria-hidden
       />
       {open && !disabled && (
@@ -137,7 +137,7 @@ export function SearchableSelect({
           className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-brand-200 bg-white text-sm shadow-lg"
         >
           {filtered.length === 0 ? (
-            <li className="px-3 py-2 text-gray-400">No matches</li>
+            <li className="px-3 py-2 text-charcoal/40">No matches</li>
           ) : (
             <>
               {filtered.map((o, idx) => (
@@ -152,12 +152,12 @@ export function SearchableSelect({
                     onClick={() => choose(o.value)}
                   >
                     <span className="block truncate">{o.label}</span>
-                    {o.hint && <span className="block truncate text-xs text-gray-400">{o.hint}</span>}
+                    {o.hint && <span className="block truncate text-xs text-charcoal/40">{o.hint}</span>}
                   </button>
                 </li>
               ))}
               {hiddenCount > 0 && (
-                <li className="border-t border-brand-100 px-3 py-2 text-xs text-gray-400">
+                <li className="border-t border-brand-100 px-3 py-2 text-xs text-charcoal/40">
                   {hiddenCount} more — keep typing to narrow
                 </li>
               )}

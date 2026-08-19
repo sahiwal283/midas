@@ -103,21 +103,21 @@ export function ReimbursementControl({
         value={draft}
         disabled={mutation.isPending}
         onChange={(e) => setDraft(e.target.value as ReimbursementStatus)}
-        className="w-full cursor-pointer rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 lg:py-2"
+        className="w-full cursor-pointer rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 lg:py-2"
       >
         {REIMBURSEMENT_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
       {error && (
-        <p role="alert" className="text-xs text-red-600">{error}</p>
+        <p role="alert" className="text-xs text-danger">{error}</p>
       )}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={cancel}
           disabled={mutation.isPending}
-          className="min-h-11 cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
+          className="min-h-11 cursor-pointer rounded-lg border border-ink/15 px-3 py-2 text-sm text-charcoal/80 hover:bg-ink/[0.03] disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
         >
           Cancel
         </button>
@@ -125,7 +125,7 @@ export function ReimbursementControl({
           type="button"
           onClick={requestSave}
           disabled={mutation.isPending || draft === status}
-          className="min-h-11 cursor-pointer rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
+          className="min-h-11 cursor-pointer rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
         >
           {mutation.isPending ? 'Saving…' : 'Save'}
         </button>
@@ -137,7 +137,7 @@ export function ReimbursementControl({
       <button
         type="button"
         onClick={openEditor}
-        className="min-h-11 cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 lg:min-h-0"
+        className="min-h-11 cursor-pointer rounded-lg border border-ink/15 px-3 py-2 text-xs font-medium text-charcoal/80 hover:bg-ink/[0.03] lg:min-h-0"
       >
         Change
       </button>
@@ -147,21 +147,21 @@ export function ReimbursementControl({
   if (variant === 'inline') {
     return (
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</p>
         <div className="mt-1">{body}</div>
         {editing && !confirmSynced && (
-          <p className="mt-1.5 text-xs text-gray-400">{help}</p>
+          <p className="mt-1.5 text-xs text-charcoal/40">{help}</p>
         )}
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">{title}</h2>
+    <div className="rounded-xl border border-ink/10 bg-white p-5">
+      <h2 className="mb-2 text-sm font-semibold text-charcoal/80">{title}</h2>
       {body}
       {!editing && (
-        <p className="mt-2 text-xs text-gray-400">
+        <p className="mt-2 text-xs text-charcoal/40">
           {zohoExpenseId
             ? 'Already pushed to Zoho — changing reimbursement here does not update Zoho Books.'
             : help}

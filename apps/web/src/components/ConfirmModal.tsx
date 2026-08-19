@@ -45,17 +45,17 @@ export function ConfirmModal({
       aria-label={title}
     >
       <div
-        className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl"
+        className="w-full max-w-md rounded-xl border border-ink/10 bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-        {children && <div className="mt-2 text-sm text-gray-600">{children}</div>}
+        <h2 className="text-lg font-semibold text-ink">{title}</h2>
+        {children && <div className="mt-2 text-sm text-charcoal/70">{children}</div>}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            className="rounded-lg border border-ink/15 px-4 py-2 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03] disabled:opacity-60"
           >
             {cancelLabel}
           </button>
@@ -66,8 +66,8 @@ export function ConfirmModal({
               disabled={loading}
               className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 ${
                 secondaryDanger
-                  ? 'bg-red-600 text-white hover:bg-red-700'
-                  : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  ? 'bg-danger text-cream hover:bg-danger'
+                  : 'border border-ink/15 text-charcoal/80 hover:bg-ink/[0.03]'
               }`}
             >
               {secondaryLabel}
@@ -77,8 +77,8 @@ export function ConfirmModal({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
-              danger ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-cream disabled:opacity-60 ${
+              danger ? 'bg-danger hover:bg-danger' : 'bg-brand-600 hover:bg-brand-700'
             }`}
           >
             {loading ? 'Working…' : confirmLabel}

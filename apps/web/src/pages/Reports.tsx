@@ -7,12 +7,13 @@ import {
 } from 'recharts';
 import { reportApi, type ReportRow, type ReportSummary, type ReportType } from '../api/reports';
 import { PRESETS, presetRange } from '../lib/reportRanges';
+import { PageHeader } from '../components/PageHeader';
 
 /** Dataviz-validated categorical palette — fixed slot order, never cycled. */
-const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
-const OTHER_COLOR = '#9ca3af';
-const INK_MUTED = '#6b7280';
-const GRID = '#f3f4f6';
+const SERIES = ['#1E3A55', '#D4AF37', '#2F7D5A', '#4E6E90', '#C94C4C', '#7A6414', '#16293C', '#94AAC4'];
+const OTHER_COLOR = '#94AAC4';
+const INK_MUTED = '#5C6773';
+const GRID = '#E3E9F0';
 
 const SCOPES: Array<{ id: ReportType; label: string; eyebrow: string }> = [
   { id: 'daily', label: 'Daily', eyebrow: 'Daily expenses' },
@@ -83,9 +84,9 @@ function ChartTooltip({ active, payload, label }: {
   const spend = p.payload?.spend ?? p.value ?? 0;
   const count = p.payload?.count ?? 0;
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs shadow-sm">
-      <p className="font-medium text-gray-900">{name}</p>
-      <p className="mt-0.5 text-gray-600">{usd(spend)} · {count} expense{count !== 1 ? 's' : ''}</p>
+    <div className="rounded-lg border border-ink/10 bg-white px-3 py-2 text-xs shadow-sm">
+      <p className="font-medium text-ink">{name}</p>
+      <p className="mt-0.5 text-charcoal/70">{usd(spend)} · {count} expense{count !== 1 ? 's' : ''}</p>
     </div>
   );
 }
@@ -101,7 +102,7 @@ function Section({
 }) {
   return (
     <section>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">{kicker}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-charcoal/40">{kicker}</p>
       <h2 className="mt-1 font-display text-xl font-semibold text-ink">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>
@@ -110,7 +111,7 @@ function Section({
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-gray-200 bg-white p-5 ${className}`}>
+    <div className={`rounded-xl border border-ink/10 bg-white p-5 shadow-panel ${className}`}>
       {children}
     </div>
   );
@@ -125,12 +126,12 @@ function HorizontalBars({ rows }: { rows: Array<ReportRow & { color: string }> }
         <div key={r.name}>
           <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
             <span className="min-w-0 truncate font-medium text-ink" title={r.name}>{r.name}</span>
-            <span className="shrink-0 tabular-nums text-gray-700">
+            <span className="shrink-0 tabular-nums text-charcoal/80">
               {usd(r.spend)}
-              <span className="ml-2 text-xs text-gray-400">{Math.round((r.spend / total) * 100)}%</span>
+              <span className="ml-2 text-xs text-charcoal/40">{Math.round((r.spend / total) * 100)}%</span>
             </span>
           </div>
-          <div className="h-3.5 overflow-hidden rounded bg-gray-100">
+          <div className="h-3.5 overflow-hidden rounded bg-brand-50">
             <div
               className="h-full rounded transition-[width] duration-200"
               style={{ width: `${(r.spend / max) * 100}%`, backgroundColor: r.color }}
@@ -145,7 +146,7 @@ function HorizontalBars({ rows }: { rows: Array<ReportRow & { color: string }> }
 function RankedTable({ rows, nameHeader }: { rows: ReportRow[]; nameHeader: string }) {
   const max = Math.max(...rows.map((r) => r.spend), 1);
   if (rows.length === 0) {
-    return <p className="py-6 text-center text-sm text-gray-400">No data in this range.</p>;
+    return <p className="py-6 text-center text-sm text-charcoal/40">No data in this range.</p>;
   }
   return (
     <>
@@ -153,12 +154,12 @@ function RankedTable({ rows, nameHeader }: { rows: ReportRow[]; nameHeader: stri
         {rows.map((r, i) => (
           <div key={r.name}>
             <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="min-w-0 truncate font-medium text-gray-900" title={r.name}>
-                <span className="mr-1.5 font-normal text-gray-400">{i + 1}</span>{r.name}
+              <span className="min-w-0 truncate font-medium text-ink" title={r.name}>
+                <span className="mr-1.5 font-normal text-charcoal/40">{i + 1}</span>{r.name}
               </span>
-              <span className="shrink-0 tabular-nums text-gray-700">{usd(r.spend)}</span>
+              <span className="shrink-0 tabular-nums text-charcoal/80">{usd(r.spend)}</span>
             </div>
-            <div className="mt-1 h-2.5 w-full overflow-hidden rounded bg-gray-100">
+            <div className="mt-1 h-2.5 w-full overflow-hidden rounded bg-brand-50">
               <div className="h-full rounded bg-brand-400" style={{ width: `${(r.spend / max) * 100}%` }} />
             </div>
           </div>
@@ -167,7 +168,7 @@ function RankedTable({ rows, nameHeader }: { rows: ReportRow[]; nameHeader: stri
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+            <tr className="border-b border-ink/5 text-left text-xs font-semibold uppercase tracking-wider text-muted">
               <th className="py-2 pr-2 w-8">#</th>
               <th className="py-2 pr-2">{nameHeader}</th>
               <th className="py-2 pr-2 text-right">Count</th>
@@ -175,15 +176,15 @@ function RankedTable({ rows, nameHeader }: { rows: ReportRow[]; nameHeader: stri
               <th className="py-2 pl-3 w-1/3">Share</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-ink/5">
             {rows.map((r, i) => (
-              <tr key={r.name} className="hover:bg-gray-50">
-                <td className="py-2.5 pr-2 tabular-nums text-gray-400">{i + 1}</td>
-                <td className="max-w-0 truncate py-2.5 pr-2 font-medium text-gray-900" title={r.name}>{r.name}</td>
-                <td className="py-2.5 pr-2 text-right tabular-nums text-gray-500">{r.count}</td>
-                <td className="py-2.5 pr-2 text-right tabular-nums text-gray-700">{usd(r.spend)}</td>
+              <tr key={r.name} className="hover:bg-ink/[0.03]">
+                <td className="py-2.5 pr-2 tabular-nums text-charcoal/40">{i + 1}</td>
+                <td className="max-w-0 truncate py-2.5 pr-2 font-medium text-ink" title={r.name}>{r.name}</td>
+                <td className="py-2.5 pr-2 text-right tabular-nums text-muted">{r.count}</td>
+                <td className="py-2.5 pr-2 text-right tabular-nums text-charcoal/80">{usd(r.spend)}</td>
                 <td className="py-2.5 pl-3">
-                  <div className="h-2.5 w-full overflow-hidden rounded bg-gray-100">
+                  <div className="h-2.5 w-full overflow-hidden rounded bg-brand-50">
                     <div className="h-full rounded bg-brand-400" style={{ width: `${(r.spend / max) * 100}%` }} />
                   </div>
                 </td>
@@ -249,34 +250,30 @@ export function Reports() {
   }
 
   const empty = !isLoading && (data?.totals.count ?? 0) === 0;
-  const fieldClass = 'min-h-11 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 md:min-h-0 lg:py-1.5';
+  const fieldClass = 'field lg:py-1.5';
 
   return (
-    <div className="p-4 lg:p-8">
-      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Reports &amp; Analytics</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {scopeMeta.eyebrow} · {range.from} to {range.to}
-            {entity ? ` · ${entity}` : ''}
-            {data && !isLoading ? ` · ${data.totals.count.toLocaleString()} expenses · ${usd(data.totals.spend)}` : ''}
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={!data || empty}
-          onClick={() => data && downloadCsv(scope, range.from, range.to, data)}
-          className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
-        >
-          <Download className="h-4 w-4" />
-          Export CSV
-        </button>
-      </div>
+    <div className="page">
+      <PageHeader
+        title="Reports"
+        subtitle={`${scopeMeta.eyebrow} · ${range.from} to ${range.to}${entity ? ` · ${entity}` : ''}${data && !isLoading ? ` · ${data.totals.count.toLocaleString()} expenses · ${usd(data.totals.spend)}` : ''}`}
+        actions={
+          <button
+            type="button"
+            disabled={!data || empty}
+            onClick={() => data && downloadCsv(scope, range.from, range.to, data)}
+            className="btn-primary"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </button>
+        }
+      />
 
       <div
         role="radiogroup"
         aria-label="Report type"
-        className="mb-5 inline-flex rounded-full border border-gray-200 bg-gray-100 p-1"
+        className="mb-5 inline-flex rounded-full border border-ink/10 bg-brand-50 p-1"
       >
         {SCOPES.map((s) => {
           const active = scope === s.id;
@@ -289,8 +286,8 @@ export function Reports() {
               onClick={() => setScope(s.id)}
               className={`min-h-11 cursor-pointer rounded-full px-5 py-2 text-sm font-semibold transition-colors duration-200 lg:min-h-0 ${
                 active
-                  ? 'bg-brand-500 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-brand-500 text-cream shadow-sm'
+                  : 'text-charcoal/70 hover:text-ink'
               }`}
             >
               {s.label}
@@ -300,14 +297,14 @@ export function Reports() {
       </div>
 
       <div className="mb-6 flex flex-col gap-3">
-        <div className="flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1 self-start">
+        <div className="flex flex-wrap gap-1 rounded-lg border border-ink/10 bg-brand-50 p-1 self-start">
           {PRESETS.map((p) => (
             <button
               key={p.id}
               type="button"
               onClick={() => applyPreset(p.id)}
               className={`min-h-11 cursor-pointer rounded-md px-3 text-sm font-medium transition-colors lg:min-h-0 lg:py-1.5 ${
-                preset === p.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                preset === p.id ? 'bg-white text-ink shadow-sm' : 'text-charcoal/70 hover:text-ink'
               }`}
             >
               {p.label}
@@ -315,7 +312,7 @@ export function Reports() {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs font-medium text-gray-500" htmlFor="report-from">From</label>
+          <label className="text-xs font-medium text-muted" htmlFor="report-from">From</label>
           <input
             id="report-from"
             type="date"
@@ -323,7 +320,7 @@ export function Reports() {
             onChange={(e) => applyCustom('from', e.target.value)}
             className={fieldClass}
           />
-          <label className="text-xs font-medium text-gray-500" htmlFor="report-to">To</label>
+          <label className="text-xs font-medium text-muted" htmlFor="report-to">To</label>
           <input
             id="report-to"
             type="date"
@@ -351,13 +348,13 @@ export function Reports() {
           <div className="h-44 animate-pulse rounded-2xl bg-brand-800/80 motion-reduce:animate-none" />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-24 animate-pulse rounded-xl border border-gray-200 bg-white motion-reduce:animate-none" />
+              <div key={i} className="h-24 animate-pulse rounded-xl border border-ink/10 bg-white motion-reduce:animate-none" />
             ))}
           </div>
         </div>
       ) : data && (
         <div className="space-y-10">
-          <div className="overflow-hidden rounded-2xl bg-brand-800 px-5 py-6 text-white shadow-panel sm:px-7">
+          <div className="overflow-hidden rounded-2xl bg-brand-800 px-5 py-6 text-cream shadow-panel sm:px-7">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-400">
               {scopeMeta.eyebrow}
             </p>
@@ -377,7 +374,7 @@ export function Reports() {
 
           {empty ? (
             <Card>
-              <p className="py-10 text-center text-sm text-gray-500">
+              <p className="py-10 text-center text-sm text-muted">
                 No {scope === 'event' ? 'trade show' : 'daily'} expenses in this range.
               </p>
             </Card>
@@ -393,18 +390,18 @@ export function Reports() {
 
               <Section kicker="Where the money went" title="Company totals">
                 {entities.length === 0 ? (
-                  <p className="text-sm text-gray-400">No company totals.</p>
+                  <p className="text-sm text-charcoal/40">No company totals.</p>
                 ) : (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     {entities.map((e) => (
-                      <div key={e.name} className="rounded-xl border border-gray-200 bg-white px-4 py-4">
-                        <p className="truncate text-xs font-semibold uppercase tracking-wider text-gray-500" title={e.name}>
+                      <div key={e.name} className="rounded-xl border border-ink/10 bg-white px-4 py-4">
+                        <p className="truncate text-xs font-semibold uppercase tracking-wider text-muted" title={e.name}>
                           {e.name}
                         </p>
                         <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
                           {usdCompact(e.spend)}
                         </p>
-                        <p className="mt-0.5 text-xs text-gray-400">{e.count} expense{e.count !== 1 ? 's' : ''}</p>
+                        <p className="mt-0.5 text-xs text-charcoal/40">{e.count} expense{e.count !== 1 ? 's' : ''}</p>
                       </div>
                     ))}
                   </div>
@@ -414,7 +411,7 @@ export function Reports() {
               <Section kicker="What you've spent most on" title="Spend by category">
                 <Card>
                   {categories.length === 0
-                    ? <p className="py-6 text-center text-sm text-gray-400">No categories in this range.</p>
+                    ? <p className="py-6 text-center text-sm text-charcoal/40">No categories in this range.</p>
                     : <HorizontalBars rows={categories} />}
                 </Card>
               </Section>
@@ -442,7 +439,7 @@ export function Reports() {
                 <Section kicker="How it was paid" title="Payment methods">
                   <Card>
                     {paymentMethods.length === 0
-                      ? <p className="py-6 text-center text-sm text-gray-400">No payment methods.</p>
+                      ? <p className="py-6 text-center text-sm text-charcoal/40">No payment methods.</p>
                       : <HorizontalBars rows={paymentMethods} />}
                   </Card>
                 </Section>
@@ -468,13 +465,13 @@ export function Reports() {
                 </div>
                 {data.reimbursement.byEmployee.length > 0 && (
                   <Card>
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">By employee</p>
-                    <div className="divide-y divide-gray-50 md:hidden">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">By employee</p>
+                    <div className="divide-y divide-ink/5 md:hidden">
                       {data.reimbursement.byEmployee.map((r) => (
                         <div key={r.name} className="flex items-center justify-between gap-3 py-2 text-sm">
-                          <span className="min-w-0 truncate font-medium text-gray-900" title={r.name}>{r.name}</span>
-                          <span className="shrink-0 tabular-nums text-gray-700">
-                            {usd(r.outstanding)} <span className="text-gray-400">due</span>
+                          <span className="min-w-0 truncate font-medium text-ink" title={r.name}>{r.name}</span>
+                          <span className="shrink-0 tabular-nums text-charcoal/80">
+                            {usd(r.outstanding)} <span className="text-charcoal/40">due</span>
                           </span>
                         </div>
                       ))}
@@ -482,18 +479,18 @@ export function Reports() {
                     <div className="hidden overflow-x-auto md:block">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          <tr className="border-b border-ink/5 text-left text-xs font-semibold uppercase tracking-wider text-muted">
                             <th className="py-2 pr-2">Name</th>
                             <th className="py-2 pr-2 text-right">Outstanding</th>
                             <th className="py-2 pl-3 text-right">Paid</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-50">
+                        <tbody className="divide-y divide-ink/5">
                           {data.reimbursement.byEmployee.map((r) => (
                             <tr key={r.name}>
-                              <td className="max-w-0 truncate py-2 pr-2 font-medium text-gray-900" title={r.name}>{r.name}</td>
-                              <td className="py-2 pr-2 text-right tabular-nums text-gray-700">{usd(r.outstanding)}</td>
-                              <td className="py-2 pl-3 text-right tabular-nums text-gray-700">{usd(r.paid)}</td>
+                              <td className="max-w-0 truncate py-2 pr-2 font-medium text-ink" title={r.name}>{r.name}</td>
+                              <td className="py-2 pr-2 text-right tabular-nums text-charcoal/80">{usd(r.outstanding)}</td>
+                              <td className="py-2 pl-3 text-right tabular-nums text-charcoal/80">{usd(r.paid)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -508,21 +505,21 @@ export function Reports() {
                   <Card>
                     <div className="space-y-3 md:hidden">
                       {data.budgets!.map((b) => (
-                        <div key={b.id} className="rounded-lg border border-gray-100 p-3 text-sm">
+                        <div key={b.id} className="rounded-lg border border-ink/5 p-3 text-sm">
                           <div className="flex items-center justify-between gap-3">
-                            <span className="min-w-0 truncate font-medium text-gray-900">{b.companyName}</span>
-                            <span className={`shrink-0 font-medium ${b.remaining < 0 ? 'text-red-700' : 'text-green-700'}`}>
+                            <span className="min-w-0 truncate font-medium text-ink">{b.companyName}</span>
+                            <span className={`shrink-0 font-medium ${b.remaining < 0 ? 'text-danger' : 'text-success'}`}>
                               {usd(b.remaining)}
                             </span>
                           </div>
-                          <p className="mt-0.5 text-xs text-gray-500">{b.period} · {b.categoryName ?? 'All'}</p>
+                          <p className="mt-0.5 text-xs text-muted">{b.period} · {b.categoryName ?? 'All'}</p>
                         </div>
                       ))}
                     </div>
                     <div className="hidden overflow-x-auto md:block">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b text-left text-xs uppercase tracking-wider text-gray-500">
+                          <tr className="border-b text-left text-xs uppercase tracking-wider text-muted">
                             <th className="py-2 pr-3">Company</th>
                             <th className="py-2 pr-3">Period</th>
                             <th className="py-2 pr-3">Category</th>
@@ -535,11 +532,11 @@ export function Reports() {
                           {data.budgets!.map((b) => (
                             <tr key={b.id}>
                               <td className="py-2 pr-3">{b.companyName}</td>
-                              <td className="py-2 pr-3 text-gray-500">{b.period}</td>
-                              <td className="py-2 pr-3 text-gray-500">{b.categoryName ?? 'All'}</td>
+                              <td className="py-2 pr-3 text-muted">{b.period}</td>
+                              <td className="py-2 pr-3 text-muted">{b.categoryName ?? 'All'}</td>
                               <td className="py-2 pr-3 text-right tabular-nums">{usd(b.budget)}</td>
                               <td className="py-2 pr-3 text-right tabular-nums">{usd(b.spend)}</td>
-                              <td className={`py-2 text-right font-medium tabular-nums ${b.remaining < 0 ? 'text-red-700' : 'text-green-700'}`}>
+                              <td className={`py-2 text-right font-medium tabular-nums ${b.remaining < 0 ? 'text-danger' : 'text-success'}`}>
                                 {usd(b.remaining)}
                               </td>
                             </tr>
@@ -573,7 +570,7 @@ export function Reports() {
 function HeroStat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] font-medium uppercase tracking-wider text-white/75">{label}</p>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-cream/75">{label}</p>
       <p className="mt-0.5 text-lg font-semibold tabular-nums sm:text-xl">{value}</p>
     </div>
   );
@@ -581,8 +578,8 @@ function HeroStat({ label, value }: { label: string; value: string }) {
 
 function MiniStat({ label, value, warn = false }: { label: string; value: string | number; warn?: boolean }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 ${warn ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}>
-      <p className={`text-xs font-medium ${warn ? 'text-amber-800' : 'text-gray-500'}`}>{label}</p>
+    <div className={`rounded-xl border px-4 py-3 ${warn ? 'border-amber-300 bg-amber-50' : 'border-ink/10 bg-white'}`}>
+      <p className={`text-xs font-medium ${warn ? 'text-amber-800' : 'text-muted'}`}>{label}</p>
       <p className={`mt-0.5 font-display text-xl font-semibold tabular-nums ${warn ? 'text-amber-950' : 'text-ink'}`}>
         {value}
       </p>

@@ -7,6 +7,7 @@ import { StatusBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from '../compo
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { CategoryPicker } from '../components/CategoryPicker';
+import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 import { flattenTree, descendantIdSet } from '../lib/categoryTree';
@@ -99,7 +100,7 @@ const EMPTY_FILTERS: ListFilters = {
 
 function NextActionCell({ expense }: { expense: Expense }) {
   const action = NEXT_ACTION[expense.status];
-  if (!action) return <span className="text-gray-400">—</span>;
+  if (!action) return <span className="text-charcoal/40">—</span>;
 
   if (action.urgent) {
     return (
@@ -109,21 +110,21 @@ function NextActionCell({ expense }: { expense: Expense }) {
       </Link>
     );
   }
-  return <span className="text-gray-500">{action.text}</span>;
+  return <span className="text-muted">{action.text}</span>;
 }
 
 /** Trade Show (with event name when known) / Daily tag. */
 function ExpenseTypeChip({ expense, compact = false }: { expense: Expense; compact?: boolean }) {
   if (isDailyExpense(expense)) {
     return (
-      <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+      <span className="inline-flex items-center rounded bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-charcoal/70">
         Daily
       </span>
     );
   }
   const label = !compact && expense.sourceLabel ? expense.sourceLabel : 'Trade Show';
   return (
-    <span className="inline-flex max-w-52 items-center gap-1 truncate rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-700">
+    <span className="inline-flex max-w-52 items-center gap-1 truncate rounded bg-brand-100 px-1.5 py-0.5 text-xs font-medium text-brand-800">
       <Tent className="h-3 w-3 shrink-0" />
       <span className="truncate">{label}</span>
     </span>
@@ -351,52 +352,51 @@ export function ExpenseList() {
     setSelected(new Set(filtered.map((e) => e.id)));
   }
 
-  const fieldClass = 'w-full min-h-11 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 md:min-h-0';
-  const labelClass = 'mb-1 block text-xs font-medium text-gray-500';
+  const fieldClass = 'field';
+  const labelClass = 'field-label';
 
   return (
-    <div className="p-4 lg:p-8">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Expenses</h1>
-          {actionNeeded > 0 && (
-            <p className="mt-1 flex items-center gap-1 text-sm font-medium text-amber-700">
+    <div className="page">
+      <PageHeader
+        title="Expenses"
+        subtitle={
+          actionNeeded > 0 ? (
+            <span className="flex items-center gap-1 font-medium text-amber-800">
               <AlertCircle className="h-4 w-4" />
               {actionNeeded} expense{actionNeeded !== 1 ? 's' : ''} need{actionNeeded === 1 ? 's' : ''} your reply
-            </p>
-          )}
-        </div>
-        <Link
-          to="/transactions/new"
-          className="flex shrink-0 items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          <Plus className="h-4 w-4" />
-          Add Transaction
-        </Link>
-      </div>
+            </span>
+          ) : undefined
+        }
+        actions={
+          <Link to="/transactions/new" className="btn-primary">
+            <Plus className="h-4 w-4" />
+            Add Transaction
+          </Link>
+        }
+      />
 
       {/* Summary strip */}
       {!isLoading && expenses.length > 0 && (
         <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3">
-          <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
-            <p className="text-xs font-medium text-gray-500">Showing total</p>
-            <p className="mt-0.5 text-lg font-bold text-gray-900 sm:text-xl">
+          <div className="rounded-xl border border-ink/10 bg-white px-3 py-2.5 shadow-panel sm:px-4 sm:py-3">
+            <p className="text-xs font-medium text-muted">Showing total</p>
+            <p className="mt-0.5 text-lg font-semibold tabular-nums text-ink sm:text-xl">
               ${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
-            <p className="text-xs font-medium text-gray-500">Matching</p>
-            <p className="mt-0.5 text-lg font-bold text-gray-900 sm:text-xl">{filtered.length}</p>
+          <div className="rounded-xl border border-ink/10 bg-white px-3 py-2.5 shadow-panel sm:px-4 sm:py-3">
+            <p className="text-xs font-medium text-muted">Matching</p>
+            <p className="mt-0.5 text-lg font-semibold tabular-nums text-ink sm:text-xl">{filtered.length}</p>
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 sm:px-4 sm:py-3">
             <p className="text-xs font-medium text-amber-800">Needs reply</p>
-            <p className="mt-0.5 text-lg font-bold text-amber-900 sm:text-xl">{actionNeeded}</p>
+            <p className="mt-0.5 text-lg font-semibold tabular-nums text-amber-900 sm:text-xl">{actionNeeded}</p>
           </div>
         </div>
       )}
 
       {/* Status tabs — single scrollable row on phones so they never stack */}
-      <div className="mb-3 flex gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-gray-100 p-1 sm:flex-wrap sm:overflow-visible">
+      <div className="mb-3 flex gap-1 overflow-x-auto rounded-lg border border-ink/10 bg-brand-50 p-1 sm:flex-wrap sm:overflow-visible">
         {STATUS_TABS.map((t) => {
           const count = tabCounts[t.id];
           const active = tab === t.id;
@@ -407,14 +407,14 @@ export function ExpenseList() {
               onClick={() => setTab(t.id)}
               className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 active
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-ink shadow-sm'
+                  : 'text-charcoal/70 hover:text-ink'
               }`}
             >
               {t.label}
               <span
                 className={`rounded-full px-1.5 py-0.5 text-xs ${
-                  active ? 'bg-brand-50 text-brand-700' : 'bg-gray-200/80 text-gray-500'
+                  active ? 'bg-brand-50 text-brand-700' : 'bg-ink/10 text-muted'
                 }`}
               >
                 {count}
@@ -425,19 +425,19 @@ export function ExpenseList() {
       </div>
 
       {/* Toolbar — search + type toggle always visible, everything else in the panel */}
-      <div className="mb-3 rounded-xl border border-gray-200 bg-white p-3">
+      <div className="mb-3 rounded-xl border border-ink/10 bg-white p-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-0 flex-1 basis-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-charcoal/40" />
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search merchant, category, event, notes…"
-              className="w-full min-h-11 rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 md:min-h-0"
+              className="w-full min-h-11 rounded-lg border border-ink/10 bg-white py-2 pl-9 pr-3 text-sm text-ink placeholder:text-charcoal/40 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 md:min-h-0"
             />
           </div>
-          <div className="flex shrink-0 rounded-lg border border-gray-200 bg-gray-100 p-0.5">
+          <div className="flex shrink-0 rounded-lg border border-ink/10 bg-brand-50 p-0.5">
             {TYPE_OPTIONS.map((t) => (
               <button
                 key={t.label}
@@ -445,8 +445,8 @@ export function ExpenseList() {
                 onClick={() => setFilter('type', t.id)}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                   filters.type === t.id
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800'
+                    ? 'bg-white text-ink shadow-sm'
+                    : 'text-muted hover:text-ink'
                 }`}
               >
                 {t.label}
@@ -457,26 +457,26 @@ export function ExpenseList() {
             type="button"
             onClick={() => setPanelOpen((o) => !o)}
             aria-expanded={panelOpen}
-            className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 md:min-h-0"
+            className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-ink/10 px-3 py-2 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03] md:min-h-0"
           >
             <SlidersHorizontal className="h-4 w-4" />
             Filters
             {panelFilterCount > 0 && (
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-500 px-1 text-xs font-semibold text-white">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-500 px-1 text-xs font-semibold text-cream">
                 {panelFilterCount}
               </span>
             )}
-            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${panelOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-4 w-4 text-charcoal/40 transition-transform ${panelOpen ? 'rotate-180' : ''}`} />
           </button>
         </div>
 
         {panelOpen && (
-          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-gray-100 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-ink/5 pt-3 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <span className={labelClass}>Date range</span>
               <div className="flex items-center gap-1.5">
                 <input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} className={fieldClass} aria-label="Date from" />
-                <span className="text-xs text-gray-400">to</span>
+                <span className="text-xs text-charcoal/40">to</span>
                 <input type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} className={fieldClass} aria-label="Date to" />
               </div>
             </div>
@@ -484,7 +484,7 @@ export function ExpenseList() {
               <span className={labelClass}>Amount</span>
               <div className="flex items-center gap-1.5">
                 <input type="number" min="0" step="0.01" value={filters.amountMin} onChange={(e) => setFilter('amountMin', e.target.value)} placeholder="Min $" className={fieldClass} aria-label="Amount minimum" />
-                <span className="text-xs text-gray-400">–</span>
+                <span className="text-xs text-charcoal/40">–</span>
                 <input type="number" min="0" step="0.01" value={filters.amountMax} onChange={(e) => setFilter('amountMax', e.target.value)} placeholder="Max $" className={fieldClass} aria-label="Amount maximum" />
               </div>
             </div>
@@ -588,7 +588,7 @@ export function ExpenseList() {
                 setQuery('');
                 setTab('all');
               }}
-              className="rounded-full px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+              className="rounded-full px-2.5 py-1 text-xs font-medium text-muted hover:bg-brand-50 hover:text-ink"
             >
               Clear all
             </button>
@@ -597,14 +597,14 @@ export function ExpenseList() {
       </div>
 
       {canBulkDelete && selected.size > 0 && (
-        <div className="mb-3 flex flex-col gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-red-900">
+        <div className="mb-3 flex flex-col gap-2 rounded-xl border border-danger/25 bg-danger/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-danger">
             <span className="font-semibold">{selected.size}</span> selected
             {filtered.length > selected.size && (
               <button
                 type="button"
                 onClick={selectAllFiltered}
-                className="ml-2 font-medium text-red-700 underline hover:text-red-900"
+                className="ml-2 font-medium text-danger underline hover:text-danger"
               >
                 Select all {filtered.length} matching
               </button>
@@ -612,7 +612,7 @@ export function ExpenseList() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {isAdmin && selectedHasZoho && (
-              <label className="inline-flex items-center gap-1.5 text-xs text-red-800">
+              <label className="inline-flex items-center gap-1.5 text-xs text-danger">
                 <input
                   type="checkbox"
                   checked={forceZoho}
@@ -628,7 +628,7 @@ export function ExpenseList() {
                 if (!window.confirm(`Delete ${selected.size} expense(s)? This cannot be undone.`)) return;
                 bulkDeleteMutation.mutate();
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-cream hover:bg-danger disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Trash2 className="h-4 w-4" />
               {bulkDeleteMutation.isPending ? 'Deleting…' : 'Delete selected'}
@@ -637,40 +637,40 @@ export function ExpenseList() {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <div className="panel">
         {isLoading ? (
-          <div className="px-6 py-12 text-center text-sm text-gray-400">Loading…</div>
+          <div className="px-6 py-12 text-center text-sm text-charcoal/40">Loading…</div>
         ) : expenses.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-gray-500">No expenses yet.</p>
+            <p className="text-muted">No expenses yet.</p>
             <Link to="/transactions/new" className="mt-2 inline-block text-sm text-brand-600 hover:underline">
               Create your first expense
             </Link>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-6 py-12 text-center text-sm text-gray-500">
+          <div className="px-6 py-12 text-center text-sm text-muted">
             No expenses match these filters.
           </div>
         ) : (
           <>
             {/* Mobile: stacked cards */}
-            <div className="divide-y divide-gray-100 md:hidden">
+            <div className="divide-y divide-ink/5 md:hidden">
               {pageRows.map((expense) => (
                 <Link
                   key={expense.id}
                   to={`/expenses/${expense.id}`}
-                  className={`block px-4 py-3 active:bg-gray-50 ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}
+                  className={`block px-4 py-3 active:bg-ink/[0.03] ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="min-w-0 truncate font-medium text-gray-900">{expense.merchant}</p>
-                    <p className="shrink-0 font-semibold text-gray-900">
+                    <p className="min-w-0 truncate font-medium text-ink">{expense.merchant}</p>
+                    <p className="shrink-0 font-semibold tabular-nums text-ink">
                       {expense.currency} {Number(expense.amount).toFixed(2)}
                     </p>
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-1.5">
                       <ExpenseTypeChip expense={expense} compact />
-                      <p className="min-w-0 truncate text-xs text-gray-500">{expense.date}{expense.category?.name ? ` · ${expense.category.name}` : ''}</p>
+                      <p className="min-w-0 truncate text-xs text-muted">{expense.date}{expense.category?.name ? ` · ${expense.category.name}` : ''}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <ReimbursementBadge status={expense.reimbursementStatus} />
@@ -684,7 +684,7 @@ export function ExpenseList() {
             {/* Desktop: full table */}
             <table className="hidden w-full text-sm md:table">
               <thead>
-                <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className="border-b border-ink/10 bg-brand-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
                   {canBulkDelete && (
                     <th className="w-10 px-4 py-3">
                       <input
@@ -705,9 +705,9 @@ export function ExpenseList() {
                   <th className="px-6 py-3">Next action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-ink/5">
                 {pageRows.map((expense) => (
-                  <tr key={expense.id} className={`hover:bg-gray-50 ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}>
+                  <tr key={expense.id} className={`hover:bg-ink/[0.03] ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}>
                     {canBulkDelete && (
                       <td className="px-4 py-4">
                         <input
@@ -719,22 +719,22 @@ export function ExpenseList() {
                       </td>
                     )}
                     <td className="px-6 py-4">
-                      <Link to={`/expenses/${expense.id}`} className="font-medium text-gray-900 hover:text-brand-700">
+                      <Link to={`/expenses/${expense.id}`} className="font-medium text-ink hover:text-brand-700">
                         {expense.merchant}
                       </Link>
                       {expense.description && (
-                        <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{expense.description}</p>
+                        <p className="mt-0.5 text-xs text-charcoal/40 line-clamp-1">{expense.description}</p>
                       )}
                       {expense.sourceApp === 'browser_extension' && (
-                        <span className="mt-0.5 inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">Extension</span>
+                        <span className="mt-0.5 inline-block rounded bg-brand-100 px-1.5 py-0.5 text-xs text-brand-700">Extension</span>
                       )}
                     </td>
                     <td className="px-6 py-4">
                       <ExpenseTypeChip expense={expense} />
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{expense.date}</td>
-                    <td className="px-6 py-4 text-gray-600">{expense.category?.name ?? '—'}</td>
-                    <td className="px-6 py-4 text-right font-medium text-gray-900">
+                    <td className="px-6 py-4 text-charcoal/70">{expense.date}</td>
+                    <td className="px-6 py-4 text-charcoal/70">{expense.category?.name ?? '—'}</td>
+                    <td className="px-6 py-4 text-right font-medium tabular-nums text-ink">
                       {expense.currency} {Number(expense.amount).toFixed(2)}
                     </td>
                     <td className="px-6 py-4">
@@ -758,8 +758,8 @@ export function ExpenseList() {
               </tbody>
             </table>
 
-            <div className="flex flex-col gap-2 border-t border-gray-100 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-gray-500">
+            <div className="flex flex-col gap-2 border-t border-ink/5 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted">
                 Showing {pageStart + 1} to {Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length} expenses
               </p>
               <div className="flex items-center gap-1">
@@ -767,19 +767,19 @@ export function ExpenseList() {
                   type="button"
                   disabled={safePage <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-lg border border-ink/10 bg-white px-2.5 py-1.5 text-xs font-medium text-charcoal/80 hover:bg-ink/[0.03] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                   Prev
                 </button>
-                <span className="px-2 text-xs text-gray-500">
+                <span className="px-2 text-xs text-muted">
                   Page {safePage} of {totalPages}
                 </span>
                 <button
                   type="button"
                   disabled={safePage >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center gap-1 rounded-lg border border-ink/10 bg-white px-2.5 py-1.5 text-xs font-medium text-charcoal/80 hover:bg-ink/[0.03] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                   <ChevronRight className="h-3.5 w-3.5" />

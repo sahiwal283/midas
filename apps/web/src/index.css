@@ -21,4 +21,101 @@
   h1, h2, h3 {
     @apply font-display tracking-tight text-ink;
   }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer components {
+  .page {
+    @apply p-4 lg:p-8;
+  }
+
+  .page-title {
+    @apply font-display text-2xl font-semibold tracking-tight text-ink lg:text-3xl;
+  }
+
+  .page-subtitle {
+    @apply mt-1 text-sm text-muted;
+  }
+
+  .panel {
+    @apply overflow-hidden rounded-xl border border-ink/10 bg-white shadow-panel;
+  }
+
+  .panel-head {
+    @apply flex items-center justify-between border-b border-gold-400/60 px-4 py-4 sm:px-6;
+  }
+
+  .field {
+    @apply min-h-11 w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm text-ink placeholder:text-charcoal/40 transition-colors duration-150 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 md:min-h-0;
+  }
+
+  .field-label {
+    @apply mb-1 block text-xs font-medium text-muted;
+  }
+
+  .btn-primary {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-cream transition-colors duration-150 hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0;
+  }
+
+  .btn-secondary {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-ink/10 bg-white px-3 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:border-ink/20 hover:bg-ink/[0.03] disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0;
+  }
+
+  .btn-ghost {
+    @apply inline-flex cursor-pointer items-center justify-center rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted transition-colors duration-150 hover:bg-brand-50 hover:text-ink;
+  }
+
+  .segmented {
+    @apply flex gap-1 overflow-x-auto rounded-lg border border-ink/10 bg-brand-50 p-1 sm:flex-wrap sm:overflow-visible;
+  }
+
+  .segmented-item {
+    @apply inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-charcoal/70 transition-colors duration-150 hover:text-ink;
+  }
+
+  .segmented-item-active {
+    @apply bg-white text-ink shadow-sm;
+  }
+
+  .data-table {
+    @apply hidden w-full text-sm md:table;
+  }
+
+  .data-table thead tr {
+    @apply border-b border-ink/10 bg-brand-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted;
+  }
+
+  .data-table th {
+    @apply px-4 py-2.5 font-semibold;
+  }
+
+  .data-table td {
+    @apply px-4 py-3 align-middle;
+  }
+
+  .data-table tbody tr {
+    @apply border-t border-ink/5 transition-colors duration-150 hover:bg-ink/[0.02];
+  }
+
+  .money {
+    @apply tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

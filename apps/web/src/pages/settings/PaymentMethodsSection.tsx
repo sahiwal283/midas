@@ -19,7 +19,7 @@ const BRAND_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
-const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 lg:py-2';
+const inputCls = 'w-full rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 lg:py-2';
 
 interface ZohoPaidThroughAccount {
   accountId: string;
@@ -189,13 +189,13 @@ export function PaymentMethodsSection() {
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted">
           Manage company cards and payment methods. Pick a company to match each card to its
           Zoho Books paid-through account — no more copying account ids by hand.
         </p>
         <button
           onClick={() => setShowForm(true)}
-          className="flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 sm:w-auto lg:min-h-0"
+          className="flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 sm:w-auto lg:min-h-0"
         >
           <Plus className="h-4 w-4" />
           Add Method
@@ -203,18 +203,18 @@ export function PaymentMethodsSection() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-gray-700" htmlFor="pm-company">Company</label>
+        <label className="text-sm font-medium text-charcoal/80" htmlFor="pm-company">Company</label>
         <select
           id="pm-company"
           value={company}
           onChange={(e) => setCompany(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
+          className="rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
         >
           {zohoCompanies.map((c) => (
             <option key={c.id} value={c.name}>{c.name}</option>
           ))}
         </select>
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-charcoal/40">
           {accountsLoading
             ? 'Loading Zoho accounts…'
             : `${accounts.length} Zoho paid-through accounts · ${unclaimedAccounts.length} not yet linked to a card`}
@@ -232,9 +232,9 @@ export function PaymentMethodsSection() {
       )}
 
       {error && (
-        <div className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
           <span>{error}</span>
-          <button onClick={() => setError('')} className="shrink-0 text-xs text-red-500 underline hover:text-red-700">
+          <button onClick={() => setError('')} className="shrink-0 text-xs text-danger underline hover:text-danger">
             Dismiss
           </button>
         </div>
@@ -243,10 +243,10 @@ export function PaymentMethodsSection() {
       {/* Add form */}
       {showForm && (
         <div className="rounded-xl border border-brand-200 bg-brand-50 p-5">
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">New Payment Method</h2>
+          <h2 className="mb-4 text-sm font-semibold text-charcoal/80">New Payment Method</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Label *</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/80">Label *</label>
               <input
                 value={form.label}
                 onChange={(e) => set('label', e.target.value)}
@@ -255,7 +255,7 @@ export function PaymentMethodsSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Last 4 digits</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/80">Last 4 digits</label>
               <input
                 value={form.lastFour}
                 onChange={(e) => set('lastFour', e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -265,7 +265,7 @@ export function PaymentMethodsSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Card brand</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/80">Card brand</label>
               <select value={form.brand} onChange={(e) => set('brand', e.target.value)} className={inputCls}>
                 <option value="">— Select brand —</option>
                 {Object.entries(BRAND_LABELS).map(([v, l]) => (
@@ -274,7 +274,7 @@ export function PaymentMethodsSection() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Company</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/80">Company</label>
               <select
                 value={form.defaultZohoEntity}
                 onChange={(e) => {
@@ -292,7 +292,7 @@ export function PaymentMethodsSection() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Zoho paid-through account</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/80">Zoho paid-through account</label>
               <SearchableSelect
                 options={accounts
                   .filter((a) => !claimedAccountIds.has(a.accountId) || form.zohoAccountName === a.accountId)
@@ -311,9 +311,9 @@ export function PaymentMethodsSection() {
                 id="company-wide"
                 checked={form.isCompanyWide}
                 onChange={(e) => set('isCompanyWide', e.target.checked)}
-                className="rounded border-gray-300"
+                className="rounded border-ink/15"
               />
-              <label htmlFor="company-wide" className="text-sm text-gray-700">Visible to all employees</label>
+              <label htmlFor="company-wide" className="text-sm text-charcoal/80">Visible to all employees</label>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -321,9 +321,9 @@ export function PaymentMethodsSection() {
                 id="requires-reimb"
                 checked={form.requiresReimbursement}
                 onChange={(e) => set('requiresReimbursement', e.target.checked)}
-                className="rounded border-gray-300"
+                className="rounded border-ink/15"
               />
-              <label htmlFor="requires-reimb" className="text-sm text-gray-700">
+              <label htmlFor="requires-reimb" className="text-sm text-charcoal/80">
                 Personal card — expenses need reimbursement
               </label>
             </div>
@@ -332,13 +332,13 @@ export function PaymentMethodsSection() {
             <button
               onClick={() => createMutation.mutate()}
               disabled={!form.label || createMutation.isPending}
-              className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
+              className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
             >
               {createMutation.isPending ? 'Saving…' : 'Add Payment Method'}
             </button>
             <button
               onClick={() => setShowForm(false)}
-              className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 lg:min-h-0"
+              className="min-h-11 rounded-lg border border-ink/15 px-4 py-2 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03] lg:min-h-0"
             >
               Cancel
             </button>
@@ -347,43 +347,43 @@ export function PaymentMethodsSection() {
       )}
 
       {/* Methods list */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-ink/10 bg-white">
         {isLoading ? (
-          <div className="px-6 py-12 text-center text-sm text-gray-400">Loading…</div>
+          <div className="px-6 py-12 text-center text-sm text-charcoal/40">Loading…</div>
         ) : methods.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <CreditCard className="mx-auto mb-3 h-8 w-8 text-gray-300" />
-            <p className="text-sm text-gray-500">No payment methods yet.</p>
-            <p className="mt-1 text-xs text-gray-400">Add company cards so employees can tag expenses correctly.</p>
+            <CreditCard className="mx-auto mb-3 h-8 w-8 text-charcoal/25" />
+            <p className="text-sm text-muted">No payment methods yet.</p>
+            <p className="mt-1 text-xs text-charcoal/40">Add company cards so employees can tag expenses correctly.</p>
           </div>
         ) : (
           <>
             {/* Mobile cards */}
-            <div className="divide-y divide-gray-100 md:hidden">
+            <div className="divide-y divide-ink/5 md:hidden">
               {methods.map((pm) => (
                 <div key={pm.id} className="space-y-3 p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <CreditCard className="h-4 w-4 shrink-0 text-gray-400" />
-                    <span className="font-medium text-gray-900">{pm.label}</span>
-                    {pm.lastFour && <span className="text-gray-400">···{pm.lastFour}</span>}
+                    <CreditCard className="h-4 w-4 shrink-0 text-charcoal/40" />
+                    <span className="font-medium text-ink">{pm.label}</span>
+                    {pm.lastFour && <span className="text-charcoal/40">···{pm.lastFour}</span>}
                     {pm.requiresReimbursement && (
-                      <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                      <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
                         Reimbursable
                       </span>
                     )}
-                    <span className={`ml-auto inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`ml-auto inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}>
                       {pm.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-charcoal/70">
                     <span>{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : 'No brand'}</span>
                     <span aria-hidden="true">·</span>
                     {pm.defaultZohoEntity ? (
-                      <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700">
+                      <span className="inline-flex rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
                         {pm.defaultZohoEntity}
                       </span>
                     ) : (
-                      <span className="text-gray-400">No company</span>
+                      <span className="text-charcoal/40">No company</span>
                     )}
                     <span aria-hidden="true">·</span>
                     <span>{pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}</span>
@@ -401,7 +401,7 @@ export function PaymentMethodsSection() {
                       disabled={accountsLoading || accountsFailed}
                     />
                     {pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed && (
-                      <p className="mt-1 font-mono text-[11px] text-gray-400">
+                      <p className="mt-1 font-mono text-[11px] text-charcoal/40">
                         id {pm.zohoAccountName} — not in {company}'s account list
                       </p>
                     )}
@@ -417,14 +417,14 @@ export function PaymentMethodsSection() {
                       <button
                         onClick={() => setDeactivateTarget(pm)}
                         disabled={deactivateMutation.isPending}
-                        className="min-h-11 flex-1 rounded-lg border border-gray-200 text-xs font-medium text-gray-500 hover:text-red-600 disabled:opacity-50"
+                        className="min-h-11 flex-1 rounded-lg border border-ink/10 text-xs font-medium text-muted hover:text-danger disabled:opacity-50"
                       >
                         Deactivate
                       </button>
                     )}
                   </div>
                   {editingId === pm.id && (
-                    <div className="rounded-lg bg-gray-50 p-3">
+                    <div className="rounded-lg bg-cream p-3">
                       <PaymentMethodEditor
                         pm={pm}
                         users={users}
@@ -440,7 +440,7 @@ export function PaymentMethodsSection() {
             </div>
             <table className="hidden w-full text-sm md:table">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className="border-b border-ink/10 text-left text-xs font-semibold uppercase tracking-wider text-muted">
                 <th className="px-6 py-3">Label</th>
                 <th className="px-6 py-3">Brand</th>
                 <th className="px-6 py-3">Company</th>
@@ -450,30 +450,30 @@ export function PaymentMethodsSection() {
                 <th className="px-6 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-ink/5">
               {methods.map((pm) => (
                 <Fragment key={pm.id}>
-                  <tr className="hover:bg-gray-50">
+                  <tr className="hover:bg-ink/[0.03]">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <CreditCard className="h-4 w-4 text-gray-400" />
-                        <span className="font-medium text-gray-900">{pm.label}</span>
-                        {pm.lastFour && <span className="text-gray-400">···{pm.lastFour}</span>}
+                        <CreditCard className="h-4 w-4 text-charcoal/40" />
+                        <span className="font-medium text-ink">{pm.label}</span>
+                        {pm.lastFour && <span className="text-charcoal/40">···{pm.lastFour}</span>}
                         {pm.requiresReimbursement && (
-                          <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
+                          <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
                             Reimbursable
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : '—'}</td>
+                    <td className="px-6 py-4 text-charcoal/70">{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : '—'}</td>
                     <td className="px-6 py-4">
                       {pm.defaultZohoEntity ? (
-                        <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        <span className="inline-flex rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
                           {pm.defaultZohoEntity}
                         </span>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-charcoal/40">—</span>
                       )}
                     </td>
                     <td className="min-w-[16rem] px-6 py-4">
@@ -489,16 +489,16 @@ export function PaymentMethodsSection() {
                         disabled={accountsLoading || accountsFailed}
                       />
                       {pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed && (
-                        <p className="mt-1 font-mono text-[11px] text-gray-400">
+                        <p className="mt-1 font-mono text-[11px] text-charcoal/40">
                           id {pm.zohoAccountName} — not in {company}'s account list
                         </p>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-gray-600">
+                    <td className="px-6 py-4 text-charcoal/70">
                       {pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}>
                         {pm.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
@@ -514,7 +514,7 @@ export function PaymentMethodsSection() {
                           <button
                             onClick={() => setDeactivateTarget(pm)}
                             disabled={deactivateMutation.isPending}
-                            className="text-xs text-gray-400 hover:text-red-600 disabled:opacity-50"
+                            className="text-xs text-charcoal/40 hover:text-danger disabled:opacity-50"
                           >
                             Deactivate
                           </button>
@@ -523,7 +523,7 @@ export function PaymentMethodsSection() {
                     </td>
                   </tr>
                   {editingId === pm.id && (
-                    <tr className="bg-gray-50">
+                    <tr className="bg-cream">
                       <td colSpan={7} className="px-6 py-4">
                         <PaymentMethodEditor
                           pm={pm}
@@ -546,19 +546,19 @@ export function PaymentMethodsSection() {
 
       {/* Zoho accounts with no Midas card yet — one click prefills the create form */}
       {!accountsLoading && !accountsFailed && unclaimedAccounts.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="text-sm font-semibold text-gray-700">
+        <div className="rounded-xl border border-ink/10 bg-white p-5">
+          <h2 className="text-sm font-semibold text-charcoal/80">
             In {company}'s Zoho Books but not in Midas
           </h2>
-          <p className="mt-0.5 text-xs text-gray-400">
+          <p className="mt-0.5 text-xs text-charcoal/40">
             Add creates a Midas payment method pre-filled from the Zoho account — review and save.
           </p>
-          <ul className="mt-3 divide-y divide-gray-100">
+          <ul className="mt-3 divide-y divide-ink/5">
             {unclaimedAccounts.map((a) => (
               <li key={a.accountId} className="flex items-center justify-between gap-3 py-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-gray-800">{a.accountName}</p>
-                  <p className="text-xs text-gray-400">{a.accountType.replace(/_/g, ' ')}</p>
+                  <p className="truncate text-sm text-ink">{a.accountName}</p>
+                  <p className="text-xs text-charcoal/40">{a.accountType.replace(/_/g, ' ')}</p>
                 </div>
                 <button
                   onClick={() => {
@@ -649,14 +649,14 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
 
   return (
     <div className="space-y-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Edit — {pm.label}</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Edit — {pm.label}</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Label *</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/80">Label *</label>
           <input value={form.label} onChange={(e) => set('label', e.target.value)} className={inputCls} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Last 4 digits</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/80">Last 4 digits</label>
           <input
             value={form.lastFour}
             onChange={(e) => set('lastFour', e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -665,7 +665,7 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Card brand</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/80">Card brand</label>
           <select value={form.brand} onChange={(e) => set('brand', e.target.value)} className={inputCls}>
             <option value="">— Select brand —</option>
             {Object.entries(BRAND_LABELS).map(([v, l]) => (
@@ -674,7 +674,7 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Zoho paid-through account</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/80">Zoho paid-through account</label>
           <input
             value={form.zohoAccountName}
             onChange={(e) => set('zohoAccountName', e.target.value)}
@@ -683,7 +683,7 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700">Default company</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/80">Default company</label>
           <input
             value={form.defaultZohoEntity}
             onChange={(e) => set('defaultZohoEntity', e.target.value)}
@@ -692,12 +692,12 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
           />
         </div>
         <div className="flex items-end pb-2">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          <label className="flex items-center gap-2 text-sm text-charcoal/80">
             <input
               type="checkbox"
               checked={form.requiresReimbursement}
               onChange={(e) => set('requiresReimbursement', e.target.checked)}
-              className="rounded border-gray-300"
+              className="rounded border-ink/15"
             />
             Personal card — needs reimbursement
           </label>
@@ -706,26 +706,26 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
 
       {/* Assignment control — needs the admin-only users list */}
       {canAssign ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-3">
-          <p className="mb-2 text-xs font-medium text-gray-700">Assignment</p>
+        <div className="rounded-lg border border-ink/10 bg-white p-3">
+          <p className="mb-2 text-xs font-medium text-charcoal/80">Assignment</p>
           <div className="flex flex-wrap items-center gap-5">
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-charcoal/80">
               <input
                 type="radio"
                 name={`assignment-${pm.id}`}
                 checked={form.assignment === 'company'}
                 onChange={() => set('assignment', 'company')}
-                className="border-gray-300"
+                className="border-ink/15"
               />
               Company-wide (everyone sees it)
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-charcoal/80">
               <input
                 type="radio"
                 name={`assignment-${pm.id}`}
                 checked={form.assignment === 'assigned'}
                 onChange={() => set('assignment', 'assigned')}
-                className="border-gray-300"
+                className="border-ink/15"
               />
               Assigned to
             </label>
@@ -733,7 +733,7 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
               <select
                 value={form.assignedUserId}
                 onChange={(e) => set('assignedUserId', e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none sm:w-56 lg:py-1.5"
+                className="w-full rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none sm:w-56 lg:py-1.5"
               >
                 <option value="">— Select user —</option>
                 {users.map((u) => (
@@ -747,7 +747,7 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
           )}
         </div>
       ) : (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted">
           Assignment: {pm.isCompanyWide ? 'company-wide.' : 'assigned to a specific user.'} Only admins can change card assignment.
         </p>
       )}
@@ -756,13 +756,13 @@ function PaymentMethodEditor({ pm, users, canAssign, onClose, onSaved, onError }
         <button
           onClick={() => saveMutation.mutate()}
           disabled={!form.label || assignedMissing || saveMutation.isPending}
-          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
+          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
         >
           {saveMutation.isPending ? 'Saving…' : 'Save changes'}
         </button>
         <button
           onClick={onClose}
-          className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 lg:min-h-0"
+          className="min-h-11 rounded-lg border border-ink/15 px-4 py-2 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03] lg:min-h-0"
         >
           Cancel
         </button>

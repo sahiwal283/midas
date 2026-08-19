@@ -25,7 +25,7 @@ export function SyncedChangeConfirm({ fieldLabel, pending, onCancel, onConfirm }
           type="button"
           onClick={onCancel}
           disabled={pending}
-          className="min-h-11 cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
+          className="min-h-11 cursor-pointer rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm text-charcoal/80 hover:bg-ink/[0.03] disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
         >
           Cancel
         </button>
@@ -33,7 +33,7 @@ export function SyncedChangeConfirm({ fieldLabel, pending, onCancel, onConfirm }
           type="button"
           onClick={onConfirm}
           disabled={pending}
-          className="min-h-11 cursor-pointer rounded-lg bg-amber-800 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-900 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
+          className="min-h-11 cursor-pointer rounded-lg bg-amber-800 px-3 py-2 text-sm font-semibold text-cream hover:bg-amber-900 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
         >
           {pending ? 'Saving…' : 'Update Midas only'}
         </button>

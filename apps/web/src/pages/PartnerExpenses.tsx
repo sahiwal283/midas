@@ -5,11 +5,12 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts';
 import client from '../api/client';
+import { PageHeader } from '../components/PageHeader';
 
 /** Same fixed-slot palette as the Reports page so both read as one system. */
-const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
-const GRID = '#f3f4f6';
-const INK_MUTED = '#6b7280';
+const SERIES = ['#1E3A55', '#D4AF37', '#2F7D5A', '#4E6E90', '#C94C4C', '#7A6414', '#16293C', '#94AAC4'];
+const GRID = '#E3E9F0';
+const INK_MUTED = '#5C6773';
 
 interface PartnerRow {
   id: string;
@@ -60,13 +61,11 @@ export function PartnerExpenses() {
   });
 
   return (
-    <div className="p-4 lg:p-8">
-      <div className="mb-6">
-        <h1 className="font-display text-3xl font-semibold text-ink">Partner Expenses</h1>
-        <p className="mt-1 text-sm text-charcoal/55">
-          Spend marked as partner expenses. Not sent to accounting or Zoho.
-        </p>
-      </div>
+    <div className="page">
+      <PageHeader
+        title="Partner Expenses"
+        subtitle="Spend marked as partner expenses. Not sent to accounting or Zoho."
+      />
 
       <div className="mb-6 flex flex-wrap items-end gap-3">
         <div>
@@ -158,7 +157,7 @@ export function PartnerExpenses() {
           <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink/10 text-left text-xs font-semibold uppercase tracking-wider text-charcoal/45">
+              <tr className="border-b border-ink/10 bg-brand-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
                 <th className="px-6 py-3">Date</th>
                 <th className="px-6 py-3">Individual</th>
                 <th className="px-6 py-3">Merchant</th>
@@ -177,7 +176,7 @@ export function PartnerExpenses() {
                   <td className="px-6 py-3 text-charcoal/70">
                     {r.paymentMethod ? `${r.paymentMethod.label}${r.paymentMethod.lastFour ? ` ····${r.paymentMethod.lastFour}` : ''}` : '—'}
                   </td>
-                  <td className="px-6 py-3 text-right font-semibold text-ink">{money(Number(r.amount))}</td>
+                  <td className="px-6 py-3 text-right font-semibold tabular-nums text-ink">{money(Number(r.amount))}</td>
                 </tr>
               ))}
             </tbody>

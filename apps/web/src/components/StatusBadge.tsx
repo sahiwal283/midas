@@ -21,29 +21,29 @@ export const USER_LABELS: Record<ExpenseStatus, string> = {
   pending: 'Pending approval',
   in_review: 'Pending approval',
   awaiting_info: 'Needs further review',
-  approved: 'Approved ✓',
-  zoho_sync_failed: 'Approved ✓',
+  approved: 'Approved',
+  zoho_sync_failed: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
 };
 
 const STATUS_STYLES: Record<ExpenseStatus, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  pending: 'bg-yellow-100 text-yellow-800',
-  in_review: 'bg-yellow-100 text-yellow-800',
+  draft: 'bg-brand-50 text-muted',
+  pending: 'bg-gold-100 text-gold-800',
+  in_review: 'bg-gold-100 text-gold-800',
   awaiting_info: 'bg-amber-100 text-amber-900 ring-1 ring-amber-400',
-  approved: 'bg-green-100 text-green-800',
-  zoho_sync_failed: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  cancelled: 'bg-gray-100 text-gray-500',
+  approved: 'bg-success/15 text-success',
+  zoho_sync_failed: 'bg-success/15 text-success',
+  rejected: 'bg-danger/15 text-danger',
+  cancelled: 'bg-brand-50 text-muted',
 };
 
 const REIMB_STYLES: Record<ReimbursementStatus, string> = {
-  not_requested: 'bg-gray-100 text-gray-500',
-  pending: 'bg-orange-100 text-orange-700',
-  approved: 'bg-amber-100 text-amber-800',
-  rejected: 'bg-red-100 text-red-700',
-  paid: 'bg-emerald-100 text-emerald-700',
+  not_requested: 'bg-brand-50 text-muted',
+  pending: 'bg-gold-100 text-gold-800',
+  approved: 'bg-amber-100 text-amber-900',
+  rejected: 'bg-danger/15 text-danger',
+  paid: 'bg-success/15 text-success',
 };
 
 const REIMB_LABELS: Record<ReimbursementStatus, string> = {
@@ -54,6 +54,8 @@ const REIMB_LABELS: Record<ReimbursementStatus, string> = {
   paid: 'Paid',
 };
 
+const BADGE = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium';
+
 /**
  * Employee-facing label. Approved expenses distinguish "made it to the books"
  * (Accounting complete) from plain approval; a failed sync is still just
@@ -61,7 +63,7 @@ const REIMB_LABELS: Record<ReimbursementStatus, string> = {
  */
 export function userStatusLabel(status: ExpenseStatus, zohoExpenseId?: string | null): string {
   if ((status === 'approved' || status === 'zoho_sync_failed') && zohoExpenseId) {
-    return 'Accounting complete ✓';
+    return 'Accounting complete';
   }
   return USER_LABELS[status] ?? status;
 }
@@ -76,7 +78,7 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, variant = 'accountant', zohoExpenseId }: StatusBadgeProps) {
   const label = variant === 'user' ? userStatusLabel(status, zohoExpenseId) : ACCOUNTANT_LABELS[status];
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[status]}`}>
+    <span className={`${BADGE} ${STATUS_STYLES[status]}`}>
       {label}
     </span>
   );
@@ -92,7 +94,7 @@ export function ReimbursementBadge({
 }) {
   if (status === 'not_requested' && !showIdle) return null;
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${REIMB_STYLES[status]}`}>
+    <span className={`${BADGE} ${REIMB_STYLES[status]}`}>
       {REIMB_LABELS[status]}
     </span>
   );
@@ -108,20 +110,20 @@ export function ZohoPushBadge({
 }) {
   if (syncFailed && !zohoExpenseId) {
     return (
-      <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">
+      <span className={`${BADGE} bg-danger/15 text-danger`}>
         Sync failed
       </span>
     );
   }
   if (zohoExpenseId) {
     return (
-      <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+      <span className={`${BADGE} bg-success/15 text-success`}>
         Pushed
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
+    <span className={`${BADGE} bg-brand-50 text-muted`}>
       Not pushed
     </span>
   );

@@ -330,7 +330,7 @@ export function ExpenseNew() {
           <h1 className="mt-3 font-display text-2xl font-semibold text-ink">
             {result.pending
               ? (result.missing?.length ? 'Submitted — a few details missing' : 'Submitted for review')
-              : 'Approved ✓'}
+              : 'Approved'}
           </h1>
           <p className="mt-2 text-sm text-charcoal/55">
             {result.pending
@@ -649,7 +649,7 @@ export function ExpenseNew() {
                   type="button"
                   onClick={() => void doSubmit()}
                   disabled={submitting}
-                  className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                  className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-cream hover:bg-amber-700 disabled:opacity-60"
                 >
                   Submit anyway
                 </button>

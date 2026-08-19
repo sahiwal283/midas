@@ -34,7 +34,7 @@ function ReceiptPane({ expense }: { expense: Expense }) {
   const receipts = expense.receipts ?? [];
   if (receipts.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-400 lg:h-full lg:min-h-[24rem]">
+      <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-ink/15 bg-cream text-sm text-charcoal/40 lg:h-full lg:min-h-[24rem]">
         No receipt attached
       </div>
     );
@@ -48,8 +48,8 @@ function ReceiptPane({ expense }: { expense: Expense }) {
     <div className="rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
       <ReceiptView expenseId={expense.id} receipt={primary} />
       {others.length > 0 && (
-        <div className="mt-3 border-t border-gray-100 pt-3">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+        <div className="mt-3 border-t border-ink/5 pt-3">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-charcoal/40">
             Other receipts
           </p>
           <ul className="space-y-1">
@@ -80,14 +80,14 @@ function ReceiptView({ expenseId, receipt }: { expenseId: string; receipt: Recei
 
   if (isPdf) {
     return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-lg bg-gray-50 text-sm text-gray-500">
-        <FileText className="h-8 w-8 text-gray-300" />
+      <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-lg bg-cream text-sm text-muted">
+        <FileText className="h-8 w-8 text-charcoal/25" />
         <p>{receipt.filename}</p>
         <a
           href={url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 lg:min-h-0"
+          className="inline-flex min-h-11 items-center rounded-lg border border-ink/15 px-3 py-1.5 text-xs font-medium text-charcoal/80 hover:bg-brand-50 lg:min-h-0"
         >
           Open PDF
         </a>
@@ -100,7 +100,7 @@ function ReceiptView({ expenseId, receipt }: { expenseId: string; receipt: Recei
       <img
         src={url}
         alt={receipt.filename}
-        className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg border border-gray-200 object-contain lg:max-h-[42rem]"
+        className="mx-auto max-h-[70vh] w-auto max-w-full rounded-lg border border-ink/10 object-contain lg:max-h-[42rem]"
       />
     </a>
   );
@@ -110,9 +110,9 @@ function ReceiptView({ expenseId, receipt }: { expenseId: string; receipt: Recei
 
 function ReadinessLine({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <li className={`flex items-center gap-2 text-xs ${ok ? 'text-green-700' : 'text-red-600'}`}>
+    <li className={`flex items-center gap-2 text-xs ${ok ? 'text-success' : 'text-danger'}`}>
       {ok
-        ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
+        ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
         : <XCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />}
       {label}
     </li>
@@ -135,15 +135,15 @@ function ZohoReadinessCard({ expense }: { expense: Expense }) {
   if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') failed.push('Approved');
 
   return (
-    <div className={`rounded-xl border p-4 ${ready ? 'border-teal-200 bg-teal-50' : 'border-gray-200 bg-white'}`}>
-      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700">
+    <div className={`rounded-xl border p-4 ${ready ? 'border-success/30 bg-success/10' : 'border-ink/10 bg-white'}`}>
+      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-charcoal/80">
         Zoho push
         {ready
-          ? <span className="text-xs font-medium text-teal-700">Ready</span>
-          : <span className="text-xs font-medium text-gray-500">Not ready</span>}
+          ? <span className="text-xs font-medium text-success">Ready</span>
+          : <span className="text-xs font-medium text-muted">Not ready</span>}
       </h2>
       {ready ? (
-        <p className="text-xs text-teal-800">All push checks passed.</p>
+        <p className="text-xs text-success">All push checks passed.</p>
       ) : (
         <ul className="space-y-1.5">
           {failed.map((label) => (
@@ -166,7 +166,7 @@ function MessageItem({
 }) {
   if (message.isSystem) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center text-xs text-gray-500 break-words">
+      <div className="rounded-lg border border-ink/10 bg-cream px-3 py-2 text-center text-xs text-muted break-words">
         {message.body}
       </div>
     );
@@ -175,17 +175,17 @@ function MessageItem({
   if (message.requestType) {
     const resolved = message.isResolved;
     return (
-      <div className={`rounded-lg border px-3 py-2.5 text-sm ${resolved ? 'border-green-200 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
+      <div className={`rounded-lg border px-3 py-2.5 text-sm ${resolved ? 'border-success/30 bg-success/10' : 'border-amber-300 bg-amber-50'}`}>
         <div className="mb-1 flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5">
-            <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${resolved ? 'bg-green-100 text-green-700' : 'bg-amber-200 text-amber-800'}`}>
+            <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${resolved ? 'bg-success/15 text-success' : 'bg-amber-200 text-amber-800'}`}>
               {resolved ? 'Resolved' : 'Info Requested'}
             </span>
-            <span className="font-medium text-gray-700">{message.sender?.name ?? 'Accountant'}</span>
+            <span className="font-medium text-charcoal/80">{message.sender?.name ?? 'Accountant'}</span>
           </div>
-          <span className="text-xs text-gray-400">{new Date(message.createdAt).toLocaleString()}</span>
+          <span className="text-xs text-charcoal/40">{new Date(message.createdAt).toLocaleString()}</span>
         </div>
-        <p className={`break-words ${resolved ? 'text-green-900' : 'text-amber-900'}`}>{message.body}</p>
+        <p className={`break-words ${resolved ? 'text-success' : 'text-amber-900'}`}>{message.body}</p>
         {message.internalNote && (
           <p className="mt-2 rounded border border-yellow-200 bg-yellow-50 px-2 py-1 text-xs text-yellow-800 break-words">
             <span className="font-semibold">Internal note: </span>{message.internalNote}
@@ -197,7 +197,7 @@ function MessageItem({
 
   const isMine = message.senderId === currentUserId;
   return (
-    <div className={`rounded-lg p-3 text-sm ${isMine ? 'bg-brand-50 text-brand-900' : 'bg-gray-50 text-gray-800'}`}>
+    <div className={`rounded-lg p-3 text-sm ${isMine ? 'bg-brand-50 text-brand-900' : 'bg-cream text-ink'}`}>
       <div className="mb-1 flex items-center gap-2">
         <span className="font-medium">{message.sender?.name ?? '—'}</span>
         {message.sender?.role !== 'user' && (
@@ -215,8 +215,8 @@ function MessageItem({
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
-      <dt className="text-gray-400 sm:shrink-0">{label}</dt>
-      <dd className="min-w-0 break-words font-medium text-gray-800 sm:text-right">{value}</dd>
+      <dt className="text-charcoal/40 sm:shrink-0">{label}</dt>
+      <dd className="min-w-0 break-words font-medium text-ink sm:text-right">{value}</dd>
     </div>
   );
 }
@@ -357,26 +357,26 @@ export function AccountantReview() {
         </div>
 
         {reviewMutation.isError && (
-          <p className="mt-2 text-xs font-medium text-red-600">
+          <p className="mt-2 text-xs font-medium text-danger">
             {(reviewMutation.error as { response?: { data?: { error?: { message?: string } } } })
               ?.response?.data?.error?.message ?? 'Review failed. Please try again.'}
           </p>
         )}
 
         {!canReview && (
-          <p className="mt-2 text-xs text-gray-400">
+          <p className="mt-2 text-xs text-charcoal/40">
             This expense is in status &lsquo;{expense.status}&rsquo; and cannot be reviewed from here.
           </p>
         )}
 
         {/* Ask form */}
         {showAskForm && (
-          <div className="mt-3 space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
+          <div className="mt-3 space-y-2 rounded-xl border border-brand-200 bg-brand-50 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
               <select
                 value={askType}
                 onChange={(e) => setAskType(e.target.value)}
-                className="w-full rounded-lg border border-blue-300 bg-white px-2 py-3 text-sm focus:outline-none sm:w-auto lg:py-1.5"
+                className="w-full rounded-lg border border-brand-300 bg-white px-2 py-3 text-sm focus:outline-none sm:w-auto lg:py-1.5"
               >
                 {REQUEST_TYPE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -387,7 +387,7 @@ export function AccountantReview() {
                 value={askNote}
                 onChange={(e) => setAskNote(e.target.value)}
                 placeholder="Message to employee…"
-                className="min-w-0 rounded-lg border border-blue-300 px-3 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 sm:flex-1 lg:py-1.5"
+                className="min-w-0 rounded-lg border border-brand-300 px-3 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 sm:flex-1 lg:py-1.5"
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -395,19 +395,19 @@ export function AccountantReview() {
                 value={askInternal}
                 onChange={(e) => setAskInternal(e.target.value)}
                 placeholder="Internal note (not shown to employee, optional)"
-                className="w-full min-w-0 rounded-lg border border-gray-300 bg-gray-50 px-3 py-3 text-xs text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-400 sm:w-auto sm:flex-1 lg:py-1.5"
+                className="w-full min-w-0 rounded-lg border border-ink/15 bg-cream px-3 py-3 text-xs text-charcoal/70 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-auto sm:flex-1 lg:py-1.5"
               />
               <button
                 onClick={submitAsk}
                 disabled={!askNote.trim() || reviewMutation.isPending}
-                className="flex min-h-11 items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50 lg:min-h-0"
+                className="flex min-h-11 items-center gap-1 rounded-lg bg-brand-500 px-3 py-1.5 text-sm text-cream hover:bg-brand-600 disabled:opacity-50 lg:min-h-0"
               >
                 <Send className="h-3.5 w-3.5" />
                 Send
               </button>
               <button
                 onClick={() => { setShowAskForm(false); setAskNote(''); }}
-                className="min-h-11 px-2 text-sm text-gray-500 hover:text-gray-700 lg:min-h-0 lg:px-0"
+                className="min-h-11 px-2 text-sm text-muted hover:text-ink lg:min-h-0 lg:px-0"
               >
                 Cancel
               </button>
@@ -426,9 +426,9 @@ export function AccountantReview() {
         {/* Right: details, readiness, conversation */}
         <div className="space-y-4">
           {/* Expense details */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm">
-            <h2 className="mb-3 font-semibold text-gray-700">Expense Details</h2>
-            <dl className="space-y-2 text-gray-600">
+          <div className="rounded-xl border border-ink/10 bg-white p-5 text-sm">
+            <h2 className="mb-3 font-semibold text-charcoal/80">Expense Details</h2>
+            <dl className="space-y-2 text-charcoal/70">
               <DetailRow label="Merchant" value={expense.merchant} />
               <DetailRow label="Amount" value={`${expense.currency} ${Number(expense.amount).toFixed(2)}`} />
               <DetailRow label="Date" value={expense.date} />
@@ -446,9 +446,9 @@ export function AccountantReview() {
               <DetailRow label="Submitted by" value={expense.user?.name ?? '—'} />
             </dl>
             {expense.description && (
-              <div className="mt-3 border-t border-gray-100 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Notes</p>
-                <p className="mt-1 break-words text-sm text-gray-600">{expense.description}</p>
+              <div className="mt-3 border-t border-ink/5 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-charcoal/40">Notes</p>
+                <p className="mt-1 break-words text-sm text-charcoal/70">{expense.description}</p>
               </div>
             )}
           </div>
@@ -464,15 +464,15 @@ export function AccountantReview() {
           />
 
           {/* Conversation */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold text-gray-700">Conversation</h2>
+          <div className="rounded-xl border border-ink/10 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold text-charcoal/80">Conversation</h2>
             <div className="mb-4 max-h-80 space-y-3 overflow-y-auto">
               {expense.messages && expense.messages.length > 0 ? (
                 expense.messages.map((m) => (
                   <MessageItem key={m.id} message={m} currentUserId={user?.id} />
                 ))
               ) : (
-                <p className="text-sm text-gray-400">No messages yet.</p>
+                <p className="text-sm text-charcoal/40">No messages yet.</p>
               )}
             </div>
             <form onSubmit={handleReply} className="flex gap-2">
@@ -480,12 +480,12 @@ export function AccountantReview() {
                 value={reply}
                 onChange={(e) => setReply(e.target.value)}
                 placeholder="Add a note or reply…"
-                className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
+                className="min-w-0 flex-1 rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
               />
               <button
                 type="submit"
                 disabled={!reply.trim() || messageMutation.isPending}
-                className="min-h-11 min-w-11 rounded-lg bg-brand-600 px-3 py-2 text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:min-w-0"
+                className="min-h-11 min-w-11 rounded-lg bg-brand-600 px-3 py-2 text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:min-w-0"
               >
                 <Send className="h-4 w-4" />
               </button>

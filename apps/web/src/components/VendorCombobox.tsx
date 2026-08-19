@@ -202,7 +202,7 @@ export function VendorCombobox({
         </ul>
       )}
       {notice && (
-        <p className="mt-1 flex items-center gap-1 text-xs text-teal-700">
+        <p className="mt-1 flex items-center gap-1 text-xs text-success">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
           {notice}
         </p>

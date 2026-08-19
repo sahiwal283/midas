@@ -34,8 +34,8 @@ const USER_STATUS_CONTEXT: Record<string, {
     body: 'Your expense is in the accountant review queue.',
   },
   in_review: {
-    icon: <AlertCircle className="h-4 w-4 text-blue-600" />,
-    color: 'border-blue-200 bg-blue-50 text-blue-800',
+    icon: <AlertCircle className="h-4 w-4 text-brand-600" />,
+    color: 'border-brand-200 bg-brand-50 text-brand-800',
     title: 'Under review',
     body: 'An accountant is currently reviewing this expense.',
   },
@@ -46,8 +46,8 @@ const USER_STATUS_CONTEXT: Record<string, {
     body: 'Please reply in the conversation below. Your expense returns to review automatically after you respond.',
   },
   approved: {
-    icon: <CheckCircle2 className="h-4 w-4 text-green-600" />,
-    color: 'border-green-200 bg-green-50 text-green-800',
+    icon: <CheckCircle2 className="h-4 w-4 text-success" />,
+    color: 'border-success/30 bg-success/10 text-success',
     title: 'Approved',
     body: 'Your expense has been approved.',
   },
@@ -58,8 +58,8 @@ const USER_STATUS_CONTEXT: Record<string, {
     body: 'Your expense was approved and is being processed.',
   },
   rejected: {
-    icon: <XCircle className="h-4 w-4 text-red-600" />,
-    color: 'border-red-200 bg-red-50 text-red-800',
+    icon: <XCircle className="h-4 w-4 text-danger" />,
+    color: 'border-danger/25 bg-danger/10 text-danger',
     title: 'Rejected',
     body: 'This expense was not approved. See the conversation below for details.',
   },
@@ -94,18 +94,18 @@ function ZohoReadinessPanel({ expense }: { expense: Expense }) {
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">Zoho push</h2>
-        <p className="text-xs text-gray-400">Checking whether this can be pushed…</p>
+      <div className="rounded-xl border border-ink/10 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold text-charcoal/80">Zoho push</h2>
+        <p className="text-xs text-charcoal/40">Checking whether this can be pushed…</p>
       </div>
     );
   }
 
   if (isError || !data) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">Zoho push</h2>
-        <p className="text-xs text-red-500">Could not load push status.</p>
+      <div className="rounded-xl border border-ink/10 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold text-charcoal/80">Zoho push</h2>
+        <p className="text-xs text-danger">Could not load push status.</p>
       </div>
     );
   }
@@ -115,24 +115,24 @@ function ZohoReadinessPanel({ expense }: { expense: Expense }) {
   const extraWarnings = warnings.filter((w) => !w.includes('mode'));
 
   return (
-    <div className={`rounded-xl border p-4 ${ready ? 'border-teal-200 bg-teal-50' : 'border-gray-200 bg-white'}`}>
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+    <div className={`rounded-xl border p-4 ${ready ? 'border-success/30 bg-success/10' : 'border-ink/10 bg-white'}`}>
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-charcoal/80">
         Zoho push
         {ready
-          ? <span className="text-xs font-medium text-teal-700">Ready</span>
-          : <span className="text-xs font-medium text-gray-500">Not ready</span>}
+          ? <span className="text-xs font-medium text-success">Ready</span>
+          : <span className="text-xs font-medium text-muted">Not ready</span>}
       </h2>
 
       {ready ? (
-        <p className="mt-1 text-xs text-teal-800">All push checks passed. Use the Zoho card below to send it.</p>
+        <p className="mt-1 text-xs text-success">All push checks passed. Use the Zoho card below to send it.</p>
       ) : (
         <details className="mt-2">
-          <summary className="cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-800">
+          <summary className="cursor-pointer text-xs font-medium text-charcoal/70 hover:text-ink">
             {failed.length === 1 ? '1 item blocking push' : `${failed.length} items blocking push`}
           </summary>
           <ul className="mt-2 space-y-1.5">
             {failed.map((c) => (
-              <li key={c.label} className="flex items-center gap-2 text-xs text-red-600">
+              <li key={c.label} className="flex items-center gap-2 text-xs text-danger">
                 <XCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />
                 {c.label}
               </li>
@@ -151,10 +151,10 @@ function ZohoReadinessPanel({ expense }: { expense: Expense }) {
 
       {ready && mappedPayload && (
         <details className="mt-3">
-          <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+          <summary className="cursor-pointer text-xs text-muted hover:text-ink">
             Proposed Zoho payload (preview only)
           </summary>
-          <div className="mt-2 space-y-1 break-words rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-600">
+          <div className="mt-2 space-y-1 break-words rounded border border-ink/10 bg-cream p-2 text-xs text-charcoal/70">
             <p><span className="font-medium">Merchant:</span> {mappedPayload.merchant}</p>
             <p><span className="font-medium">Amount:</span> {mappedPayload.currency} {mappedPayload.amount}</p>
             <p><span className="font-medium">Date:</span> {mappedPayload.date}</p>
@@ -191,7 +191,7 @@ function MessageBubble({
 }) {
   if (message.isSystem) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center text-xs text-gray-500 break-words">
+      <div className="rounded-lg border border-ink/10 bg-cream px-3 py-2 text-center text-xs text-muted break-words">
         {message.body}
       </div>
     );
@@ -201,17 +201,17 @@ function MessageBubble({
     const resolved = message.isResolved;
     const typeLabel = REQUEST_TYPE_LABELS[message.requestType as MessageRequestType] ?? 'Info Requested';
     return (
-      <div className={`rounded-lg border px-3 py-2.5 text-sm ${resolved ? 'border-green-200 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
+      <div className={`rounded-lg border px-3 py-2.5 text-sm ${resolved ? 'border-success/30 bg-success/10' : 'border-amber-300 bg-amber-50'}`}>
         <div className="mb-1.5 flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5">
-            <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${resolved ? 'bg-green-100 text-green-700' : 'bg-amber-200 text-amber-800'}`}>
+            <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${resolved ? 'bg-success/15 text-success' : 'bg-amber-200 text-amber-800'}`}>
               {resolved ? 'Resolved' : typeLabel}
             </span>
-            <span className="font-medium text-gray-700">{message.sender?.name ?? 'Accountant'}</span>
+            <span className="font-medium text-charcoal/80">{message.sender?.name ?? 'Accountant'}</span>
           </div>
-          <span className="text-xs text-gray-400">{new Date(message.createdAt).toLocaleString()}</span>
+          <span className="text-xs text-charcoal/40">{new Date(message.createdAt).toLocaleString()}</span>
         </div>
-        <p className={`break-words ${resolved ? 'text-green-900' : 'text-amber-900'}`}>{message.body}</p>
+        <p className={`break-words ${resolved ? 'text-success' : 'text-amber-900'}`}>{message.body}</p>
         {isPrivileged && message.internalNote && (
           <p className="mt-2 rounded bg-yellow-50 border border-yellow-200 px-2 py-1 text-xs text-yellow-800 break-words">
             <span className="font-semibold">Internal note: </span>{message.internalNote}
@@ -223,7 +223,7 @@ function MessageBubble({
 
   const isMine = message.senderId === currentUserId;
   return (
-    <div className={`rounded-lg p-3 text-sm ${isMine ? 'bg-brand-50 text-brand-900' : 'bg-gray-50 text-gray-800'}`}>
+    <div className={`rounded-lg p-3 text-sm ${isMine ? 'bg-brand-50 text-brand-900' : 'bg-cream text-ink'}`}>
       <div className="mb-1 flex items-center gap-2">
         <span className="font-medium">{message.sender?.name ?? '—'}</span>
         {message.sender?.role !== 'user' && (
@@ -262,13 +262,13 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  'review.approve': 'bg-green-100 text-green-700',
-  'review.reject': 'bg-red-100 text-red-700',
-  'review.claimed': 'bg-blue-100 text-blue-700',
+  'review.approve': 'bg-success/15 text-success',
+  'review.reject': 'bg-danger/15 text-danger',
+  'review.claimed': 'bg-brand-100 text-brand-700',
   'review.request_info': 'bg-amber-100 text-amber-700',
   'submitted': 'bg-brand-100 text-brand-700',
-  'zoho.pushed': 'bg-teal-100 text-teal-700',
-  'zoho.failed': 'bg-orange-100 text-orange-700',
+  'zoho.pushed': 'bg-success/15 text-success',
+  'zoho.failed': 'bg-gold-100 text-gold-800',
 };
 
 function RecentActivity({ expenseId }: { expenseId: string }) {
@@ -281,18 +281,18 @@ function RecentActivity({ expenseId }: { expenseId: string }) {
   const visible = expanded ? entries : entries.slice(0, 3);
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <h2 className="mb-3 text-sm font-semibold text-gray-700">Recent Activity</h2>
+    <div className="rounded-xl border border-ink/10 bg-white p-4">
+      <h2 className="mb-3 text-sm font-semibold text-charcoal/80">Recent Activity</h2>
       {isLoading ? (
-        <p className="text-xs text-gray-400">Loading…</p>
+        <p className="text-xs text-charcoal/40">Loading…</p>
       ) : entries.length === 0 ? (
-        <p className="text-xs text-gray-400">No activity recorded yet.</p>
+        <p className="text-xs text-charcoal/40">No activity recorded yet.</p>
       ) : (
         <>
           <ol className="space-y-2">
             {visible.map((entry: AuditLogEntry) => {
               const label = ACTION_LABELS[entry.action] ?? entry.action;
-              const color = ACTION_COLORS[entry.action] ?? 'bg-gray-100 text-gray-600';
+              const color = ACTION_COLORS[entry.action] ?? 'bg-brand-50 text-charcoal/70';
               const who = entry.actorName ?? 'System';
               const when = new Date(entry.createdAt).toLocaleString(undefined, {
                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -302,7 +302,7 @@ function RecentActivity({ expenseId }: { expenseId: string }) {
                   <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-medium ${color}`}>
                     {label}
                   </span>
-                  <span className="leading-5 text-gray-500">
+                  <span className="leading-5 text-muted">
                     {who} · {when}
                   </span>
                 </li>
@@ -409,12 +409,12 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
     saveMutation.mutate();
   }
 
-  const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-3 lg:py-2 text-sm focus:border-brand-500 focus:outline-none';
+  const inputCls = 'w-full rounded-lg border border-ink/15 px-3 py-3 lg:py-2 text-sm focus:border-brand-500 focus:outline-none';
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="rounded-xl border border-ink/10 bg-white p-5">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700">
+        <h2 className="text-sm font-semibold text-charcoal/80">
           {mode === 'all' ? 'Edit details' : 'Edit notes'}
         </h2>
         {!editing && (
@@ -428,7 +428,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
         )}
       </div>
       {!editing ? (
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-charcoal/40">
           {mode === 'all'
             ? 'You can update the merchant, amount, date, payment method, company, category, and notes.'
             : 'This expense is waiting for review — only the notes can be changed.'}
@@ -438,7 +438,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
           {mode === 'all' && (
             <>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Merchant</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Merchant</label>
                 <VendorCombobox
                   value={form.merchant}
                   onChange={(m) => setForm((f) => ({ ...f, merchant: m }))}
@@ -448,7 +448,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Amount</label>
+                  <label className="mb-1 block text-xs font-medium text-charcoal/70">Amount</label>
                   <input
                     type="number"
                     min="0.01"
@@ -460,7 +460,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Date</label>
+                  <label className="mb-1 block text-xs font-medium text-charcoal/70">Date</label>
                   <input
                     type="date"
                     value={form.date}
@@ -470,7 +470,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Payment method</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Payment method</label>
                 <select
                   value={form.paymentMethodId}
                   onChange={(e) => setForm((f) => ({ ...f, paymentMethodId: e.target.value }))}
@@ -485,7 +485,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Company</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Company</label>
                 <select
                   value={form.company}
                   onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
@@ -498,7 +498,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Category</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Category</label>
                 <CategoryPicker
                   categories={categories}
                   value={form.categoryId}
@@ -509,7 +509,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
             </>
           )}
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">Notes</label>
+            <label className="mb-1 block text-xs font-medium text-charcoal/70">Notes</label>
             <textarea
               rows={2}
               value={form.description}
@@ -518,7 +518,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
             />
           </div>
           {error && (
-            <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-danger">
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>{error}</span>
             </div>
@@ -527,14 +527,14 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
             <button
               type="submit"
               disabled={saveMutation.isPending}
-              className="min-h-11 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
+              className="min-h-11 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
             >
               {saveMutation.isPending ? 'Saving…' : 'Save'}
             </button>
             <button
               type="button"
               onClick={() => { setEditing(false); setError(''); }}
-              className="min-h-11 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 lg:min-h-0"
+              className="min-h-11 rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal/70 hover:bg-brand-50 lg:min-h-0"
             >
               Cancel
             </button>
@@ -631,8 +631,8 @@ export function ExpenseDetail() {
     messageMutation.mutate(message.trim());
   }
 
-  if (isLoading) return <div className="p-8 text-gray-400">Loading…</div>;
-  if (!expense) return <div className="p-8 text-red-600">Expense not found</div>;
+  if (isLoading) return <div className="p-8 text-charcoal/40">Loading…</div>;
+  if (!expense) return <div className="p-8 text-danger">Expense not found</div>;
 
   const isOwner = expense.userId === user?.id;
   const isPrivileged = roleAllowed(user?.role, ['accountant', 'admin']);
@@ -686,12 +686,12 @@ export function ExpenseDetail() {
     <div className="p-4 lg:p-8">
       {/* Header */}
       <div className="mb-4 flex items-start gap-3 pr-8 lg:gap-4 lg:pr-0">
-        <button onClick={() => navigate(-1)} className="mt-0.5 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded p-1 text-gray-400 hover:bg-gray-100 lg:min-h-0 lg:min-w-0">
+        <button onClick={() => navigate(-1)} className="mt-0.5 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded p-1 text-charcoal/40 hover:bg-brand-50 lg:min-h-0 lg:min-w-0">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="min-w-0 max-w-full break-words text-2xl font-bold text-gray-900">{expense.merchant}</h1>
+            <h1 className="page-title min-w-0 max-w-full break-words">{expense.merchant}</h1>
             <StatusBadge
               status={expense.status}
               variant={isPrivileged ? 'accountant' : 'user'}
@@ -707,15 +707,15 @@ export function ExpenseDetail() {
               />
             )}
             {expense.sourceApp === 'browser_extension' && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-medium text-brand-700">
                 Browser extension
               </span>
             )}
             {expense.sourceApp && expense.sourceApp !== 'browser_extension' && (
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">via {expense.sourceApp}</span>
+              <span className="rounded bg-brand-50 px-1.5 py-0.5 text-xs text-muted">via {expense.sourceApp}</span>
             )}
           </div>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-muted">
             {expense.date}
             {expense.category && <span> · {expense.category.name}</span>}
             {expense.paymentMethod && (
@@ -731,14 +731,14 @@ export function ExpenseDetail() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <p className="text-2xl font-bold text-gray-900">
+          <p className="text-2xl font-bold text-ink">
             {expense.currency} {Number(expense.amount).toFixed(2)}
           </p>
           {canDelete && !confirmDelete && (
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 lg:min-h-0"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger/10 lg:min-h-0"
             >
               <Trash2 className="h-3.5 w-3.5" />
               Delete
@@ -750,21 +750,21 @@ export function ExpenseDetail() {
                 type="button"
                 disabled={deleteMutation.isPending}
                 onClick={() => deleteMutation.mutate()}
-                className="min-h-11 rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50 lg:min-h-0"
+                className="min-h-11 rounded-lg bg-danger px-2.5 py-1 text-xs font-semibold text-cream hover:bg-danger disabled:opacity-50 lg:min-h-0"
               >
                 {deleteMutation.isPending ? 'Deleting…' : 'Confirm delete'}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="min-h-11 rounded-lg px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 lg:min-h-0"
+                className="min-h-11 rounded-lg px-2 py-1 text-xs text-charcoal/70 hover:bg-brand-50 lg:min-h-0"
               >
                 Cancel
               </button>
             </div>
           )}
           {deleteMutation.isError && (
-            <p className="max-w-xs text-right text-xs font-medium text-red-600">
+            <p className="max-w-xs text-right text-xs font-medium text-danger">
               {(deleteMutation.error as { response?: { data?: { error?: { message?: string } } } })
                 ?.response?.data?.error?.message ?? 'Could not delete this expense.'}
             </p>
@@ -787,24 +787,24 @@ export function ExpenseDetail() {
 
       {/* Rejected — reason + corrected-expense action (owner only) */}
       {isOwner && isRejected && (
-        <div className="mb-6 rounded-xl border-2 border-red-300 bg-red-50 p-4">
+        <div className="mb-6 rounded-xl border-2 border-danger/30 bg-red-50 p-4">
           <div className="flex items-start gap-3">
-            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
             <div className="flex-1">
-              <p className="text-sm font-semibold text-red-900">Rejected</p>
-              <p className="mt-0.5 text-sm text-red-800">
+              <p className="text-sm font-semibold text-danger">Rejected</p>
+              <p className="mt-0.5 text-sm text-danger">
                 {rejectionReason ?? 'See the conversation below.'}
               </p>
               <button
                 type="button"
                 onClick={() => cloneMutation.mutate()}
                 disabled={cloneMutation.isPending}
-                className="mt-3 min-h-11 w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60 sm:w-auto lg:min-h-0"
+                className="mt-3 min-h-11 w-full rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-cream hover:bg-danger disabled:opacity-60 sm:w-auto lg:min-h-0"
               >
                 {cloneMutation.isPending ? 'Creating…' : 'Create corrected expense'}
               </button>
               {cloneMutation.isError && (
-                <p className="mt-2 text-xs text-red-700">
+                <p className="mt-2 text-xs text-danger">
                   Could not create the corrected expense. Please try again.
                 </p>
               )}
@@ -844,18 +844,18 @@ export function ExpenseDetail() {
         {/* Main column */}
         <div className="space-y-6 lg:col-span-2">
           {expense.description && (
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h2 className="mb-2 text-sm font-semibold text-gray-700">Description</h2>
-              <p className="break-words text-sm text-gray-600">{expense.description}</p>
+            <div className="rounded-xl border border-ink/10 bg-white p-5">
+              <h2 className="mb-2 text-sm font-semibold text-charcoal/80">Description</h2>
+              <p className="break-words text-sm text-charcoal/70">{expense.description}</p>
             </div>
           )}
 
           {/* Receipts */}
-          <div id="receipts" className="scroll-mt-6 rounded-xl border border-gray-200 bg-white p-5">
+          <div id="receipts" className="scroll-mt-6 rounded-xl border border-ink/10 bg-white p-5">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-700">Receipts</h2>
+              <h2 className="text-sm font-semibold text-charcoal/80">Receipts</h2>
               {(isOwner || isPrivileged) && (
-                <label className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 lg:min-h-0">
+                <label className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-ink/15 px-3 py-1.5 text-xs font-medium text-charcoal/80 hover:bg-ink/[0.03] lg:min-h-0">
                   <Upload className="h-3.5 w-3.5" />
                   {uploadMutation.isPending ? 'Uploading…' : 'Upload'}
                   <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
@@ -865,15 +865,15 @@ export function ExpenseDetail() {
             {expense.receipts && expense.receipts.length > 0 ? (
               <div className="space-y-2">
                 {expense.receipts.map((r) => (
-                  <div key={r.id} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 space-y-2">
+                  <div key={r.id} className="rounded-lg border border-ink/5 bg-cream px-3 py-2.5 space-y-2">
                     <div className="flex items-center gap-2">
-                      <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
-                      <span className="flex-1 truncate text-sm text-gray-700">{r.filename}</span>
+                      <Paperclip className="h-4 w-4 shrink-0 text-charcoal/40" />
+                      <span className="flex-1 truncate text-sm text-charcoal/80">{r.filename}</span>
                       <span className={`text-xs font-medium ${
-                        r.ocrStatus === 'done' ? 'text-green-600' :
-                        r.ocrStatus === 'failed' ? 'text-red-500' :
-                        r.ocrStatus === 'processing' ? 'text-blue-500' :
-                        'text-gray-400'
+                        r.ocrStatus === 'done' ? 'text-success' :
+                        r.ocrStatus === 'failed' ? 'text-danger' :
+                        r.ocrStatus === 'processing' ? 'text-brand-400' :
+                        'text-charcoal/40'
                       }`}>
                         {isPrivileged
                           ? `OCR: ${r.ocrStatus}`
@@ -885,7 +885,7 @@ export function ExpenseDetail() {
                     </div>
                     {isPrivileged && r.ocrProvider && (
                       <div className="pl-6 space-y-0.5">
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted">
                           Provider: <span className="font-medium">{r.ocrProvider}</span>
                           {r.ocrOverallConfidence != null && (
                             <> · Confidence: <span className="font-medium">{Math.round(Number(r.ocrOverallConfidence) * 100)}%</span></>
@@ -897,7 +897,7 @@ export function ExpenseDetail() {
                           </p>
                         )}
                         {r.ocrStatus === 'failed' && r.ocrErrorSummary && (
-                          <p className="text-xs text-red-600">{r.ocrErrorSummary}</p>
+                          <p className="text-xs text-danger">{r.ocrErrorSummary}</p>
                         )}
                       </div>
                     )}
@@ -906,23 +906,23 @@ export function ExpenseDetail() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-charcoal/40">
                 No receipts attached.{isOwner && ' You can upload a receipt using the button above.'}
               </p>
             )}
           </div>
 
           {/* Conversation */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="rounded-xl border border-ink/10 bg-white p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-700">
+              <h2 className="text-sm font-semibold text-charcoal/80">
                 {isPrivileged ? 'Conversation & Requests' : 'Messages'}
               </h2>
               {isPrivileged && isAwaiting && hasOpenRequest && (
                 <button
                   onClick={() => resolveMutation.mutate()}
                   disabled={resolveMutation.isPending}
-                  className="min-h-11 text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 lg:min-h-0"
+                  className="min-h-11 text-xs font-medium text-brand-600 hover:text-brand-800 disabled:opacity-50 lg:min-h-0"
                 >
                   {resolveMutation.isPending ? 'Resolving…' : 'Mark all resolved'}
                 </button>
@@ -939,7 +939,7 @@ export function ExpenseDetail() {
                   />
                 ))
               ) : (
-                <p className="text-sm text-gray-400">No messages yet.</p>
+                <p className="text-sm text-charcoal/40">No messages yet.</p>
               )}
             </div>
             <form onSubmit={handleSendMessage} className="flex gap-2">
@@ -956,13 +956,13 @@ export function ExpenseDetail() {
                 className={`min-w-0 flex-1 rounded-lg border px-3 py-3 text-sm focus:outline-none lg:py-2 ${
                   isAwaiting && isOwner
                     ? 'border-amber-300 bg-amber-50 focus:border-amber-500'
-                    : 'border-gray-300 focus:border-brand-500'
+                    : 'border-ink/15 focus:border-brand-500'
                 }`}
               />
               <button
                 type="submit"
                 disabled={!message.trim() || messageMutation.isPending}
-                className="min-h-11 min-w-11 rounded-lg bg-brand-600 px-3 py-2 text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:min-w-0"
+                className="min-h-11 min-w-11 rounded-lg bg-brand-600 px-3 py-2 text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:min-w-0"
               >
                 <Send className="h-4 w-4" />
               </button>
@@ -974,22 +974,22 @@ export function ExpenseDetail() {
         <div className="space-y-4">
           {/* Draft submit action */}
           {isOwner && isDraft && (
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h2 className="mb-3 text-sm font-semibold text-gray-700">Actions</h2>
+            <div className="rounded-xl border border-ink/10 bg-white p-5">
+              <h2 className="mb-3 text-sm font-semibold text-charcoal/80">Actions</h2>
               <button
                 onClick={() => submitMutation.mutate()}
                 disabled={submitMutation.isPending}
-                className="min-h-11 w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
+                className="min-h-11 w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
               >
                 {submitMutation.isPending ? 'Submitting…' : 'Submit for Review'}
               </button>
               {submitMutation.isError && (
-                <p className="mt-2 text-xs font-medium text-red-600">
+                <p className="mt-2 text-xs font-medium text-danger">
                   {(submitMutation.error as { response?: { data?: { error?: { message?: string } } } })
                     ?.response?.data?.error?.message ?? 'Could not submit this expense.'}
                 </p>
               )}
-              <p className="mt-2 text-xs text-gray-400">Once submitted, your accountant will review this expense.</p>
+              <p className="mt-2 text-xs text-charcoal/40">Once submitted, your accountant will review this expense.</p>
             </div>
           )}
 
@@ -1040,11 +1040,11 @@ export function ExpenseDetail() {
           {isPrivileged && <RecentActivity expenseId={expense.id} />}
 
           {/* Details */}
-          <details className="rounded-xl border border-gray-200 bg-white text-sm">
-            <summary className="cursor-pointer p-5 font-semibold text-gray-700">
+          <details className="rounded-xl border border-ink/10 bg-white text-sm">
+            <summary className="cursor-pointer p-5 font-semibold text-charcoal/80">
               Details
             </summary>
-            <dl className="space-y-2 px-5 pb-5 text-gray-600">
+            <dl className="space-y-2 px-5 pb-5 text-charcoal/70">
               <Row label="Submitted by" value={expense.user?.name ?? '—'} />
               <Row label="Created" value={new Date(expense.createdAt).toLocaleDateString()} />
               <Row label="Last updated" value={new Date(expense.updatedAt).toLocaleDateString()} />
@@ -1082,8 +1082,8 @@ export function ExpenseDetail() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
-      <dt className="text-gray-400 sm:shrink-0">{label}</dt>
-      <dd className="min-w-0 break-words font-medium text-gray-800 sm:text-right">{value}</dd>
+      <dt className="text-charcoal/40 sm:shrink-0">{label}</dt>
+      <dd className="min-w-0 break-words font-medium text-ink sm:text-right">{value}</dd>
     </div>
   );
 }

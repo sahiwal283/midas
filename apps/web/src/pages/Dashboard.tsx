@@ -44,7 +44,7 @@ function AccountantDashboard({ name }: { name: string }) {
       count: (counts.pending ?? 0) + (counts.in_review ?? 0),
       per: scoped((c) => (c.pending ?? 0) + (c.in_review ?? 0)),
       query: 'status=needs_review',
-      icon: <Clock className="h-4 w-4 text-yellow-600" />,
+      icon: <Clock className="h-4 w-4 text-gold-700" />,
     },
     {
       label: 'Awaiting User',
@@ -58,14 +58,14 @@ function AccountantDashboard({ name }: { name: string }) {
       count: counts.zoho_sync_failed ?? 0,
       per: scoped((c) => c.zoho_sync_failed ?? 0),
       query: 'status=zoho_failed',
-      icon: <RefreshCw className="h-4 w-4 text-red-600" />,
+      icon: <RefreshCw className="h-4 w-4 text-danger" />,
     },
     {
       label: 'Missing Fields',
       count: (counts.needs_category ?? 0) + (counts.missing_receipt ?? 0) + (counts.needs_payment_method ?? 0),
       per: scoped((c) => (c.needs_category ?? 0) + (c.missing_receipt ?? 0) + (c.needs_payment_method ?? 0)),
       query: '',
-      icon: <FileX className="h-4 w-4 text-orange-600" />,
+      icon: <FileX className="h-4 w-4 text-gold-700" />,
     },
   ];
 
@@ -84,7 +84,7 @@ function AccountantDashboard({ name }: { name: string }) {
           <h2 className="font-display text-lg font-semibold text-ink">Review Queues</h2>
         </div>
         {isLoading ? (
-          <div className="px-6 py-8 text-center text-sm text-charcoal/40">Loading…</div>
+          <div className="h-48 animate-pulse bg-brand-50 motion-reduce:animate-none" aria-hidden />
         ) : (
           <div className="divide-y divide-ink/5">
             {rows.map((row) => (
@@ -105,13 +105,13 @@ function AccountantDashboard({ name }: { name: string }) {
                   <div className="flex items-center gap-2">
                     <Link
                       to={`/accountant/events${row.query ? `?${row.query}` : ''}`}
-                      className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+                      className="inline-flex min-h-8 items-center rounded-md bg-ink/5 px-2.5 py-1 text-xs font-medium text-charcoal/70 transition-colors hover:bg-ink/10 hover:text-ink"
                     >
                       {row.per.event} event
                     </Link>
                     <Link
                       to={`/accountant/daily${row.query ? `?${row.query}` : ''}`}
-                      className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+                      className="inline-flex min-h-8 items-center rounded-md bg-ink/5 px-2.5 py-1 text-xs font-medium text-charcoal/70 transition-colors hover:bg-ink/10 hover:text-ink"
                     >
                       {row.per.daily} daily
                     </Link>
@@ -130,7 +130,7 @@ function AccountantDashboard({ name }: { name: string }) {
             <p className="text-sm font-medium text-success">Ready for Zoho</p>
             <CheckCircle2 className="h-5 w-5 text-success" />
           </div>
-          <p className="mt-2 font-display text-3xl font-semibold text-ink">
+          <p className="mt-2 font-display text-3xl font-semibold tabular-nums text-ink">
             {fmtMoney(summary?.readyForZohoAmount ?? 0)}
           </p>
           <p className="mt-1 text-xs text-success/80">
@@ -139,13 +139,13 @@ function AccountantDashboard({ name }: { name: string }) {
           <div className="mt-3 flex items-center gap-2">
             <Link
               to="/accountant/events?status=ready_for_zoho"
-              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+              className="inline-flex min-h-8 items-center rounded-md bg-ink/5 px-2.5 py-1 text-xs font-medium tabular-nums text-charcoal/70 transition-colors hover:bg-ink/10 hover:text-ink"
             >
               {fmtMoney(byScope?.event.readyForZohoAmount ?? 0)} event
             </Link>
             <Link
               to="/accountant/daily?status=ready_for_zoho"
-              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+              className="inline-flex min-h-8 items-center rounded-md bg-ink/5 px-2.5 py-1 text-xs font-medium tabular-nums text-charcoal/70 transition-colors hover:bg-ink/10 hover:text-ink"
             >
               {fmtMoney(byScope?.daily.readyForZohoAmount ?? 0)} daily
             </Link>
@@ -156,7 +156,7 @@ function AccountantDashboard({ name }: { name: string }) {
             <p className="text-sm font-medium text-brand-800">Awaiting Reimbursement</p>
             <Banknote className="h-5 w-5 text-brand-600" />
           </div>
-          <p className="mt-2 font-display text-3xl font-semibold text-ink">
+          <p className="mt-2 font-display text-3xl font-semibold tabular-nums text-ink">
             {fmtMoney(summary?.reimbursementPendingAmount ?? 0)}
           </p>
           <p className="mt-1 text-xs text-brand-700/80">
@@ -165,13 +165,13 @@ function AccountantDashboard({ name }: { name: string }) {
           <div className="mt-3 flex items-center gap-2">
             <Link
               to="/accountant/events?reimbursementStatus=pending"
-              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+              className="inline-flex min-h-8 items-center rounded-md bg-ink/5 px-2.5 py-1 text-xs font-medium tabular-nums text-charcoal/70 transition-colors hover:bg-ink/10 hover:text-ink"
             >
               {fmtMoney(byScope?.event.reimbursementPendingAmount ?? 0)} event
             </Link>
             <Link
               to="/accountant/daily?reimbursementStatus=pending"
-              className="rounded-md bg-ink/5 px-2 py-0.5 text-xs font-medium text-charcoal/70 hover:bg-ink/10 hover:text-ink"
+              className="inline-flex min-h-8 items-center rounded-md bg-ink/5 px-2.5 py-1 text-xs font-medium tabular-nums text-charcoal/70 transition-colors hover:bg-ink/10 hover:text-ink"
             >
               {fmtMoney(byScope?.daily.reimbursementPendingAmount ?? 0)} daily
             </Link>
@@ -213,7 +213,7 @@ function EmployeeDashboard() {
         </div>
         <Link
           to="/expenses/new"
-          className="hidden items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-600 lg:flex"
+          className="btn-primary hidden lg:inline-flex"
         >
           <Plus className="h-4 w-4" />
           Add Transaction
@@ -298,7 +298,7 @@ function EmployeeDashboard() {
                 </div>
                 {/* Phone: amount over status, right-aligned. Desktop: side by side. */}
                 <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
-                  <span className="font-semibold text-ink">
+                  <span className="font-semibold tabular-nums text-ink">
                     {expense.currency} {Number(expense.amount).toFixed(2)}
                   </span>
                   <div className="text-right sm:w-40">
@@ -341,7 +341,7 @@ function StatCard({
         <p className="text-xs leading-tight text-charcoal/55 sm:text-sm">{label}</p>
         <span className="hidden sm:block">{icon}</span>
       </div>
-      <p className="mt-1.5 font-display text-2xl font-semibold text-ink sm:mt-2 sm:text-3xl">{value}</p>
+      <p className="mt-1.5 font-display text-2xl font-semibold tabular-nums text-ink sm:mt-2 sm:text-3xl">{value}</p>
     </div>
   );
 }

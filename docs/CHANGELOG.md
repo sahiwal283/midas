@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.53.0 (2026-08-19)
+
+### UI: one professional system across every page
+- List pages, queues, reports, settings, and detail views now share Midas navy / gold / cream instead of leftover Tailwind gray, teal, and blue.
+- Shared page headers, panels, table headers, and primary buttons. Amounts use tabular figures. Status badges stay in the brand palette (amber only for attention).
+- Charts use the same navy–gold categorical series. Checkmarks dropped from status labels.
+
 ## 0.52.2 (2026-08-19)
 
 ### Sidebar: drop Add Transaction

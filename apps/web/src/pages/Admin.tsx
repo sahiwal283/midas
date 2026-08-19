@@ -11,6 +11,7 @@ import { useCollapsibleTree } from '../lib/useCollapsibleTree';
 import { ChartOfAccountsSection } from './settings/ChartOfAccountsSection';
 import { ClosedPeriodsSection } from './settings/ClosedPeriodsSection';
 import { UsersSection } from './settings/UsersSection';
+import { PageHeader } from '../components/PageHeader';
 
 type Section = 'account' | 'companies' | 'users' | 'categories' | 'chart-of-accounts' | 'payment-methods' | 'budgets' | 'closed-periods' | 'connections' | 'audit';
 
@@ -56,14 +57,14 @@ function defaultSectionForRole(role: string | undefined): Section {
   return 'account';
 }
 
-const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2';
+const inputCls = 'w-full rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2';
 
 function ErrorPanel({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   if (!message) return null;
   return (
-    <div className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
       <span>{message}</span>
-      <button onClick={onDismiss} className="shrink-0 text-xs text-red-500 underline hover:text-red-700">
+      <button onClick={onDismiss} className="shrink-0 text-xs text-danger underline hover:text-danger">
         Dismiss
       </button>
     </div>
@@ -79,8 +80,8 @@ export function Admin() {
   const activeSection = allowedSections.has(section) ? section : defaultSectionForRole(user?.role);
 
   return (
-    <div className="p-4 lg:p-8">
-      <h1 className="mb-6 font-display text-3xl font-semibold text-ink">Settings</h1>
+    <div className="page">
+      <PageHeader title="Settings" />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:gap-8">
         {/* Grouped section nav: horizontal chip strip on phones, grouped column ≥lg */}
@@ -94,7 +95,7 @@ export function Admin() {
                   className={`min-h-11 shrink-0 whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors ${
                     activeSection === item.id
                       ? 'border-brand-200 bg-brand-50 text-brand-700'
-                      : 'border-gray-200 bg-white text-gray-600 hover:text-gray-900'
+                      : 'border-ink/10 bg-white text-charcoal/70 hover:text-ink'
                   }`}
                 >
                   {item.label}
@@ -102,10 +103,10 @@ export function Admin() {
               ))}
             </div>
           </div>
-          <div className="hidden space-y-5 rounded-xl border border-gray-200 bg-white p-4 lg:block">
+          <div className="hidden space-y-5 rounded-xl border border-ink/10 bg-white p-4 lg:block">
             {navGroups.map((group) => (
               <div key={group.label}>
-                <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-charcoal/40">
                   {group.label}
                 </p>
                 <div className="space-y-0.5">
@@ -116,7 +117,7 @@ export function Admin() {
                       className={`block w-full rounded-lg px-2 py-1.5 text-left text-sm font-medium transition-colors ${
                         activeSection === item.id
                           ? 'bg-brand-50 text-brand-700'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          : 'text-charcoal/70 hover:bg-ink/[0.03] hover:text-ink'
                       }`}
                     >
                       {item.label}
@@ -178,11 +179,11 @@ function CompaniesTab() {
     onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Update failed'),
   });
 
-  if (isLoading) return <div className="text-sm text-gray-400">Loading…</div>;
+  if (isLoading) return <div className="text-sm text-charcoal/40">Loading…</div>;
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted">
         Companies appear in the expense form's Company picker. Companies with Zoho off never sync to Zoho —
         their expenses always go to the accountant.
       </p>
@@ -194,28 +195,28 @@ function CompaniesTab() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="New company name"
-          className="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none sm:w-64 lg:py-2"
+          className="w-full rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none sm:w-64 lg:py-2"
         />
         <button
           onClick={() => createMutation.mutate()}
           disabled={!name.trim() || createMutation.isPending}
-          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
+          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0"
         >
           Add Company
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-ink/10 bg-white">
         {/* Mobile cards */}
-        <div className="divide-y divide-gray-100 md:hidden">
+        <div className="divide-y divide-ink/5 md:hidden">
           {companies.map((c: any) => (
             <div key={c.id} className="space-y-3 p-4">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-gray-900">{c.name}</span>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.zohoEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                <span className="font-medium text-ink">{c.name}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.zohoEnabled ? 'bg-success/15 text-success' : 'bg-brand-50 text-charcoal/70'}`}>
                   {c.zohoEnabled ? 'Syncs to Zoho' : 'No Zoho'}
                 </span>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.isActive ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'}`}>
                   {c.isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
@@ -223,7 +224,7 @@ function CompaniesTab() {
                 <button
                   onClick={() => patchMutation.mutate({ id: c.id, zohoEnabled: !c.zohoEnabled })}
                   disabled={patchMutation.isPending}
-                  className="min-h-11 flex-1 rounded border border-gray-200 bg-gray-50 px-2.5 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                  className="min-h-11 flex-1 rounded border border-ink/10 bg-cream px-2.5 text-xs font-medium text-charcoal/70 hover:bg-brand-50 disabled:opacity-40"
                 >
                   {c.zohoEnabled ? 'Disable Zoho' : 'Enable Zoho'}
                 </button>
@@ -232,8 +233,8 @@ function CompaniesTab() {
                   disabled={patchMutation.isPending}
                   className={`min-h-11 flex-1 rounded border px-2.5 text-xs font-medium disabled:opacity-40 ${
                     c.isActive
-                      ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                      : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+                      ? 'border-danger/25 bg-danger/10 text-danger hover:bg-red-100'
+                      : 'border-success/30 bg-success/10 text-success hover:bg-success/15'
                   }`}
                 >
                   {c.isActive ? 'Deactivate' : 'Reactivate'}
@@ -244,24 +245,24 @@ function CompaniesTab() {
         </div>
         <table className="hidden w-full text-sm md:table">
           <thead>
-            <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+            <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-muted">
               <th className="px-5 py-3">Name</th>
               <th className="px-5 py-3">Zoho</th>
               <th className="px-5 py-3">Status</th>
               <th className="px-5 py-3">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-ink/5">
             {companies.map((c: any) => (
-              <tr key={c.id} className="hover:bg-gray-50">
-                <td className="px-5 py-3 font-medium text-gray-900">{c.name}</td>
+              <tr key={c.id} className="hover:bg-ink/[0.03]">
+                <td className="px-5 py-3 font-medium text-ink">{c.name}</td>
                 <td className="px-5 py-3">
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.zohoEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.zohoEnabled ? 'bg-success/15 text-success' : 'bg-brand-50 text-charcoal/70'}`}>
                     {c.zohoEnabled ? 'Syncs to Zoho' : 'No Zoho'}
                   </span>
                 </td>
                 <td className="px-5 py-3">
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.isActive ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'}`}>
                     {c.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </td>
@@ -270,7 +271,7 @@ function CompaniesTab() {
                     <button
                       onClick={() => patchMutation.mutate({ id: c.id, zohoEnabled: !c.zohoEnabled })}
                       disabled={patchMutation.isPending}
-                      className="rounded border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                      className="rounded border border-ink/10 bg-cream px-2.5 py-1 text-xs font-medium text-charcoal/70 hover:bg-brand-50 disabled:opacity-40"
                     >
                       {c.zohoEnabled ? 'Disable Zoho' : 'Enable Zoho'}
                     </button>
@@ -279,8 +280,8 @@ function CompaniesTab() {
                       disabled={patchMutation.isPending}
                       className={`rounded border px-2.5 py-1 text-xs font-medium disabled:opacity-40 ${
                         c.isActive
-                          ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                          : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+                          ? 'border-danger/25 bg-danger/10 text-danger hover:bg-red-100'
+                          : 'border-success/30 bg-success/10 text-success hover:bg-success/15'
                       }`}
                     >
                       {c.isActive ? 'Deactivate' : 'Reactivate'}
@@ -337,7 +338,7 @@ function CategoriesTab() {
     return categories.filter((c) => !blocked.has(c.id));
   };
 
-  if (isLoading) return <div className="text-sm text-gray-400">Loading…</div>;
+  if (isLoading) return <div className="text-sm text-charcoal/40">Loading…</div>;
 
   return (
     <div className="space-y-4">
@@ -347,12 +348,12 @@ function CategoriesTab() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="New category name"
-          className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+          className="w-64 rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
         />
         <select
           value={newParent}
           onChange={(e) => setNewParent(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+          className="rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
         >
           <option value="">— top level —</option>
           {ordered.map(({ cat, depth }) => (
@@ -362,7 +363,7 @@ function CategoriesTab() {
         <button
           onClick={() => addMutation.mutate()}
           disabled={!name.trim()}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60"
         >
           Add
         </button>
@@ -371,14 +372,14 @@ function CategoriesTab() {
         <button onClick={expandAll} className="text-brand-600 underline hover:text-brand-700">Expand all</button>
         <button onClick={collapseAll} className="text-brand-600 underline hover:text-brand-700">Collapse all</button>
       </div>
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <div className="rounded-xl border border-ink/10 bg-white">
         {rows.map(({ cat, depth, hasChildren, collapsed, descendantCount }) => (
-          <div key={cat.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-3 last:border-0">
+          <div key={cat.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/5 px-5 py-3 last:border-0">
             <div className="flex items-center gap-1.5" style={{ paddingLeft: depth * 20 }}>
               {hasChildren ? (
                 <button
                   onClick={() => toggle(cat.id)}
-                  className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                  className="rounded p-0.5 text-charcoal/40 hover:bg-brand-50 hover:text-charcoal/70"
                   aria-label={collapsed ? `Expand ${cat.name}` : `Collapse ${cat.name}`}
                   aria-expanded={!collapsed}
                 >
@@ -388,20 +389,20 @@ function CategoriesTab() {
                 <span className="inline-block w-5" />
               )}
               <div>
-                <p className="font-medium text-gray-900">
+                <p className="font-medium text-ink">
                   {cat.name}
                   {hasChildren && collapsed && (
-                    <span className="ml-2 text-xs font-normal text-gray-400">{descendantCount}</span>
+                    <span className="ml-2 text-xs font-normal text-charcoal/40">{descendantCount}</span>
                   )}
                 </p>
-                {cat.description && <p className="text-xs text-gray-400">{cat.description}</p>}
+                {cat.description && <p className="text-xs text-charcoal/40">{cat.description}</p>}
               </div>
             </div>
             <div className="flex items-center gap-2">
               <select
                 value={cat.parentId ?? ''}
                 onChange={(e) => patchMutation.mutate({ id: cat.id, parentId: e.target.value || null })}
-                className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 focus:border-brand-500 focus:outline-none"
+                className="rounded-lg border border-ink/10 px-2 py-1 text-xs text-charcoal/70 focus:border-brand-500 focus:outline-none"
                 title="Parent category"
               >
                 <option value="">— top level —</option>
@@ -411,7 +412,7 @@ function CategoriesTab() {
               </select>
               <button
                 onClick={() => patchMutation.mutate({ id: cat.id, isActive: !cat.isActive })}
-                className={`rounded-full px-2.5 py-0.5 text-xs ${cat.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+                className={`rounded-full px-2.5 py-0.5 text-xs ${cat.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}
                 title={cat.isActive ? 'Click to hide (hides whole subtree from pickers)' : 'Click to activate'}
               >
                 {cat.isActive ? 'Active' : 'Hidden'}
@@ -420,7 +421,7 @@ function CategoriesTab() {
           </div>
         ))}
       </div>
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-charcoal/40">
         Hiding a category hides its whole subtree from pickers. Existing expenses keep their category either way.
       </p>
     </div>
@@ -476,14 +477,14 @@ function AuditTab() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted">
         Immutable, append-only record of every significant action. Newest first.
       </p>
 
       {/* Filter bar */}
-      <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 rounded-xl border border-ink/10 bg-white p-4 sm:grid-cols-3 lg:grid-cols-5">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">Entity type</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/70">Entity type</label>
           <input
             list="audit-entity-types"
             value={filters.entityType}
@@ -496,7 +497,7 @@ function AuditTab() {
           </datalist>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">Action prefix</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/70">Action prefix</label>
           <input
             value={filters.action}
             onChange={(e) => setFilter('action', e.target.value)}
@@ -505,15 +506,15 @@ function AuditTab() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">From</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/70">From</label>
           <input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} className={inputCls} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">To</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/70">To</label>
           <input type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} className={inputCls} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">Search</label>
+          <label className="mb-1 block text-xs font-medium text-charcoal/70">Search</label>
           <input
             value={filters.search}
             onChange={(e) => setFilter('search', e.target.value)}
@@ -524,30 +525,30 @@ function AuditTab() {
       </div>
 
       {/* Results */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-ink/10 bg-white">
         {isLoading ? (
-          <div className="px-6 py-12 text-center text-sm text-gray-400">Loading…</div>
+          <div className="px-6 py-12 text-center text-sm text-charcoal/40">Loading…</div>
         ) : isError ? (
-          <div className="px-6 py-12 text-center text-sm text-red-600">Could not load the audit log.</div>
+          <div className="px-6 py-12 text-center text-sm text-danger">Could not load the audit log.</div>
         ) : entries.length === 0 ? (
-          <div className="px-6 py-12 text-center text-sm text-gray-400">No audit entries match these filters.</div>
+          <div className="px-6 py-12 text-center text-sm text-charcoal/40">No audit entries match these filters.</div>
         ) : (
           <>
             {/* Mobile cards */}
-            <div className="divide-y divide-gray-100 md:hidden">
+            <div className="divide-y divide-ink/5 md:hidden">
               {entries.map((e) => (
                 <div key={e.id} className="space-y-1 p-4">
-                  <p className="text-sm font-medium text-gray-900">
-                    {e.actorName ?? <span className="font-normal text-gray-400">system</span>}
+                  <p className="text-sm font-medium text-ink">
+                    {e.actorName ?? <span className="font-normal text-charcoal/40">system</span>}
                   </p>
-                  <p className="break-all font-mono text-xs text-gray-800">{e.action}</p>
-                  <p className="text-xs text-gray-600">
+                  <p className="break-all font-mono text-xs text-ink">{e.action}</p>
+                  <p className="text-xs text-charcoal/70">
                     <span className="font-medium">{e.entityType}</span>
-                    <span className="ml-1 font-mono text-gray-400" title={e.entityId}>
+                    <span className="ml-1 font-mono text-charcoal/40" title={e.entityId}>
                       {e.entityId.length > 12 ? `${e.entityId.slice(0, 12)}…` : e.entityId}
                     </span>
                   </p>
-                  <p className="text-xs text-gray-500">{new Date(e.createdAt).toLocaleString()}</p>
+                  <p className="text-xs text-muted">{new Date(e.createdAt).toLocaleString()}</p>
                   {(e.before || e.after || e.metadata) ? (
                     <details>
                       <summary className="cursor-pointer select-none py-1.5 text-xs text-brand-700 hover:underline">View details</summary>
@@ -563,7 +564,7 @@ function AuditTab() {
             </div>
             <table className="hidden w-full text-sm md:table">
             <thead>
-              <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-muted">
                 <th className="px-4 py-3">When</th>
                 <th className="px-4 py-3">Actor</th>
                 <th className="px-4 py-3">Action</th>
@@ -571,15 +572,15 @@ function AuditTab() {
                 <th className="px-4 py-3">Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-ink/5">
               {entries.map((e) => (
-                <tr key={e.id} className="align-top hover:bg-gray-50">
-                  <td className="whitespace-nowrap px-4 py-3 text-gray-600">{new Date(e.createdAt).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-gray-600">{e.actorName ?? <span className="text-gray-400">system</span>}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-800">{e.action}</td>
-                  <td className="px-4 py-3 text-gray-600">
+                <tr key={e.id} className="align-top hover:bg-ink/[0.03]">
+                  <td className="whitespace-nowrap px-4 py-3 text-charcoal/70">{new Date(e.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-charcoal/70">{e.actorName ?? <span className="text-charcoal/40">system</span>}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-ink">{e.action}</td>
+                  <td className="px-4 py-3 text-charcoal/70">
                     <span className="font-medium">{e.entityType}</span>
-                    <span className="ml-1 font-mono text-xs text-gray-400" title={e.entityId}>
+                    <span className="ml-1 font-mono text-xs text-charcoal/40" title={e.entityId}>
                       {e.entityId.length > 12 ? `${e.entityId.slice(0, 12)}…` : e.entityId}
                     </span>
                   </td>
@@ -594,7 +595,7 @@ function AuditTab() {
                         </div>
                       </details>
                     ) : (
-                      <span className="text-xs text-gray-300">—</span>
+                      <span className="text-xs text-charcoal/25">—</span>
                     )}
                   </td>
                 </tr>
@@ -606,7 +607,7 @@ function AuditTab() {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-gray-600">
+      <div className="flex items-center justify-between text-sm text-charcoal/70">
         <span>
           {total} entr{total === 1 ? 'y' : 'ies'}{total > 0 ? ` · page ${page} of ${lastPage}` : ''}
         </span>
@@ -614,14 +615,14 @@ function AuditTab() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
-            className="min-h-11 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 lg:min-h-0"
+            className="min-h-11 rounded-lg border border-ink/15 px-3 py-1.5 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03] disabled:opacity-40 lg:min-h-0"
           >
             ← Prev
           </button>
           <button
             onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
             disabled={page >= lastPage}
-            className="min-h-11 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 lg:min-h-0"
+            className="min-h-11 rounded-lg border border-ink/15 px-3 py-1.5 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03] disabled:opacity-40 lg:min-h-0"
           >
             Next →
           </button>
@@ -634,8 +635,8 @@ function AuditTab() {
 function AuditJson({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-      <pre className="mt-0.5 max-h-48 overflow-auto rounded bg-gray-50 p-2 text-[11px] leading-relaxed text-gray-700">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-charcoal/40">{label}</p>
+      <pre className="mt-0.5 max-h-48 overflow-auto rounded bg-cream p-2 text-[11px] leading-relaxed text-charcoal/80">
         {JSON.stringify(value, null, 2)}
       </pre>
     </div>
@@ -692,7 +693,7 @@ function ConnectionsTab() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted">
         API keys allow other internal apps to call <code>/api/v1/ext/</code>. Empty scopes deny all Ext routes.
         Use app name <code>trade_show</code> with all scopes checked for the Trade Show BFF.
       </p>
@@ -702,24 +703,24 @@ function ConnectionsTab() {
           value={appName}
           onChange={(e) => setAppName(e.target.value)}
           placeholder="App name (e.g. trade_show)"
-          className="w-64 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+          className="w-64 rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
         />
         <button
           onClick={() => createMutation.mutate()}
           disabled={!appName.trim() || scopes.length === 0 || createMutation.isPending}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60"
         >
           Generate Key
         </button>
       </div>
-      <div className="flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-white p-3">
+      <div className="flex flex-wrap gap-3 rounded-lg border border-ink/10 bg-white p-3">
         {EXT_SCOPES.map((scope) => (
-          <label key={scope} className="flex items-center gap-1.5 text-xs text-gray-700">
+          <label key={scope} className="flex items-center gap-1.5 text-xs text-charcoal/80">
             <input
               type="checkbox"
               checked={scopes.includes(scope)}
               onChange={() => toggleScope(scope)}
-              className="rounded border-gray-300"
+              className="rounded border-ink/15"
             />
             {scope}
           </label>
@@ -733,23 +734,23 @@ function ConnectionsTab() {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <div className="rounded-xl border border-ink/10 bg-white">
         {connections.map((c: { id: string; appName: string; permissions?: string[]; isActive: boolean }) => (
-          <div key={c.id} className="flex items-center justify-between gap-4 border-b border-gray-100 px-5 py-3 last:border-0">
+          <div key={c.id} className="flex items-center justify-between gap-4 border-b border-ink/5 px-5 py-3 last:border-0">
             <div className="min-w-0">
-              <p className="font-medium text-gray-900">{c.appName}</p>
-              <p className="break-all text-xs text-gray-400">
+              <p className="font-medium text-ink">{c.appName}</p>
+              <p className="break-all text-xs text-charcoal/40">
                 {c.permissions?.length ? c.permissions.join(', ') : 'no scopes (all Ext calls denied)'}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <span className={`rounded-full px-2.5 py-0.5 text-xs ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs ${c.isActive ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'}`}>
                 {c.isActive ? 'Active' : 'Revoked'}
               </span>
               <button
                 type="button"
                 onClick={() => setVocabFor(vocabFor === c.id ? null : c.id)}
-                className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                className="rounded border border-ink/10 px-2 py-1 text-xs text-charcoal/70 hover:bg-ink/[0.03]"
               >
                 Categories
               </button>
@@ -757,7 +758,7 @@ function ConnectionsTab() {
                 type="button"
                 disabled={patchMutation.isPending}
                 onClick={() => patchMutation.mutate({ id: c.id, isActive: !c.isActive })}
-                className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                className="rounded border border-ink/10 px-2 py-1 text-xs text-charcoal/70 hover:bg-ink/[0.03] disabled:opacity-60"
               >
                 {c.isActive ? 'Revoke' : 'Activate'}
               </button>
@@ -827,26 +828,26 @@ function ConnectionCategories({ connectionId, appName, onClose }: {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="rounded-xl border border-ink/10 bg-white p-5">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h3 className="font-medium text-gray-900">Categories visible to {appName}</h3>
-          <p className="mt-0.5 text-xs text-gray-500">
+          <h3 className="font-medium text-ink">Categories visible to {appName}</h3>
+          <p className="mt-0.5 text-xs text-muted">
             {chosen.size === 0
               ? 'None selected — this app sees every active category.'
               : `${chosen.size} selected — this app sees only these.`}
           </p>
         </div>
-        <button onClick={onClose} className="text-xs text-gray-400 underline hover:text-gray-600">Close</button>
+        <button onClick={onClose} className="text-xs text-charcoal/40 underline hover:text-charcoal/70">Close</button>
       </div>
 
       <ErrorPanel message={error} onDismiss={() => setError('')} />
 
-      <div className="max-h-80 overflow-y-auto rounded-lg border border-gray-100">
+      <div className="max-h-80 overflow-y-auto rounded-lg border border-ink/5">
         {ordered.map(({ cat, depth }) => (
           <label
             key={cat.id}
-            className="flex cursor-pointer items-center gap-2 border-b border-gray-50 px-3 py-1.5 text-sm last:border-0 hover:bg-gray-50"
+            className="flex cursor-pointer items-center gap-2 border-b border-ink/5 px-3 py-1.5 text-sm last:border-0 hover:bg-ink/[0.03]"
             style={{ paddingLeft: 12 + depth * 18 }}
           >
             <input
@@ -855,7 +856,7 @@ function ConnectionCategories({ connectionId, appName, onClose }: {
               onChange={() => toggle(cat.id)}
               className="h-3.5 w-3.5"
             />
-            <span className={cat.isActive ? 'text-gray-800' : 'text-gray-400 line-through'}>{cat.name}</span>
+            <span className={cat.isActive ? 'text-ink' : 'text-charcoal/40 line-through'}>{cat.name}</span>
           </label>
         ))}
       </div>
@@ -864,13 +865,13 @@ function ConnectionCategories({ connectionId, appName, onClose }: {
         <button
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60"
         >
           Save
         </button>
         <button
           onClick={() => setSelected(new Set())}
-          className="text-xs text-gray-500 underline hover:text-gray-700"
+          className="text-xs text-muted underline hover:text-ink"
         >
           Clear all (unrestricted)
         </button>

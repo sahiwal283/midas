@@ -162,7 +162,7 @@ export function ChartOfAccountsSection() {
 
   if (zohoCompanies.length === 0) {
     return (
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted">
         No Zoho-enabled companies. Turn on Zoho for a company under Settings → Companies first.
       </p>
     );
@@ -170,34 +170,34 @@ export function ChartOfAccountsSection() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted">
         Link each Midas category to an account from this company's Zoho chart of accounts. Zoho account
         ids differ per company, so mappings are saved per company. A category left unmapped uses the
         nearest mapped parent above it.
       </p>
 
       {error && (
-        <div className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
           <span>{error}</span>
-          <button onClick={() => setError('')} className="shrink-0 text-xs text-red-500 underline hover:text-red-700">
+          <button onClick={() => setError('')} className="shrink-0 text-xs text-danger underline hover:text-danger">
             Dismiss
           </button>
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-gray-700" htmlFor="coa-company">Company</label>
+        <label className="text-sm font-medium text-charcoal/80" htmlFor="coa-company">Company</label>
         <select
           id="coa-company"
           value={company}
           onChange={(e) => setCompany(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
+          className="rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
         >
           {zohoCompanies.map((c) => (
             <option key={c.id} value={c.name}>{c.name}</option>
           ))}
         </select>
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-charcoal/40">
           {accountsLoading
             ? 'Loading Zoho accounts…'
             : `${accounts.length} Zoho accounts · ${mappedCount} mapped · ${Math.max(0, accounts.length - claimedCount)} still available`}
@@ -216,7 +216,7 @@ export function ChartOfAccountsSection() {
       </div>
 
       {syncResult && (
-        <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
+        <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
           {syncResult}
         </div>
       )}
@@ -232,17 +232,17 @@ export function ChartOfAccountsSection() {
       )}
 
       {/* Deep indentation can outgrow a phone screen — scroll inside this card, never the page */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-ink/10 bg-white">
         {rows.map(({ cat, depth, hasChildren, collapsed, descendantCount }) => {
           const mapped = mappedByCategory.get(cat.id) ?? '';
           const inherited = mapped ? null : inheritedFrom(cat.id);
           return (
-            <div key={cat.id} className="flex flex-wrap items-center gap-3 border-b border-gray-100 px-5 py-2.5 last:border-0">
+            <div key={cat.id} className="flex flex-wrap items-center gap-3 border-b border-ink/5 px-5 py-2.5 last:border-0">
               <div className="flex min-w-[16rem] flex-1 items-center gap-1.5" style={{ paddingLeft: depth * 20 }}>
                 {hasChildren ? (
                   <button
                     onClick={() => toggle(cat.id)}
-                    className="-m-3 rounded p-3.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 lg:m-0 lg:p-0.5"
+                    className="-m-3 rounded p-3.5 text-charcoal/40 hover:bg-brand-50 hover:text-charcoal/70 lg:m-0 lg:p-0.5"
                     aria-label={collapsed ? `Expand ${cat.name}` : `Collapse ${cat.name}`}
                     aria-expanded={!collapsed}
                   >
@@ -251,10 +251,10 @@ export function ChartOfAccountsSection() {
                 ) : (
                   <span className="inline-block w-5" />
                 )}
-                <span className={`text-sm ${cat.isActive ? 'text-gray-900' : 'text-gray-400 line-through'}`}>
+                <span className={`text-sm ${cat.isActive ? 'text-ink' : 'text-charcoal/40 line-through'}`}>
                   {cat.name}
                   {hasChildren && collapsed && (
-                    <span className="ml-2 text-xs text-gray-400">{descendantCount}</span>
+                    <span className="ml-2 text-xs text-charcoal/40">{descendantCount}</span>
                   )}
                 </span>
               </div>
@@ -275,23 +275,23 @@ export function ChartOfAccountsSection() {
               <div className="flex w-40 items-center justify-end gap-2">
                 {mapped ? (
                   <>
-                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">Mapped</span>
+                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">Mapped</span>
                     <button
                       onClick={() => clearMutation.mutate(cat.id)}
-                      className="inline-flex min-h-11 items-center px-1 text-xs text-gray-400 underline hover:text-gray-600 lg:min-h-0 lg:px-0"
+                      className="inline-flex min-h-11 items-center px-1 text-xs text-charcoal/40 underline hover:text-charcoal/70 lg:min-h-0 lg:px-0"
                     >
                       Clear
                     </button>
                   </>
                 ) : inherited ? (
                   <span
-                    className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600"
+                    className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-600"
                     title={`Uses ${accountName(inherited.accountId)} from ${inherited.name}`}
                   >
                     Inherited
                   </span>
                 ) : (
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Unmapped</span>
+                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-muted">Unmapped</span>
                 )}
               </div>
             </div>
@@ -299,7 +299,7 @@ export function ChartOfAccountsSection() {
         })}
       </div>
 
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-charcoal/40">
         A per-expense account chosen during accountant review always wins over these defaults.
       </p>
     </div>

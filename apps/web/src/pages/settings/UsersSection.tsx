@@ -16,14 +16,14 @@ export interface AdminUser extends User {
 
 const ROLES = ['user', 'accountant', 'admin', 'partner', 'developer'] as const;
 
-const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2';
+const inputCls = 'w-full rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2';
 
 function ErrorPanel({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   if (!message) return null;
   return (
-    <div className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
       <span>{message}</span>
-      <button onClick={onDismiss} className="shrink-0 text-xs text-red-500 underline hover:text-red-700">
+      <button onClick={onDismiss} className="shrink-0 text-xs text-danger underline hover:text-danger">
         Dismiss
       </button>
     </div>
@@ -41,7 +41,7 @@ function CopyButton({ text }: { text: string }) {
           setTimeout(() => setCopied(false), 2000);
         });
       }}
-      className="shrink-0 rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+      className="shrink-0 rounded border border-ink/15 bg-white px-2.5 py-1 text-xs font-medium text-charcoal/80 hover:bg-ink/[0.03]"
     >
       {copied ? 'Copied ✓' : 'Copy'}
     </button>
@@ -96,7 +96,7 @@ function authLabel(u: AdminUser): string {
 function AuthBadge({ user }: { user: AdminUser }) {
   return (
     <span
-      className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500"
+      className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted"
       title="How this user can sign in"
     >
       {authLabel(user)}
@@ -106,7 +106,7 @@ function AuthBadge({ user }: { user: AdminUser }) {
 
 function StatusPill({ active }: { active: boolean }) {
   return (
-    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${active ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'}`}>
       {active ? 'Active' : 'Inactive'}
     </span>
   );
@@ -253,7 +253,7 @@ export function UsersSection() {
   const allSelected = selectableUsers.length > 0 && selectableUsers.every((u) => selected.has(u.id));
   const selectedUsers = users.filter((u) => selected.has(u.id));
 
-  if (isLoading) return <div className="text-sm text-gray-400">Loading…</div>;
+  if (isLoading) return <div className="text-sm text-charcoal/40">Loading…</div>;
 
   return (
     <div className="space-y-5">
@@ -268,17 +268,17 @@ export function UsersSection() {
 
       {/* Header + actions */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-gray-500">{users.length} user{users.length !== 1 ? 's' : ''}</p>
+        <p className="text-sm text-muted">{users.length} user{users.length !== 1 ? 's' : ''}</p>
         <div className="flex gap-2">
           <button
             onClick={() => { setShowInvite((v) => !v); setShowCreate(false); setInviteError(''); }}
-            className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 lg:min-h-0"
+            className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 lg:min-h-0"
           >
             {showInvite ? 'Cancel' : 'Invite User'}
           </button>
           <button
             onClick={() => { setShowCreate((v) => !v); setShowInvite(false); setCreateError(''); }}
-            className="min-h-11 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 lg:min-h-0"
+            className="min-h-11 rounded-lg border border-ink/15 bg-white px-4 py-2 text-sm font-semibold text-charcoal/80 hover:bg-ink/[0.03] lg:min-h-0"
           >
             {showCreate ? 'Cancel' : '+ New User'}
           </button>
@@ -315,15 +315,15 @@ export function UsersSection() {
 
       {/* Invite user form */}
       {showInvite && (
-        <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-5">
-          <h3 className="text-sm font-semibold text-gray-700">Invite user</h3>
-          <p className="text-xs text-gray-500">
+        <div className="space-y-3 rounded-xl border border-ink/10 bg-cream p-5">
+          <h3 className="text-sm font-semibold text-charcoal/80">Invite user</h3>
+          <p className="text-xs text-muted">
             Creates the account without a password and returns a single-use invite link (valid 7 days).
             Email delivery isn't wired up yet — copy the link and share it yourself.
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Name</label>
               <input
                 value={inviteForm.name}
                 onChange={(e) => setInviteForm((f) => ({ ...f, name: e.target.value }))}
@@ -332,7 +332,7 @@ export function UsersSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Username</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Username</label>
               <input
                 value={inviteForm.username}
                 onChange={(e) => setInviteForm((f) => ({ ...f, username: e.target.value }))}
@@ -341,7 +341,7 @@ export function UsersSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Email</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Email</label>
               <input
                 value={inviteForm.email}
                 onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
@@ -351,7 +351,7 @@ export function UsersSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Role</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Role</label>
               <select
                 value={inviteForm.role}
                 onChange={(e) => setInviteForm((f) => ({ ...f, role: e.target.value }))}
@@ -363,11 +363,11 @@ export function UsersSection() {
               </select>
             </div>
           </div>
-          {inviteError && <p className="text-xs text-red-600">{inviteError}</p>}
+          {inviteError && <p className="text-xs text-danger">{inviteError}</p>}
           <button
             onClick={() => inviteMutation.mutate(inviteForm)}
             disabled={inviteMutation.isPending || !inviteForm.name || !inviteForm.email}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60"
           >
             {inviteMutation.isPending ? 'Creating invite…' : 'Create Invite'}
           </button>
@@ -376,11 +376,11 @@ export function UsersSection() {
 
       {/* Create user form (with password) */}
       {showCreate && (
-        <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-5">
-          <h3 className="text-sm font-semibold text-gray-700">Create user</h3>
+        <div className="space-y-3 rounded-xl border border-ink/10 bg-cream p-5">
+          <h3 className="text-sm font-semibold text-charcoal/80">Create user</h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Name</label>
               <input
                 value={createForm.name}
                 onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
@@ -389,7 +389,7 @@ export function UsersSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Username</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Username</label>
               <input
                 value={createForm.username}
                 onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))}
@@ -398,8 +398,8 @@ export function UsersSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">
-                Email <span className="font-normal text-gray-400">(optional)</span>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">
+                Email <span className="font-normal text-charcoal/40">(optional)</span>
               </label>
               <input
                 value={createForm.email}
@@ -410,7 +410,7 @@ export function UsersSection() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Role</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Role</label>
               <select
                 value={createForm.role}
                 onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value }))}
@@ -422,7 +422,7 @@ export function UsersSection() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Initial password</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Initial password</label>
               <input
                 value={createForm.password}
                 onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
@@ -432,11 +432,11 @@ export function UsersSection() {
               />
             </div>
           </div>
-          {createError && <p className="text-xs text-red-600">{createError}</p>}
+          {createError && <p className="text-xs text-danger">{createError}</p>}
           <button
             onClick={() => createMutation.mutate(createForm)}
             disabled={createMutation.isPending || !createForm.name || !createForm.email || !createForm.password}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60"
           >
             {createMutation.isPending ? 'Creating…' : 'Create User'}
           </button>
@@ -449,37 +449,37 @@ export function UsersSection() {
           <span className="text-sm font-medium text-brand-800">{selected.size} selected</span>
           <button
             onClick={() => setBulkAction('deactivate')}
-            className="rounded border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+            className="rounded border border-danger/25 bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger hover:bg-red-100"
           >
             Deactivate
           </button>
           <button
             onClick={() => setBulkAction('reactivate')}
-            className="rounded border border-green-200 bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-100"
+            className="rounded border border-success/30 bg-success/10 px-2.5 py-1 text-xs font-medium text-success hover:bg-success/15"
           >
             Reactivate
           </button>
-          <button onClick={() => setSelected(new Set())} className="text-xs text-gray-500 underline hover:text-gray-700">
+          <button onClick={() => setSelected(new Set())} className="text-xs text-muted underline hover:text-ink">
             Clear selection
           </button>
         </div>
       )}
 
       {/* User table */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-ink/10 bg-white">
         {/* Mobile cards */}
         <div className="md:hidden">
-          <label className="flex min-h-11 cursor-pointer items-center gap-2 border-b border-gray-100 px-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 border-b border-ink/5 px-4 text-xs font-semibold uppercase tracking-wider text-muted">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={() => setSelected(allSelected ? new Set() : new Set(selectableUsers.map((u) => u.id)))}
-              className="rounded border-gray-300"
+              className="rounded border-ink/15"
               aria-label="Select all users"
             />
             Select all
           </label>
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-ink/5">
             {users.map((u) => (
               <div key={u.id} className="flex items-center gap-1 p-4 pl-2">
                 {/* Oversized label = 44px tap area; toggles selection only */}
@@ -490,12 +490,12 @@ export function UsersSection() {
                     onChange={() => toggleSelected(u.id)}
                     disabled={u.id === currentUser?.id}
                     title={u.id === currentUser?.id ? 'You cannot bulk-edit your own account' : ''}
-                    className="rounded border-gray-300 disabled:opacity-30"
+                    className="rounded border-ink/15 disabled:opacity-30"
                     aria-label={`Select ${u.name}`}
                   />
                 </label>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-900">
+                  <p className="font-medium text-ink">
                     {u.name}
                     {duplicateNames.has(u.name.trim().toLowerCase().replace(/\s+/g, ' ')) && (
                       <span
@@ -506,16 +506,16 @@ export function UsersSection() {
                       </span>
                     )}
                   </p>
-                  <p className="truncate text-xs text-gray-500">{u.email ?? '—'}</p>
+                  <p className="truncate text-xs text-muted">{u.email ?? '—'}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs capitalize text-gray-600">{u.role}</span>
+                    <span className="text-xs capitalize text-charcoal/70">{u.role}</span>
                     <AuthBadge user={u} />
                     <StatusPill active={u.isActive} />
                   </div>
                 </div>
                 <button
                   onClick={() => setDetailId(u.id)}
-                  className="min-h-11 shrink-0 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  className="min-h-11 shrink-0 rounded-lg border border-ink/15 bg-white px-3 text-xs font-semibold text-charcoal/80 hover:bg-ink/[0.03]"
                 >
                   Manage
                 </button>
@@ -525,13 +525,13 @@ export function UsersSection() {
         </div>
         <table className="hidden w-full text-sm md:table">
           <thead>
-            <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+            <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-muted">
               <th className="px-4 py-3">
                 <input
                   type="checkbox"
                   checked={allSelected}
                   onChange={() => setSelected(allSelected ? new Set() : new Set(selectableUsers.map((u) => u.id)))}
-                  className="rounded border-gray-300"
+                  className="rounded border-ink/15"
                   aria-label="Select all users"
                 />
               </th>
@@ -543,9 +543,9 @@ export function UsersSection() {
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-ink/5">
             {users.map((u) => (
-              <tr key={u.id} className="hover:bg-gray-50">
+              <tr key={u.id} className="hover:bg-ink/[0.03]">
                 <td className="px-4 py-3">
                   <input
                     type="checkbox"
@@ -553,11 +553,11 @@ export function UsersSection() {
                     onChange={() => toggleSelected(u.id)}
                     disabled={u.id === currentUser?.id}
                     title={u.id === currentUser?.id ? 'You cannot bulk-edit your own account' : ''}
-                    className="rounded border-gray-300 disabled:opacity-30"
+                    className="rounded border-ink/15 disabled:opacity-30"
                     aria-label={`Select ${u.name}`}
                   />
                 </td>
-                <td className="px-4 py-3 font-medium text-gray-900">
+                <td className="px-4 py-3 font-medium text-ink">
                   {u.name}
                   {duplicateNames.has(u.name.trim().toLowerCase().replace(/\s+/g, ' ')) && (
                     <span
@@ -567,10 +567,10 @@ export function UsersSection() {
                       possible duplicate
                     </span>
                   )}
-                  {u.department && <span className="ml-2 text-xs font-normal text-gray-400">{u.department}</span>}
+                  {u.department && <span className="ml-2 text-xs font-normal text-charcoal/40">{u.department}</span>}
                 </td>
-                <td className="px-4 py-3 text-gray-600">{u.email ?? <span className="text-gray-300">—</span>}</td>
-                <td className="px-4 py-3 text-gray-600">
+                <td className="px-4 py-3 text-charcoal/70">{u.email ?? <span className="text-charcoal/25">—</span>}</td>
+                <td className="px-4 py-3 text-charcoal/70">
                   <span className="capitalize">{u.role}</span>
                   <span className="ml-2">
                     <AuthBadge user={u} />
@@ -579,13 +579,13 @@ export function UsersSection() {
                 <td className="px-4 py-3">
                   <StatusPill active={u.isActive} />
                 </td>
-                <td className="px-4 py-3 text-gray-600" title={u.lastLoginAt ?? undefined}>
+                <td className="px-4 py-3 text-charcoal/70" title={u.lastLoginAt ?? undefined}>
                   {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : '—'}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => setDetailId(u.id)}
-                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                    className="rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-xs font-semibold text-charcoal/80 shadow-sm hover:bg-ink/[0.03]"
                   >
                     Manage
                   </button>
@@ -630,7 +630,7 @@ export function UsersSection() {
             ? 'Deactivated users keep all their data but can no longer sign in.'
             : 'Reactivated users will be able to sign in again.'}
         </p>
-        <ul className="mt-2 max-h-32 list-inside list-disc overflow-y-auto text-xs text-gray-500">
+        <ul className="mt-2 max-h-32 list-inside list-disc overflow-y-auto text-xs text-muted">
           {selectedUsers.slice(0, 8).map((u) => <li key={u.id}>{u.name}</li>)}
           {selectedUsers.length > 8 && <li>…and {selectedUsers.length - 8} more</li>}
         </ul>
@@ -668,7 +668,7 @@ export function UsersSection() {
         onCancel={() => setPurgeTarget(null)}
       >
         <p>This user still owns:</p>
-        <ul className="mt-2 list-inside list-disc text-sm text-gray-700">
+        <ul className="mt-2 list-inside list-disc text-sm text-charcoal/80">
           {Object.entries({
             expenses: 'expense(s)',
             receipts: 'receipt(s)',
@@ -679,7 +679,7 @@ export function UsersSection() {
             return n > 0 ? <li key={key}>{n} {label}</li> : null;
           })}
         </ul>
-        <p className="mt-2 font-medium text-red-700">
+        <p className="mt-2 font-medium text-danger">
           Deleting will permanently remove the user and everything listed above. This cannot be undone.
         </p>
       </ConfirmModal>
@@ -801,22 +801,22 @@ function UserDetailModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-ink/5 px-6 py-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-gray-900">{user.name}</h2>
+              <h2 className="text-lg font-bold text-ink">{user.name}</h2>
               <StatusPill active={user.isActive} />
               <AuthBadge user={user} />
             </div>
-            <p className="mt-0.5 truncate text-sm text-gray-500">
+            <p className="mt-0.5 truncate text-sm text-muted">
               {user.email ?? 'No email'}
               {user.username ? ` · @${user.username}` : ''}
             </p>
-            <p className="mt-0.5 text-xs text-gray-400">
+            <p className="mt-0.5 text-xs text-charcoal/40">
               Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'never'}
             </p>
           </div>
-          <button onClick={onClose} className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">
+          <button onClick={onClose} className="rounded p-1.5 text-charcoal/40 hover:bg-brand-50 hover:text-charcoal/70" aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -838,20 +838,20 @@ function UserDetailModal({
 
           {/* Profile */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Profile</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Profile</h3>
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Name</label>
                 <input value={form.name} onChange={(e) => set('name', e.target.value)} className={inputCls} />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Role</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Role</label>
                 <select
                   value={form.role}
                   onChange={(e) => set('role', e.target.value)}
                   disabled={isSelf}
                   title={isSelf ? 'You cannot change your own role' : ''}
-                  className={`${inputCls} capitalize disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400`}
+                  className={`${inputCls} capitalize disabled:cursor-not-allowed disabled:bg-cream disabled:text-charcoal/40`}
                 >
                   {ROLES.map((r) => (
                     <option key={r} value={r}>{r}</option>
@@ -859,26 +859,26 @@ function UserDetailModal({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Authentik username</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Authentik username</label>
                 <input value={form.ssoUsername} onChange={(e) => set('ssoUsername', e.target.value)} placeholder="e.g. jsmith" className={inputCls} />
-                <p className="mt-1 text-[11px] text-gray-400">
+                <p className="mt-1 text-[11px] text-charcoal/40">
                   Links this person to their SSO account before their first login, so they are not created twice.
                 </p>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Department</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Department</label>
                 <input value={form.department} onChange={(e) => set('department', e.target.value)} placeholder="e.g. Marketing" className={inputCls} />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Employee ID</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Employee ID</label>
                 <input value={form.employeeId} onChange={(e) => set('employeeId', e.target.value)} placeholder="e.g. E-1042" className={inputCls} />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Cost center</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Cost center</label>
                 <input value={form.costCenter} onChange={(e) => set('costCenter', e.target.value)} placeholder="e.g. CC-200" className={inputCls} />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Manager</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Manager</label>
                 <select value={form.managerId} onChange={(e) => set('managerId', e.target.value)} className={inputCls}>
                   <option value="">— No manager —</option>
                   {allUsers.filter((u) => u.id !== user.id).map((u) => (
@@ -887,7 +887,7 @@ function UserDetailModal({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Default company</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Default company</label>
                 <select value={form.defaultZohoEntity} onChange={(e) => set('defaultZohoEntity', e.target.value)} className={inputCls}>
                   <option value="">— No default —</option>
                   {companies.map((c) => (
@@ -896,7 +896,7 @@ function UserDetailModal({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Default payment method</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Default payment method</label>
                 <select value={form.defaultPaymentMethodId} onChange={(e) => set('defaultPaymentMethodId', e.target.value)} className={inputCls}>
                   <option value="">— No default —</option>
                   {paymentMethods.map((pm) => (
@@ -908,7 +908,7 @@ function UserDetailModal({
             <button
               onClick={() => saveMutation.mutate()}
               disabled={saveMutation.isPending || !form.name.trim()}
-              className="mt-3 min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60 sm:min-h-0"
+              className="mt-3 min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60 sm:min-h-0"
             >
               {saveMutation.isPending ? 'Saving…' : 'Save changes'}
             </button>
@@ -916,14 +916,14 @@ function UserDetailModal({
 
           {/* Account actions */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Account</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Account</h3>
             <div className="mt-2 flex flex-wrap gap-2">
               {user.isActive ? (
                 <button
                   onClick={() => toggleActiveMutation.mutate()}
                   disabled={isSelf || toggleActiveMutation.isPending}
                   title={isSelf ? 'Cannot deactivate your own account' : 'Blocks sign-in; keeps all data'}
-                  className={`${actionBtnCls} border-red-200 bg-white text-red-700 hover:bg-red-50`}
+                  className={`${actionBtnCls} border-red-200 bg-white text-danger hover:bg-danger/10`}
                 >
                   Deactivate
                 </button>
@@ -931,7 +931,7 @@ function UserDetailModal({
                 <button
                   onClick={() => toggleActiveMutation.mutate()}
                   disabled={toggleActiveMutation.isPending}
-                  className={`${actionBtnCls} border-green-200 bg-white text-green-700 hover:bg-green-50`}
+                  className={`${actionBtnCls} border-success/30 bg-white text-success hover:bg-success/10`}
                 >
                   Reactivate
                 </button>
@@ -940,7 +940,7 @@ function UserDetailModal({
                 onClick={() => resetMutation.mutate()}
                 disabled={resetMutation.isPending}
                 title="Generates a temporary local password, shown once"
-                className={`${actionBtnCls} border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}
+                className={`${actionBtnCls} border-ink/15 bg-white text-charcoal/80 hover:bg-ink/[0.03]`}
               >
                 {resetMutation.isPending ? 'Resetting…' : 'Reset password'}
               </button>
@@ -958,15 +958,15 @@ function UserDetailModal({
 
           {/* Danger zone */}
           {!isSelf && (
-            <div className="rounded-lg border border-red-200 bg-red-50/50 px-4 py-3">
+            <div className="rounded-lg border border-danger/25 bg-danger/10/50 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-red-800">Delete this user</p>
-                  <p className="text-xs text-red-600">Deactivating is usually the right choice — deletion cannot be undone.</p>
+                  <p className="text-sm font-semibold text-danger">Delete this user</p>
+                  <p className="text-xs text-danger">Deactivating is usually the right choice — deletion cannot be undone.</p>
                 </div>
                 <button
                   onClick={onDelete}
-                  className="min-h-11 rounded-lg bg-red-600 px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-red-700 sm:min-h-0"
+                  className="min-h-11 rounded-lg bg-danger px-3.5 py-1.5 text-sm font-semibold text-cream hover:bg-danger sm:min-h-0"
                 >
                   Delete…
                 </button>

@@ -23,7 +23,7 @@ export function ReceiptPreview({
       <iframe
         title={receipt.filename}
         src={url}
-        className={`w-full rounded-lg border border-gray-200 bg-white ${className || 'h-96'}`}
+        className={`w-full rounded-lg border border-ink/10 bg-white ${className || 'h-96'}`}
       />
     );
   }
@@ -33,7 +33,7 @@ export function ReceiptPreview({
       <img
         src={url}
         alt={receipt.filename}
-        className={`mx-auto max-h-[28rem] w-auto max-w-full rounded-lg border border-gray-200 object-contain ${className}`}
+        className={`mx-auto max-h-[28rem] w-auto max-w-full rounded-lg border border-ink/10 object-contain ${className}`}
       />
     </a>
   );

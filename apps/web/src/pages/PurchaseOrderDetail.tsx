@@ -230,7 +230,7 @@ export function PurchaseOrderDetail() {
                 <dt className="text-xs font-semibold uppercase tracking-wider text-charcoal/45">Price</dt>
                 <dd className="text-right">${Number(li.unitPrice).toFixed(2)}</dd>
                 <dt className="text-xs font-semibold uppercase tracking-wider text-charcoal/45">Total</dt>
-                <dd className="text-right font-medium">${Number(li.total).toFixed(2)}</dd>
+                <dd className="text-right font-medium tabular-nums">${Number(li.total).toFixed(2)}</dd>
               </dl>
             </div>
           );
@@ -240,14 +240,14 @@ export function PurchaseOrderDetail() {
       {/* Desktop: read-only table */}
       <div className="mb-6 hidden overflow-x-auto rounded-xl border border-ink/10 bg-white shadow-panel md:block">
         <table className="min-w-full text-sm">
-          <thead className="bg-cream text-left">
+          <thead className="bg-brand-50/80 text-left">
             <tr>
-              {editable && <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-charcoal/45">Zoho item</th>}
-              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-charcoal/45">Item</th>
-              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-charcoal/45">Qty</th>
-              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-charcoal/45">Unit</th>
-              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-charcoal/45">Price</th>
-              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-charcoal/45">Total</th>
+              {editable && <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Zoho item</th>}
+              <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Item</th>
+              <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Qty</th>
+              <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Unit</th>
+              <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Price</th>
+              <th className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Total</th>
             </tr>
           </thead>
           <tbody>

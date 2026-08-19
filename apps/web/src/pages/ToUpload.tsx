@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CloudUpload, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
+import { PageHeader } from '../components/PageHeader';
 import { listUploadQueue, removeUploadItem, type UploadQueueItem } from '../lib/uploadQueue';
 import { processUploadQueue } from '../lib/uploadQueueSync';
 
@@ -59,24 +60,22 @@ export function ToUpload() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">To upload</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Expenses saved locally when Midas could not be reached. Upload them when you are back online.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void handleSyncAll()}
-          disabled={syncing || items.length === 0 || !navigator.onLine}
-          className="inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-h-0 sm:shrink-0"
-        >
-          <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Uploading…' : 'Upload all'}
-        </button>
-      </div>
+    <div className="page mx-auto max-w-3xl">
+      <PageHeader
+        title="To upload"
+        subtitle="Expenses saved locally when Midas could not be reached. Upload them when you are back online."
+        actions={
+          <button
+            type="button"
+            onClick={() => void handleSyncAll()}
+            disabled={syncing || items.length === 0 || !navigator.onLine}
+            className="btn-primary w-full sm:w-auto"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Uploading…' : 'Upload all'}
+          </button>
+        }
+      />
 
       {!navigator.onLine && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -86,29 +85,29 @@ export function ToUpload() {
       )}
 
       {message && (
-        <p className="mt-4 text-sm text-gray-600">{message}</p>
+        <p className="mt-4 text-sm text-charcoal/70">{message}</p>
       )}
 
       <div className="mt-6 space-y-3">
         {loading ? (
-          <p className="text-sm text-gray-500">Loading…</p>
+          <p className="text-sm text-muted">Loading…</p>
         ) : items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-200 px-6 py-12 text-center">
-            <CloudUpload className="mx-auto h-8 w-8 text-gray-300" />
-            <p className="mt-2 text-sm text-gray-500">No pending uploads. Live sync is working.</p>
+          <div className="rounded-lg border border-dashed border-ink/10 px-6 py-12 text-center">
+            <CloudUpload className="mx-auto h-8 w-8 text-charcoal/25" />
+            <p className="mt-2 text-sm text-muted">No pending uploads. Live sync is working.</p>
           </div>
         ) : (
           items.map((item) => (
             <div
               key={item.id}
-              className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 sm:items-center sm:gap-4"
+              className="flex items-start justify-between gap-3 rounded-lg border border-ink/10 bg-white px-4 py-3 sm:items-center sm:gap-4"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-gray-900">{item.payload.merchant}</p>
-                <p className="break-words text-sm text-gray-500">
+                <p className="truncate font-medium text-ink">{item.payload.merchant}</p>
+                <p className="break-words text-sm text-muted">
                   ${item.payload.amount.toFixed(2)} · {item.payload.date} · {item.receipt.name}
                 </p>
-                <p className="mt-1 break-words text-xs text-gray-400">
+                <p className="mt-1 break-words text-xs text-charcoal/40">
                   Status: {item.status}
                   {item.retryCount > 0 ? ` · retries ${item.retryCount}` : ''}
                   {item.lastError ? ` · ${item.lastError}` : ''}
@@ -117,7 +116,7 @@ export function ToUpload() {
               <button
                 type="button"
                 onClick={() => void handleRemove(item.id)}
-                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg p-2 text-charcoal/40 hover:bg-brand-50 hover:text-danger"
                 title="Discard"
                 aria-label="Discard queued upload"
               >

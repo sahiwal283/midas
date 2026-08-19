@@ -136,8 +136,8 @@ export function PurchaseOrderNew() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="font-display text-2xl text-ink mb-6">New Purchase Order</h1>
-      {error && <p className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
+      <h1 className="page-title mb-6">New Purchase Order</h1>
+      {error && <p className="mb-4 text-sm text-danger bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
       {(vendorsQ.isError || itemsQ.isError) && (
         <p className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
           Could not load Zoho vendors/items. You can still draft the PO and map IDs later — push will require them.
@@ -210,7 +210,7 @@ export function PurchaseOrderNew() {
                 <button
                   type="button"
                   aria-label={`Remove line ${idx + 1}`}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-xs text-red-600"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-xs text-danger"
                   onClick={() => setLines(lines.filter((_, i) => i !== idx))}
                 >
                   ✕ Remove
@@ -391,7 +391,7 @@ export function PurchaseOrderNew() {
                 <td className="px-2 py-1 font-mono text-xs">{line.total}</td>
                 <td className="px-2 py-1">
                   {lines.length > 1 && (
-                    <button type="button" className="text-red-600 text-xs" onClick={() => setLines(lines.filter((_, i) => i !== idx))}>✕</button>
+                    <button type="button" className="text-danger text-xs" onClick={() => setLines(lines.filter((_, i) => i !== idx))}>✕</button>
                   )}
                 </td>
               </tr>
@@ -427,7 +427,7 @@ export function PurchaseOrderNew() {
           type="button"
           disabled={!canSave || create.isPending}
           onClick={() => create.mutate()}
-          className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg bg-brand-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
+          className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg bg-brand-700 text-cream px-4 py-2 text-sm font-medium disabled:opacity-50"
         >
           {create.isPending ? 'Saving…' : 'Save draft'}
         </button>

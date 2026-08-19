@@ -117,19 +117,19 @@ export function ExpenseQuickViewModal({
       }}
     >
       <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-xl sm:pb-0">
-        <div className="flex items-start justify-between gap-3 bg-emerald-700 px-5 py-4 text-white">
+        <div className="flex items-start justify-between gap-3 border-b border-gold-400/60 bg-brand-800 px-5 py-4 text-cream">
           <div className="min-w-0">
             <h2 id="expense-quick-view-title" className="text-lg font-semibold">
               Expense Details
             </h2>
-            <p className="mt-0.5 truncate text-sm text-emerald-100">
+            <p className="mt-0.5 truncate text-sm text-brand-200">
               {expense?.sourceLabel || expense?.merchant || 'Loading…'}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-white/90 hover:bg-white/10"
+            className="rounded-lg p-1 text-cream/90 hover:bg-white/10"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -137,8 +137,8 @@ export function ExpenseQuickViewModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {isLoading && <p className="text-sm text-gray-500">Loading…</p>}
-          {error && <p className="text-sm text-red-600">Could not load expense.</p>}
+          {isLoading && <p className="text-sm text-muted">Loading…</p>}
+          {error && <p className="text-sm text-danger">Could not load expense.</p>}
           {expense && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -171,33 +171,33 @@ export function ExpenseQuickViewModal({
 
               {expense.description && (
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Description</p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{expense.description}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Description</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-charcoal/80">{expense.description}</p>
                 </div>
               )}
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Approval</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Approval</p>
                   <div className="mt-1">
                     <StatusBadge status={expense.status} variant="accountant" />
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Zoho</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Zoho</p>
                   <div className="mt-1">
                     <ZohoPushBadge
                       zohoExpenseId={expense.zohoExpenseId}
                       syncFailed={expense.status === 'zoho_sync_failed'}
                     />
                     {expense.zohoExpenseId && (
-                      <p className="mt-0.5 font-mono text-[10px] text-gray-400">{expense.zohoExpenseId}</p>
+                      <p className="mt-0.5 font-mono text-[10px] text-charcoal/40">{expense.zohoExpenseId}</p>
                     )}
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Company</p>
-                  <p className="mt-1 text-sm text-gray-800">{expense.zohoEntity ?? '—'}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Company</p>
+                  <p className="mt-1 text-sm text-ink">{expense.zohoEntity ?? '—'}</p>
                 </div>
               </div>
 
@@ -211,7 +211,7 @@ export function ExpenseQuickViewModal({
                 />
               ) : (
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Reimbursement</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Reimbursement</p>
                   <div className="mt-1">
                     <ReimbursementBadge status={expense.reimbursementStatus as ReimbursementStatus} showIdle />
                   </div>
@@ -219,12 +219,12 @@ export function ExpenseQuickViewModal({
               )}
 
               {isPrivileged && canReview && (
-                <div className="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div className="flex flex-wrap gap-2 rounded-lg border border-ink/10 bg-cream p-3">
                   <button
                     type="button"
                     disabled={reviewMutation.isPending}
                     onClick={() => reviewMutation.mutate('approve')}
-                    className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                    className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-cream hover:bg-success disabled:opacity-50"
                   >
                     Approve
                   </button>
@@ -232,7 +232,7 @@ export function ExpenseQuickViewModal({
                     type="button"
                     disabled={reviewMutation.isPending}
                     onClick={() => reviewMutation.mutate('reject')}
-                    className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    className="rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-cream hover:bg-danger disabled:opacity-50"
                   >
                     Reject
                   </button>
@@ -249,14 +249,14 @@ export function ExpenseQuickViewModal({
 
               <div>
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">
                     Receipt{receipts.length > 1 ? `s (${receipts.length})` : ''}
                   </p>
                   {receipts.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setShowReceipt((v) => !v)}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-charcoal/70 hover:text-ink"
                     >
                       {showReceipt ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                       {showReceipt ? 'Hide' : 'Show'}
@@ -264,7 +264,7 @@ export function ExpenseQuickViewModal({
                   )}
                 </div>
                 {receipts.length === 0 && (
-                  <p className="text-sm text-gray-400">No receipt attached.</p>
+                  <p className="text-sm text-charcoal/40">No receipt attached.</p>
                 )}
                 {receipts.length > 1 && (
                   <div className="mb-2 flex flex-wrap gap-1">
@@ -275,8 +275,8 @@ export function ExpenseQuickViewModal({
                         onClick={() => setReceiptIndex(i)}
                         className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                           i === receiptIndex
-                            ? 'bg-gray-900 text-white'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            ? 'bg-ink text-cream'
+                            : 'bg-brand-50 text-charcoal/70 hover:bg-ink/[0.08]'
                         }`}
                       >
                         {i + 1}
@@ -292,13 +292,13 @@ export function ExpenseQuickViewModal({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 bg-gray-50 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/5 bg-cream px-5 py-3">
           <div>
             {del.allowed && !confirmDelete && (
               <button
                 type="button"
                 onClick={() => setConfirmDelete(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-danger hover:bg-danger/10"
               >
                 <Trash2 className="h-4 w-4" />
                 Delete
@@ -306,7 +306,7 @@ export function ExpenseQuickViewModal({
             )}
             {del.allowed && confirmDelete && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-red-700">
+                <span className="text-xs text-danger">
                   {del.needsForce
                     ? 'Zoho-linked — permanently delete?'
                     : 'Delete this expense permanently?'}
@@ -315,14 +315,14 @@ export function ExpenseQuickViewModal({
                   type="button"
                   disabled={deleteMutation.isPending}
                   onClick={() => deleteMutation.mutate()}
-                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  className="rounded-lg bg-danger px-3 py-1.5 text-xs font-semibold text-cream hover:bg-danger disabled:opacity-50"
                 >
                   {deleteMutation.isPending ? 'Deleting…' : 'Confirm'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(false)}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200"
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal/70 hover:bg-ink/[0.08]"
                 >
                   Cancel
                 </button>
@@ -333,14 +333,14 @@ export function ExpenseQuickViewModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03]"
             >
               Close
             </button>
             {expense && (
               <Link
                 to={`/expenses/${expense.id}`}
-                className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+                className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-cream hover:bg-brand-700"
                 onClick={onClose}
               >
                 Open full page
@@ -356,8 +356,8 @@ export function ExpenseQuickViewModal({
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="mt-0.5 text-sm text-gray-900">{value}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-0.5 text-sm text-ink">{value}</p>
     </div>
   );
 }

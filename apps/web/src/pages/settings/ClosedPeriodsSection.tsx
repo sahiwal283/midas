@@ -60,14 +60,14 @@ export function ClosedPeriodsSection() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted">
         Close a month once its books are final. Expenses dated in a closed month are locked — no
         edits, deletes, submissions, reviews, or reimbursement changes. Corrections go through a new
         expense in an open month.
       </p>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </div>
       )}
@@ -77,44 +77,44 @@ export function ClosedPeriodsSection() {
           type="month"
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-3 text-sm text-gray-900 focus:border-brand-500 focus:outline-none lg:py-2"
+          className="rounded-lg border border-ink/15 px-3 py-3 text-sm text-ink focus:border-brand-500 focus:outline-none lg:py-2"
           aria-label="Month to close"
         />
         <button
           type="button"
           disabled={!month || closeMutation.isPending}
           onClick={() => setConfirmClose(true)}
-          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 lg:min-h-0"
+          className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-50 lg:min-h-0"
         >
           Close period
         </button>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <div className="rounded-xl border border-ink/10 bg-white">
         {isLoading ? (
-          <p className="px-5 py-4 text-sm text-gray-400">Loading…</p>
+          <p className="px-5 py-4 text-sm text-charcoal/40">Loading…</p>
         ) : periods.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-gray-400">
+          <p className="px-5 py-4 text-sm text-charcoal/40">
             No closed periods yet — every month is open.
           </p>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-ink/5">
             {periods.map((p) => (
               <li key={p.period} className="flex items-center justify-between gap-3 px-5 py-3">
                 <div className="min-w-0">
-                  <span className="text-sm font-medium text-gray-900">{fmtPeriod(p.period)}</span>
-                  <span className="ml-2 text-xs text-gray-400">
+                  <span className="text-sm font-medium text-ink">{fmtPeriod(p.period)}</span>
+                  <span className="ml-2 text-xs text-charcoal/40">
                     closed {new Date(p.createdAt).toLocaleDateString()}
                     {p.closedBy?.name ? ` by ${p.closedBy.name}` : ''}
                   </span>
-                  {p.note && <p className="text-xs text-gray-500">{p.note}</p>}
+                  {p.note && <p className="text-xs text-muted">{p.note}</p>}
                 </div>
                 {canReopen && (
                   <button
                     type="button"
                     onClick={() => setReopenTarget(p.period)}
                     disabled={reopenMutation.isPending}
-                    className="min-h-11 shrink-0 px-2 text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50 lg:min-h-0 lg:px-0"
+                    className="min-h-11 shrink-0 px-2 text-xs font-medium text-danger hover:text-danger disabled:opacity-50 lg:min-h-0 lg:px-0"
                   >
                     Reopen
                   </button>

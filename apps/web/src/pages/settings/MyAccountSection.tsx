@@ -4,7 +4,7 @@ import { accountApi } from '../../api/account';
 import { useAuth } from '../../contexts/AuthContext';
 import { reopenExtensionSetup } from '../../components/ExtensionSetupModal';
 
-const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none';
+const inputCls = 'w-full rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none';
 
 export function MyAccountSection() {
   const qc = useQueryClient();
@@ -80,8 +80,8 @@ export function MyAccountSection() {
     pwMutation.mutate();
   }
 
-  if (isLoading) return <div className="text-sm text-gray-400">Loading…</div>;
-  if (!me) return <div className="text-sm text-red-600">Could not load your account.</div>;
+  if (isLoading) return <div className="text-sm text-charcoal/40">Loading…</div>;
+  if (!me) return <div className="text-sm text-danger">Could not load your account.</div>;
 
   const showSsoNote = ssoOnly || me.hasPassword === false;
   const nameChanged = name.trim().length > 0 && name.trim() !== me.name;
@@ -89,11 +89,11 @@ export function MyAccountSection() {
   return (
     <div className="max-w-2xl space-y-6">
       {/* Profile card */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-semibold text-gray-700">Profile</h2>
+      <div className="rounded-xl border border-ink/10 bg-white p-5">
+        <h2 className="mb-4 text-sm font-semibold text-charcoal/80">Profile</h2>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+            <label className="mb-1 block text-xs font-medium text-charcoal/70">Name</label>
             <input
               value={name}
               onChange={(e) => { setName(e.target.value); setProfileSaved(false); }}
@@ -103,32 +103,32 @@ export function MyAccountSection() {
           </div>
           <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <dt className="text-xs font-medium text-gray-600">Email</dt>
-              <dd className="mt-1 text-sm text-gray-900">{me.email}</dd>
+              <dt className="text-xs font-medium text-charcoal/70">Email</dt>
+              <dd className="mt-1 text-sm text-ink">{me.email}</dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-gray-600">Role</dt>
-              <dd className="mt-1 text-sm capitalize text-gray-900">{me.role}</dd>
+              <dt className="text-xs font-medium text-charcoal/70">Role</dt>
+              <dd className="mt-1 text-sm capitalize text-ink">{me.role}</dd>
             </div>
             {me.department && (
               <div>
-                <dt className="text-xs font-medium text-gray-600">Department</dt>
-                <dd className="mt-1 text-sm text-gray-900">{me.department}</dd>
+                <dt className="text-xs font-medium text-charcoal/70">Department</dt>
+                <dd className="mt-1 text-sm text-ink">{me.department}</dd>
               </div>
             )}
             {me.costCenter && (
               <div>
-                <dt className="text-xs font-medium text-gray-600">Cost center</dt>
-                <dd className="mt-1 text-sm text-gray-900">{me.costCenter}</dd>
+                <dt className="text-xs font-medium text-charcoal/70">Cost center</dt>
+                <dd className="mt-1 text-sm text-ink">{me.costCenter}</dd>
               </div>
             )}
           </dl>
-          {profileError && <p className="text-xs text-red-600">{profileError}</p>}
-          {profileSaved && <p className="text-xs text-green-600">Profile updated.</p>}
+          {profileError && <p className="text-xs text-danger">{profileError}</p>}
+          {profileSaved && <p className="text-xs text-success">Profile updated.</p>}
           <button
             onClick={() => profileMutation.mutate()}
             disabled={!nameChanged || profileMutation.isPending}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60"
           >
             {profileMutation.isPending ? 'Saving…' : 'Save'}
           </button>
@@ -136,16 +136,16 @@ export function MyAccountSection() {
       </div>
 
       {/* Change password card */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-semibold text-gray-700">Change password</h2>
+      <div className="rounded-xl border border-ink/10 bg-white p-5">
+        <h2 className="mb-4 text-sm font-semibold text-charcoal/80">Change password</h2>
         {showSsoNote ? (
-          <p className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <p className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
             {ssoMessage}
           </p>
         ) : (
           <div className="space-y-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Current password</label>
+              <label className="mb-1 block text-xs font-medium text-charcoal/70">Current password</label>
               <input
                 type="password"
                 autoComplete="current-password"
@@ -156,7 +156,7 @@ export function MyAccountSection() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">New password</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">New password</label>
                 <input
                   type="password"
                   autoComplete="new-password"
@@ -167,7 +167,7 @@ export function MyAccountSection() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Confirm new password</label>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Confirm new password</label>
                 <input
                   type="password"
                   autoComplete="new-password"
@@ -177,12 +177,12 @@ export function MyAccountSection() {
                 />
               </div>
             </div>
-            {pwError && <p className="text-xs text-red-600">{pwError}</p>}
-            {pwSuccess && <p className="text-xs text-green-600">Password changed.</p>}
+            {pwError && <p className="text-xs text-danger">{pwError}</p>}
+            {pwSuccess && <p className="text-xs text-success">Password changed.</p>}
             <button
               onClick={submitPassword}
               disabled={!pwForm.current || !pwForm.next || !pwForm.confirm || pwMutation.isPending}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60"
             >
               {pwMutation.isPending ? 'Changing…' : 'Change password'}
             </button>
@@ -191,14 +191,14 @@ export function MyAccountSection() {
       </div>
 
       {/* Browser extension card — desktop only, like the setup modal itself. */}
-      <div className="hidden rounded-xl border border-gray-200 bg-white p-5 lg:block">
-        <h2 className="mb-1 text-sm font-semibold text-gray-700">Browser extension</h2>
-        <p className="mb-3 text-xs text-gray-500">
+      <div className="hidden rounded-xl border border-ink/10 bg-white p-5 lg:block">
+        <h2 className="mb-1 text-sm font-semibold text-charcoal/80">Browser extension</h2>
+        <p className="mb-3 text-xs text-muted">
           Capture receipts from any webpage with the Midas Capture extension for Chrome and Edge.
         </p>
         <button
           onClick={reopenExtensionSetup}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="rounded-lg border border-ink/15 px-4 py-2 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03]"
         >
           Show setup instructions
         </button>

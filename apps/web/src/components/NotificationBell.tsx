@@ -80,13 +80,13 @@ export function NotificationBell({
     <div ref={rootRef} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+        className="relative rounded-lg p-2 text-muted hover:bg-brand-50 hover:text-ink"
         title="Notifications"
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-none text-cream">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -94,12 +94,12 @@ export function NotificationBell({
 
       {open && (
         <div
-          className={`absolute z-50 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl ${
+          className={`absolute z-50 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-ink/10 bg-white shadow-xl ${
             direction === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'
           } ${align === 'right' ? 'right-0' : 'left-0'}`}
         >
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
-            <p className="text-sm font-semibold text-gray-900">Notifications</p>
+          <div className="flex items-center justify-between border-b border-ink/5 px-4 py-2.5">
+            <p className="text-sm font-semibold text-ink">Notifications</p>
             {unreadCount > 0 && (
               <button
                 onClick={() => markAllRead.mutate()}
@@ -112,19 +112,19 @@ export function NotificationBell({
 
           <div className="max-h-96 overflow-y-auto">
             {notifications.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-gray-400">No notifications yet</p>
+              <p className="px-4 py-8 text-center text-sm text-charcoal/40">No notifications yet</p>
             ) : (
               notifications.map((n) => (
                 <button
                   key={n.id}
                   onClick={() => openNotification(n)}
-                  className={`block w-full border-b border-gray-50 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50 ${
+                  className={`block w-full border-b border-ink/5 px-4 py-3 text-left last:border-b-0 hover:bg-ink/[0.03] ${
                     n.readAt ? '' : 'bg-brand-50'
                   }`}
                 >
-                  <p className="text-sm font-semibold text-gray-900">{n.title}</p>
-                  {n.body && <p className="mt-0.5 text-xs text-gray-500">{n.body}</p>}
-                  <p className="mt-1 text-xs text-gray-400">{timeAgo(n.createdAt)}</p>
+                  <p className="text-sm font-semibold text-ink">{n.title}</p>
+                  {n.body && <p className="mt-0.5 text-xs text-muted">{n.body}</p>}
+                  <p className="mt-1 text-xs text-charcoal/40">{timeAgo(n.createdAt)}</p>
                 </button>
               ))
             )}
@@ -132,7 +132,7 @@ export function NotificationBell({
 
           {/* Device push controls — hidden when unsupported or not configured */}
           {pushState === 'ready' && (
-            <div className="border-t border-gray-100 px-4 py-2.5">
+            <div className="border-t border-ink/5 px-4 py-2.5">
               <button
                 onClick={() => enablePush.mutate()}
                 disabled={enablePush.isPending}
@@ -149,22 +149,22 @@ export function NotificationBell({
             </div>
           )}
           {pushState === 'subscribed' && (
-            <div className="flex min-h-11 items-center justify-between gap-2 border-t border-gray-100 px-4 py-2">
-              <span className="flex items-center gap-1.5 text-xs text-gray-500">
+            <div className="flex min-h-11 items-center justify-between gap-2 border-t border-ink/5 px-4 py-2">
+              <span className="flex items-center gap-1.5 text-xs text-muted">
                 <BellRing className="h-3.5 w-3.5 text-success" />
                 Push enabled on this device
               </span>
               <button
                 onClick={() => disablePush.mutate()}
                 disabled={disablePush.isPending}
-                className="min-h-11 px-2 text-xs font-medium text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                className="min-h-11 px-2 text-xs font-medium text-charcoal/40 hover:text-charcoal/70 disabled:opacity-50"
               >
                 Disable
               </button>
             </div>
           )}
           {pushState === 'denied' && (
-            <p className="border-t border-gray-100 px-4 py-2.5 text-xs text-gray-400">
+            <p className="border-t border-ink/5 px-4 py-2.5 text-xs text-charcoal/40">
               Push notifications are blocked in your browser settings.
             </p>
           )}
