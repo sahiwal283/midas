@@ -4,7 +4,7 @@ import { ChevronRight, ChevronDown, Search } from 'lucide-react';
 import client from '../../api/client';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { CategoryPicker } from '../../components/CategoryPicker';
-import { flattenTree, descendantIdSet, type CategoryTreeNode } from '../../lib/categoryTree';
+import { flattenTree, descendantIdSet } from '../../lib/categoryTree';
 import { useCollapsibleTree } from '../../lib/useCollapsibleTree';
 import { matchingCategoryIdSet } from '@midas/shared';
 import type { ExpenseCategory } from '../../types';
@@ -19,6 +19,8 @@ export function CategoriesSection() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ExpenseCategory | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
 
   const { data: categories = [], isLoading } = useQuery<ExpenseCategory[]>({
     queryKey: ['admin-categories'],
@@ -39,7 +41,11 @@ export function CategoriesSection() {
   const patchMutation = useMutation({
     mutationFn: ({ id, ...body }: { id: string; name?: string; isActive?: boolean; parentId?: string | null }) =>
       client.patch(`/admin/categories/${id}`, body),
-    onSuccess: () => { invalidate(); setError(''); },
+    onSuccess: (_data, vars) => {
+      invalidate();
+      setError('');
+      if (vars.name !== undefined) setEditingId(null);
+    },
     onError: (err: unknown) => setError(axiosMessage(err, 'Could not update category')),
   });
   const deleteMutation = useMutation({
@@ -75,6 +81,22 @@ export function CategoriesSection() {
     const blocked = descendantIdSet(categories, id);
     return categories.filter((c) => !blocked.has(c.id));
   };
+
+  function startRename(cat: ExpenseCategory) {
+    setEditingId(cat.id);
+    setEditName(cat.name);
+    setError('');
+  }
+
+  function commitRename(cat: ExpenseCategory) {
+    if (editingId !== cat.id) return;
+    const next = editName.trim();
+    if (!next || next === cat.name) {
+      setEditingId(null);
+      return;
+    }
+    patchMutation.mutate({ id: cat.id, name: next });
+  }
 
   if (isLoading) return <div className="text-sm text-charcoal/40">Loading…</div>;
 
@@ -153,12 +175,35 @@ export function CategoriesSection() {
                 <span className="inline-block w-5" />
               )}
               <div className="min-w-0">
-                <p className="font-medium text-ink">
-                  {cat.name}
-                  {hasChildren && collapsed && !searching && (
-                    <span className="ml-2 text-xs font-normal text-charcoal/40">{descendantCount}</span>
-                  )}
-                </p>
+                {editingId === cat.id ? (
+                  <input
+                    autoFocus
+                    value={editName}
+                    aria-label="Category name"
+                    disabled={patchMutation.isPending}
+                    className="w-full min-w-[12rem] rounded-lg border border-brand-500 px-2 py-1 text-sm font-medium text-ink focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); commitRename(cat); }
+                      if (e.key === 'Escape') { e.preventDefault(); setEditingId(null); }
+                    }}
+                    onBlur={() => commitRename(cat)}
+                  />
+                ) : (
+                  <p className="font-medium text-ink">
+                    <button
+                      type="button"
+                      onClick={() => startRename(cat)}
+                      className="rounded text-left hover:underline focus:outline-none focus:ring-1 focus:ring-brand-500"
+                      title="Rename"
+                    >
+                      {cat.name}
+                    </button>
+                    {hasChildren && collapsed && !searching && (
+                      <span className="ml-2 text-xs font-normal text-charcoal/40">{descendantCount}</span>
+                    )}
+                  </p>
+                )}
                 {cat.description && <p className="text-xs text-charcoal/40">{cat.description}</p>}
               </div>
             </div>
@@ -182,6 +227,14 @@ export function CategoriesSection() {
               </button>
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => (editingId === cat.id ? setEditingId(null) : startRename(cat))}
+                className="text-xs font-medium text-brand-700 hover:underline"
+              >
+                {editingId === cat.id ? 'Cancel' : 'Rename'}
+              </button>
+              <button
+                type="button"
                 onClick={() => setDeleteTarget(cat)}
                 className="text-xs text-charcoal/40 hover:text-danger"
               >
@@ -192,7 +245,8 @@ export function CategoriesSection() {
         ))}
       </div>
       <p className="text-xs text-charcoal/40">
-        Delete only works when nothing uses the category. Otherwise hide it — pickers drop it, history keeps the name.
+        Click a name or Rename to fix spelling. Enter saves, Escape cancels. Delete only works when
+        nothing uses the category — otherwise hide it so pickers drop it and history keeps the name.
       </p>
 
       <ConfirmModal

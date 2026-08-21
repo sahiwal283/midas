@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.59.1 (2026-08-21)
+
+### Categories: rename in place
+- Click a category name (or Rename) to fix spelling or capitalization. Enter saves, Escape or Cancel discards. Duplicate names are rejected.
+
 ## 0.59.0 (2026-08-21)
 
 ### Categories and Chart of Accounts

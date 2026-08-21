@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lte, ne, or, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
@@ -553,6 +553,15 @@ router.get('/audit', adminOnly, asyncHandler(async (req, res) => {
 
 // ── Categories ─────────────────────────────────────────────────────────────
 
+async function ensureUniqueCategoryName(name: string, exceptId?: string) {
+  const existing = await db.query.expenseCategories.findFirst({
+    where: exceptId
+      ? and(eq(expenseCategories.name, name), ne(expenseCategories.id, exceptId))
+      : eq(expenseCategories.name, name),
+  });
+  if (existing) throw createError('A category with that name already exists', 409, 'CATEGORY_NAME_TAKEN');
+}
+
 router.get('/categories', accounting, asyncHandler(async (_req, res) => {
   const cats = await db.query.expenseCategories.findMany({
     orderBy: (c, { asc }) => [asc(c.name)],
@@ -562,22 +571,25 @@ router.get('/categories', accounting, asyncHandler(async (_req, res) => {
 
 router.post('/categories', accounting, asyncHandler(async (req, res) => {
   const body = z.object({
-    name: z.string().min(1),
+    name: z.string().trim().min(1),
     description: z.string().optional(),
     parentId: z.string().uuid().nullable().optional(),
   }).parse(req.body);
 
+  await ensureUniqueCategoryName(body.name);
   const [cat] = await db.insert(expenseCategories).values(body).returning();
   res.status(201).json({ category: cat });
 }));
 
 router.patch('/categories/:id', accounting, asyncHandler(async (req, res) => {
   const body = z.object({
-    name: z.string().min(1).optional(),
+    name: z.string().trim().min(1).optional(),
     description: z.string().optional(),
     isActive: z.boolean().optional(),
     parentId: z.string().uuid().nullable().optional(),
   }).parse(req.body);
+
+  if (body.name !== undefined) await ensureUniqueCategoryName(body.name, req.params.id);
 
   if (body.parentId !== undefined) {
     const all = await db.query.expenseCategories.findMany();
