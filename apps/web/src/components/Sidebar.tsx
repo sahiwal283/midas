@@ -61,7 +61,7 @@ export function Sidebar() {
           </NavLink>
           <NavLink to="/expenses" className={linkClass}>
             <ReceiptText className="h-4 w-4" />
-            Expenses
+            My Expenses
           </NavLink>
         </div>
 

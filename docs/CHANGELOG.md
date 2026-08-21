@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.56.0 (2026-08-21)
+
+### Review pages: Queue | All toggle
+- Event Review and Daily Review get a pill toggle (same pattern as Reports, URL-backed via `?view=all`). **Queue** is the lane workflow as before; **All** browses every expense in that page's scope — any status — using the same list, filters, tags, and bulk actions as My Expenses, with the employee shown and filterable and rows linking to the accountant detail page.
+- The "All Expenses" lane is gone from the rail and chips — the All view replaces it.
+
+### Expenses → My Expenses
+- The page is renamed **My Expenses** and now shows only your own submissions for every role; `GET /api/v1/expenses` is own-only server-side. Company-wide browsing lives under the review pages' All view.
+- The whole list experience (status tabs, filter panel, chips, Trade Show/Daily tags, bulk delete) was extracted into a shared `ExpenseBrowser` component used by both surfaces.
+
 ## 0.55.0 (2026-08-19)
 
 ### Settings: Payment Methods filtered by company

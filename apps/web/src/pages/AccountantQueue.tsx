@@ -9,6 +9,7 @@ import { ZohoErrorCategoryChip } from '../components/ZohoSyncCard';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { CategoryPicker } from '../components/CategoryPicker';
+import { ExpenseBrowser } from '../components/ExpenseBrowser';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
@@ -24,8 +25,7 @@ type LaneId =
   | 'missing_entity'
   | 'ready_for_zoho'
   | 'zoho_failed'
-  | 'reimbursement_pending'
-  | 'all';
+  | 'reimbursement_pending';
 
 interface LaneDef {
   label: string;
@@ -78,11 +78,6 @@ const LANES: Record<LaneId, LaneDef> = {
     label: 'Reimbursement',
     icon: <Banknote className="h-3.5 w-3.5" />,
     description: 'Personal-card expenses waiting for reimbursement (needs reimbursement / approved pending payment)',
-  },
-  all: {
-    label: 'All Expenses',
-    icon: null,
-    description: 'Every expense in the system',
   },
 };
 
@@ -182,8 +177,6 @@ function laneToServerParams(lane: LaneId): Record<string, string> {
       return { status: 'zoho_sync_failed' };
     case 'reimbursement_pending':
       return { reimbursementOpen: 'true' };
-    case 'all':
-      return {};
     default: {
       const _exhaustive: never = lane;
       return _exhaustive;
@@ -207,7 +200,19 @@ function humanizeSourceApp(app: string): string {
 export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Queue = the review lanes; All = every expense in this page's scope,
+  // browsed with the same list/filters as My Expenses. URL-backed so the
+  // choice is linkable and survives refresh.
+  const view: 'queue' | 'all' = searchParams.get('view') === 'all' ? 'all' : 'queue';
+  function setView(next: 'queue' | 'all') {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next === 'all') p.set('view', 'all');
+      else p.delete('view');
+      return p;
+    }, { replace: true });
+  }
   const [activeLane, setActiveLane] = useState<LaneId>(() => {
     const fromUrl = searchParams.get('status');
     return fromUrl && fromUrl in LANES ? (fromUrl as LaneId) : 'needs_review';
@@ -234,10 +239,8 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
 
   const queryParams = useMemo(() => {
     const base: Record<string, string> = { ...filtersToParams(filters), ...laneToServerParams(activeLane), scope };
-    if (activeLane !== 'all') {
-      base.page = String(page);
-      base.pageSize = String(PAGE_SIZE);
-    }
+    base.page = String(page);
+    base.pageSize = String(PAGE_SIZE);
     return base;
   }, [filters, activeLane, page, scope]);
   const hasActiveFilters = Object.keys(filtersToParams(filters)).length > 0;
@@ -255,7 +258,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
   const { data: queuePage, isLoading: queueLoading } = useQuery({
     queryKey: ['accountant-queue', scope, queryParams],
     queryFn: () => accountantApi.queue(queryParams),
-    enabled: activeLane !== 'all',
+    enabled: view === 'queue',
   });
   const queue = queuePage?.expenses ?? [];
 
@@ -352,7 +355,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
   const { data: allExpenses = [], isLoading: allLoading } = useQuery({
     queryKey: ['accountant-all', scope],
     queryFn: () => accountantApi.all({ scope }),
-    enabled: activeLane === 'all',
+    enabled: view === 'all',
   });
 
   function refetchQueueAndSummary() {
@@ -440,17 +443,17 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     zoho_failed: counts.zoho_sync_failed ?? 0,
     reimbursement_pending: counts.reimbursement_pending ?? 0,
   };
-  const sourceData = activeLane === 'all' ? allExpenses : queue;
+  const sourceData = queue;
   const totalActive = (laneCounts.needs_review ?? 0)
     + (laneCounts.awaiting_user ?? 0)
     + (laneCounts.ready_for_zoho ?? 0)
     + (laneCounts.zoho_failed ?? 0);
 
-  const displayData = activeLane === 'all' ? allExpenses : queue;
+  const displayData = queue;
 
-  const isLoading = activeLane === 'all' ? allLoading : queueLoading;
-  const totalPages = activeLane === 'all' ? 1 : (queuePage?.totalPages ?? 1);
-  const totalRows = activeLane === 'all' ? allExpenses.length : (queuePage?.total ?? displayData.length);
+  const isLoading = queueLoading;
+  const totalPages = queuePage?.totalPages ?? 1;
+  const totalRows = queuePage?.total ?? displayData.length;
   const pageFrom = totalRows === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const pageTo = Math.min(page * PAGE_SIZE, totalRows);
 
@@ -536,6 +539,33 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         }
       />
 
+      {/* Queue vs full-list toggle — same pattern as the Reports page */}
+      <div
+        role="radiogroup"
+        aria-label="Review view"
+        className="mb-5 inline-flex rounded-full border border-ink/10 bg-brand-50 p-1"
+      >
+        {(['queue', 'all'] as const).map((v) => {
+          const active = view === v;
+          return (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setView(v)}
+              className={`min-h-11 cursor-pointer rounded-full px-5 py-2 text-sm font-semibold transition-colors duration-200 lg:min-h-0 ${
+                active
+                  ? 'bg-brand-500 text-cream shadow-sm'
+                  : 'text-charcoal/70 hover:text-ink'
+              }`}
+            >
+              {v === 'queue' ? 'Queue' : 'All'}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Result toast */}
       {toast && (
         <div className="mb-4 rounded-xl border border-success/30 bg-success/10 p-4">
@@ -557,6 +587,16 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         </div>
       )}
 
+      {view === 'all' ? (
+        /* Every expense in this page's scope — the same browser as My Expenses */
+        <ExpenseBrowser
+          expenses={allExpenses}
+          isLoading={allLoading}
+          mode="review"
+          onChanged={() => void qc.invalidateQueries({ queryKey: ['accountant-all'] })}
+        />
+      ) : (
+      <>
       {/* Ready-for-Zoho card */}
       {activeLane === 'ready_for_zoho' && readyLaneCount > 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-success/30 bg-success/10 px-4 py-3">
@@ -610,7 +650,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         {/* Ready / done */}
         <LaneGroup
           label="Ready & Processing"
-          lanes={['ready_for_zoho', 'reimbursement_pending', 'all']}
+          lanes={['ready_for_zoho', 'reimbursement_pending']}
           activeLane={activeLane}
           laneCounts={laneCounts}
           onSelect={setActiveLane}
@@ -771,9 +811,6 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
             </button>
           )}
         </div>
-        {activeLane === 'all' && hasActiveFilters && (
-          <p className="mt-2 text-xs text-amber-600">Filters apply to the review queue lanes — the All Expenses lane shows every expense.</p>
-        )}
         </div>
 
         {/* Applied filters stay visible while the panel is collapsed */}
@@ -806,17 +843,15 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         <h2 className="flex items-center gap-2 text-base font-semibold text-ink">
           {LANES[activeLane].label}
           <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-semibold tabular-nums text-charcoal/80">
-            {activeLane === 'all' ? totalRows.toLocaleString() : (laneCounts[activeLane] ?? 0).toLocaleString()}
+            {(laneCounts[activeLane] ?? 0).toLocaleString()}
           </span>
         </h2>
-        {activeLane !== 'all' && (
-          <p className="mt-0.5 text-sm text-muted">
-            {LANES[activeLane].description}
-            {(activeLane === 'ready_for_zoho' || activeLane === 'zoho_failed') && zohoLaneNote
-              ? ` ${zohoLaneNote}`
-              : ''}
-          </p>
-        )}
+        <p className="mt-0.5 text-sm text-muted">
+          {LANES[activeLane].description}
+          {(activeLane === 'ready_for_zoho' || activeLane === 'zoho_failed') && zohoLaneNote
+            ? ` ${zohoLaneNote}`
+            : ''}
+        </p>
       </div>
 
       {/* Bulk action bar */}
@@ -848,7 +883,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
           <div className="px-6 py-12 text-center text-sm text-charcoal/40">Loading…</div>
         ) : displayData.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-charcoal/40">
-            {activeLane === 'all' ? 'No expenses yet.' : `No items in this queue.`}
+            No items in this queue.
           </div>
         ) : (
           <>
@@ -928,7 +963,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
         )}
       </div>
 
-      {activeLane !== 'all' && totalRows > 0 && (
+      {totalRows > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-charcoal/70">
           <p className="tabular-nums">
             {totalPages > 1
@@ -960,6 +995,8 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
 
         </div>
       </div>
+      </>
+      )}
 
       {quickViewId && (
         <ExpenseQuickViewModal
@@ -1119,7 +1156,7 @@ function LaneGroup({
       <span className="mr-1 hidden text-xs font-semibold text-charcoal/40 shrink-0 sm:inline sm:w-28">{label}</span>
       <div className="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-ink/10 bg-brand-50 p-1 sm:flex-wrap sm:overflow-visible">
         {lanes.map((lane) => {
-          const count = lane === 'all' ? undefined : (laneCounts[lane] ?? 0);
+          const count = laneCounts[lane] ?? 0;
           return (
             <button
               key={lane}
@@ -1159,7 +1196,7 @@ function countBadgeClass(lane: LaneId, count: number, active: boolean): string {
 const RAIL_GROUPS: Array<{ label: string; lanes: LaneId[] }> = [
   { label: 'Needs Attention', lanes: ['needs_review', 'awaiting_user', 'zoho_failed'] },
   { label: 'Missing Fields', lanes: ['missing_receipt', 'missing_category', 'missing_payment_method', 'missing_entity'] },
-  { label: 'Ready & Processing', lanes: ['ready_for_zoho', 'reimbursement_pending', 'all'] },
+  { label: 'Ready & Processing', lanes: ['ready_for_zoho', 'reimbursement_pending'] },
 ];
 
 function LaneRail({
@@ -1178,7 +1215,7 @@ function LaneRail({
           <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-charcoal/40">{group.label}</p>
           <div className="mt-1.5 space-y-0.5">
             {group.lanes.map((lane) => {
-              const count = lane === 'all' ? undefined : (laneCounts[lane] ?? 0);
+              const count = laneCounts[lane] ?? 0;
               const active = activeLane === lane;
               return (
                 <button

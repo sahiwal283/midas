@@ -7,7 +7,7 @@ import { UploadQueueProvider } from './components/UploadQueueProvider';
 import { Login } from './pages/Login';
 import { InviteAccept } from './pages/InviteAccept';
 import { Dashboard } from './pages/Dashboard';
-import { ExpenseList } from './pages/ExpenseList';
+import { MyExpenses } from './pages/MyExpenses';
 import { ExpenseNew } from './pages/ExpenseNew';
 import { ExpenseDetail } from './pages/ExpenseDetail';
 import { AccountantQueue } from './pages/AccountantQueue';
@@ -43,7 +43,7 @@ export default function App() {
             >
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/expenses" element={<ExpenseList />} />
+              <Route path="/expenses" element={<MyExpenses />} />
               <Route path="/transactions/new" element={<Navigate to="/expenses/new" replace />} />
               <Route path="/transactions/po/new" element={<PurchaseOrderNew />} />
               <Route path="/transactions/:id" element={<PurchaseOrderDetail />} />

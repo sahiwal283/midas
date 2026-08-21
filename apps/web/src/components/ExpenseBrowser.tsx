@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, AlertCircle, ChevronDown, ChevronLeft, ChevronRight, Search, SlidersHorizontal, Tent, Trash2, X } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronLeft, ChevronRight, Search, SlidersHorizontal, Tent, Trash2, X } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
-import { StatusBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from '../components/StatusBadge';
-import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
-import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
-import { CategoryPicker } from '../components/CategoryPicker';
-import { PageHeader } from '../components/PageHeader';
+import { StatusBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS } from './StatusBadge';
+import { ReceiptDetailsButton } from './ReceiptDetailsButton';
+import { ExpenseQuickViewModal } from './ExpenseQuickViewModal';
+import { CategoryPicker } from './CategoryPicker';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
 import { flattenTree, descendantIdSet } from '../lib/categoryTree';
@@ -114,7 +113,7 @@ function NextActionCell({ expense }: { expense: Expense }) {
 }
 
 /** Trade Show (with event name when known) / Daily tag. */
-function ExpenseTypeChip({ expense, compact = false }: { expense: Expense; compact?: boolean }) {
+export function ExpenseTypeChip({ expense, compact = false }: { expense: Expense; compact?: boolean }) {
   if (isDailyExpense(expense)) {
     return (
       <span className="inline-flex items-center rounded bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-charcoal/70">
@@ -131,13 +130,26 @@ function ExpenseTypeChip({ expense, compact = false }: { expense: Expense; compa
   );
 }
 
-export function ExpenseList() {
+export interface ExpenseBrowserProps {
+  expenses: Expense[];
+  isLoading: boolean;
+  /**
+   * 'my': the employee's own list — rows link to /expenses/:id, no
+   * employee/company filters, Trade Show/Daily toggle shown.
+   * 'review': accountant browse view — rows link to /accountant/:id, the
+   * employee is shown and filterable, and the type toggle is hidden (the
+   * page's scope already fixes it).
+   */
+  mode: 'my' | 'review';
+  /** Re-fetch the source list after a delete. */
+  onChanged: () => void;
+}
+
+export function ExpenseBrowser({ expenses, isLoading, mode, onChanged }: ExpenseBrowserProps) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const { data: expenses = [], isLoading } = useQuery({
-    queryKey: ['expenses'],
-    queryFn: () => expenseApi.list(),
-  });
+  const isReview = mode === 'review';
+  const detailBase = isReview ? '/accountant' : '/expenses';
   const { data: allCategories = [] } = useQuery({
     queryKey: ['expense-categories'],
     queryFn: () => expenseApi.categories(),
@@ -153,7 +165,6 @@ export function ExpenseList() {
   const [quickViewId, setQuickViewId] = useState<string | null>(null);
   const [forceZoho, setForceZoho] = useState(false);
   const isAdmin = roleAllowed(user?.role, ['admin']);
-  const isPrivileged = roleAllowed(user?.role, ['admin', 'accountant']);
   const canBulkDelete = roleAllowed(user?.role, ['admin', 'accountant', 'user']);
 
   function setFilter<K extends keyof ListFilters>(key: K, value: ListFilters[K]) {
@@ -210,18 +221,18 @@ export function ExpenseList() {
   }, [expenses]);
 
   const employeeOptions = useMemo(() => {
-    if (!isPrivileged) return [];
+    if (!isReview) return [];
     const map = new Map<string, string>();
     for (const e of expenses) if (e.user) map.set(e.user.id, e.user.name);
     return [...map.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [expenses, isPrivileged]);
+  }, [expenses, isReview]);
 
   const companyOptions = useMemo(() => {
-    if (!isPrivileged) return [];
+    if (!isReview) return [];
     const keys = new Set<string>();
     for (const e of expenses) if (e.zohoEntity) keys.add(e.zohoEntity);
     return [...keys].sort();
-  }, [expenses, isPrivileged]);
+  }, [expenses, isReview]);
 
   const hasReimbursements = useMemo(
     () => expenses.some((e) => e.reimbursementStatus !== 'not_requested'),
@@ -248,7 +259,7 @@ export function ExpenseList() {
       if (filters.userId && e.userId !== filters.userId) return false;
       if (filters.company && e.zohoEntity !== filters.company) return false;
       if (q) {
-        const hay = `${e.merchant} ${e.description ?? ''} ${e.category?.name ?? ''} ${e.sourceLabel ?? ''}`.toLowerCase();
+        const hay = `${e.merchant} ${e.description ?? ''} ${e.category?.name ?? ''} ${e.sourceLabel ?? ''} ${e.user?.name ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -276,7 +287,7 @@ export function ExpenseList() {
     mutationFn: () => expenseApi.bulkDelete([...selected], forceZoho && isAdmin),
     onSuccess: (result) => {
       setSelected(new Set());
-      void qc.invalidateQueries({ queryKey: ['expenses'] });
+      onChanged();
       if (result.failed.length > 0) {
         alert(
           `Deleted ${result.deleted.length}. Failed ${result.failed.length}`
@@ -356,28 +367,10 @@ export function ExpenseList() {
   const labelClass = 'field-label';
 
   return (
-    <div className="page">
-      <PageHeader
-        title="Expenses"
-        subtitle={
-          actionNeeded > 0 ? (
-            <span className="flex items-center gap-1 font-medium text-amber-800">
-              <AlertCircle className="h-4 w-4" />
-              {actionNeeded} expense{actionNeeded !== 1 ? 's' : ''} need{actionNeeded === 1 ? 's' : ''} your reply
-            </span>
-          ) : undefined
-        }
-        actions={
-          <Link to="/transactions/new" className="btn-primary">
-            <Plus className="h-4 w-4" />
-            Add Transaction
-          </Link>
-        }
-      />
-
+    <div>
       {/* Summary strip */}
       {!isLoading && expenses.length > 0 && (
-        <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3">
+        <div className={`mb-4 grid gap-2 sm:gap-3 ${isReview ? 'grid-cols-2' : 'grid-cols-3'}`}>
           <div className="rounded-xl border border-ink/10 bg-white px-3 py-2.5 shadow-panel sm:px-4 sm:py-3">
             <p className="text-xs font-medium text-muted">Showing total</p>
             <p className="mt-0.5 text-lg font-semibold tabular-nums text-ink sm:text-xl">
@@ -388,10 +381,12 @@ export function ExpenseList() {
             <p className="text-xs font-medium text-muted">Matching</p>
             <p className="mt-0.5 text-lg font-semibold tabular-nums text-ink sm:text-xl">{filtered.length}</p>
           </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 sm:px-4 sm:py-3">
-            <p className="text-xs font-medium text-amber-800">Needs reply</p>
-            <p className="mt-0.5 text-lg font-semibold tabular-nums text-amber-900 sm:text-xl">{actionNeeded}</p>
-          </div>
+          {!isReview && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 sm:px-4 sm:py-3">
+              <p className="text-xs font-medium text-amber-800">Needs reply</p>
+              <p className="mt-0.5 text-lg font-semibold tabular-nums text-amber-900 sm:text-xl">{actionNeeded}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -433,26 +428,28 @@ export function ExpenseList() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search merchant, category, event, notes…"
+              placeholder={isReview ? 'Search merchant, employee, category, event…' : 'Search merchant, category, event, notes…'}
               className="w-full min-h-11 rounded-lg border border-ink/10 bg-white py-2 pl-9 pr-3 text-sm text-ink placeholder:text-charcoal/40 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 md:min-h-0"
             />
           </div>
-          <div className="flex shrink-0 rounded-lg border border-ink/10 bg-brand-50 p-0.5">
-            {TYPE_OPTIONS.map((t) => (
-              <button
-                key={t.label}
-                type="button"
-                onClick={() => setFilter('type', t.id)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  filters.type === t.id
-                    ? 'bg-white text-ink shadow-sm'
-                    : 'text-muted hover:text-ink'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          {!isReview && (
+            <div className="flex shrink-0 rounded-lg border border-ink/10 bg-brand-50 p-0.5">
+              {TYPE_OPTIONS.map((t) => (
+                <button
+                  key={t.label}
+                  type="button"
+                  onClick={() => setFilter('type', t.id)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    filters.type === t.id
+                      ? 'bg-white text-ink shadow-sm'
+                      : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setPanelOpen((o) => !o)}
@@ -643,9 +640,11 @@ export function ExpenseList() {
         ) : expenses.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <p className="text-muted">No expenses yet.</p>
-            <Link to="/transactions/new" className="mt-2 inline-block text-sm text-brand-600 hover:underline">
-              Create your first expense
-            </Link>
+            {!isReview && (
+              <Link to="/transactions/new" className="mt-2 inline-block text-sm text-brand-600 hover:underline">
+                Create your first expense
+              </Link>
+            )}
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-muted">
@@ -658,7 +657,7 @@ export function ExpenseList() {
               {pageRows.map((expense) => (
                 <Link
                   key={expense.id}
-                  to={`/expenses/${expense.id}`}
+                  to={`${detailBase}/${expense.id}`}
                   className={`block px-4 py-3 active:bg-ink/[0.03] ${expense.status === 'awaiting_info' ? 'bg-amber-50' : ''}`}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -670,7 +669,11 @@ export function ExpenseList() {
                   <div className="mt-1 flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-1.5">
                       <ExpenseTypeChip expense={expense} compact />
-                      <p className="min-w-0 truncate text-xs text-muted">{expense.date}{expense.category?.name ? ` · ${expense.category.name}` : ''}</p>
+                      <p className="min-w-0 truncate text-xs text-muted">
+                        {expense.date}
+                        {isReview && expense.user?.name ? ` · ${expense.user.name}` : ''}
+                        {expense.category?.name ? ` · ${expense.category.name}` : ''}
+                      </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <ReimbursementBadge status={expense.reimbursementStatus} />
@@ -695,14 +698,14 @@ export function ExpenseList() {
                       />
                     </th>
                   )}
-                  <th className="px-6 py-3">Merchant</th>
+                  <th className="px-6 py-3">{isReview ? 'Merchant / Employee' : 'Merchant'}</th>
                   <th className="px-6 py-3">Type</th>
                   <th className="px-6 py-3">Date</th>
                   <th className="px-6 py-3">Category</th>
                   <th className="px-6 py-3 text-right">Amount</th>
                   <th className="px-6 py-3">Status</th>
                   <th className="px-6 py-3">Receipt</th>
-                  <th className="px-6 py-3">Next action</th>
+                  {!isReview && <th className="px-6 py-3">Next action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink/5">
@@ -719,9 +722,12 @@ export function ExpenseList() {
                       </td>
                     )}
                     <td className="px-6 py-4">
-                      <Link to={`/expenses/${expense.id}`} className="font-medium text-ink hover:text-brand-700">
+                      <Link to={`${detailBase}/${expense.id}`} className="font-medium text-ink hover:text-brand-700">
                         {expense.merchant}
                       </Link>
+                      {isReview && expense.user?.name && (
+                        <p className="mt-0.5 text-xs text-charcoal/50">{expense.user.name}</p>
+                      )}
                       {expense.description && (
                         <p className="mt-0.5 text-xs text-charcoal/40 line-clamp-1">{expense.description}</p>
                       )}
@@ -750,9 +756,11 @@ export function ExpenseList() {
                         onOpen={setQuickViewId}
                       />
                     </td>
-                    <td className="px-6 py-4 text-sm">
-                      <NextActionCell expense={expense} />
-                    </td>
+                    {!isReview && (
+                      <td className="px-6 py-4 text-sm">
+                        <NextActionCell expense={expense} />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -794,7 +802,10 @@ export function ExpenseList() {
         <ExpenseQuickViewModal
           expenseId={quickViewId}
           onClose={() => setQuickViewId(null)}
-          onDeleted={() => void qc.invalidateQueries({ queryKey: ['expenses'] })}
+          onDeleted={() => {
+            onChanged();
+            void qc.invalidateQueries({ queryKey: ['expenses'] });
+          }}
         />
       )}
     </div>

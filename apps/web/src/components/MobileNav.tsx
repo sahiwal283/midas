@@ -85,7 +85,7 @@ export function MobileNav() {
           </NavLink>
           <NavLink to="/expenses" className={itemCls}>
             <ReceiptText className="h-5 w-5" />
-            Expenses
+            My Expenses
           </NavLink>
         </div>
 

@@ -50,15 +50,14 @@ const createExpenseSchema = z.object({
 
 const updateExpenseSchema = createExpenseSchema.partial();
 
-// List own expenses (or all for accountant/admin). Optional server-side
+// List own expenses — for every role. Company-wide browsing lives on the
+// accountant endpoints (/accountant/all et al). Optional server-side
 // search/date filters and pagination: when `page` is present the response is
 // { expenses, total, page, pageSize }; otherwise the legacy full array.
 router.get('/', asyncHandler(async (req, res) => {
-  const isPrivileged = roleAllowed(req.user!.role, ['accountant', 'admin']);
   const { status, categoryId, search, from, to, page, pageSize } = req.query as Record<string, string>;
 
-  const conditions = [];
-  if (!isPrivileged) conditions.push(eq(expenses.userId, req.user!.id));
+  const conditions = [eq(expenses.userId, req.user!.id)];
   if (status) conditions.push(eq(expenses.status, status as typeof expenses.status.enumValues[number]));
   if (categoryId) {
     // A parent category matches itself and all descendants.
