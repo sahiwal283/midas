@@ -435,29 +435,38 @@ function EntryForm({ kind, business, onDone, onError }: {
   const showDate = !business.payrollLinked;
 
   const mutation = useMutation({
-    mutationFn: () => {
-      if (kind === 'deposit') {
-        return cashbookApi.deposit(business.id, {
-          amount,
-          invoiceNumber,
-          notes: notes.trim() || undefined,
-          ...(showDate ? { entryDate } : {}),
-        });
+    mutationFn: async (): Promise<void> => {
+      switch (kind) {
+        case 'deposit':
+          await cashbookApi.deposit(business.id, {
+            amount,
+            invoiceNumber,
+            notes: notes.trim() || undefined,
+            ...(showDate ? { entryDate } : {}),
+          });
+          return;
+        case 'withdrawal':
+          await cashbookApi.withdrawal(business.id, {
+            amount,
+            notes: notes.trim() || undefined,
+            ...(showDate ? { entryDate } : {}),
+          });
+          return;
+        case 'petty': {
+          const form = new FormData();
+          form.set('amount', amount);
+          form.set('description', description);
+          if (reference.trim()) form.set('reference', reference.trim());
+          if (showDate) form.set('entryDate', entryDate);
+          if (receipt) form.set('receipt', receipt);
+          await cashbookApi.pettyCash(business.id, form);
+          return;
+        }
+        default: {
+          const _exhaustive: never = kind;
+          return _exhaustive;
+        }
       }
-      if (kind === 'withdrawal') {
-        return cashbookApi.withdrawal(business.id, {
-          amount,
-          notes: notes.trim() || undefined,
-          ...(showDate ? { entryDate } : {}),
-        });
-      }
-      const form = new FormData();
-      form.set('amount', amount);
-      form.set('description', description);
-      if (reference.trim()) form.set('reference', reference.trim());
-      if (showDate) form.set('entryDate', entryDate);
-      if (receipt) form.set('receipt', receipt);
-      return cashbookApi.pettyCash(business.id, form);
     },
     onSuccess: onDone,
     onError,
