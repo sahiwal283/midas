@@ -1,17 +1,17 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { ChevronRight, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import client from '../api/client';
 import { MyAccountSection } from './settings/MyAccountSection';
 import { PaymentMethodsSection } from './settings/PaymentMethodsSection';
 import { BudgetsSection } from './settings/BudgetsSection';
-import { flattenTree, descendantIdSet, type CategoryTreeNode } from '../lib/categoryTree';
-import { useCollapsibleTree } from '../lib/useCollapsibleTree';
+import { flattenTree } from '../lib/categoryTree';
 import { ChartOfAccountsSection } from './settings/ChartOfAccountsSection';
+import { CategoriesSection } from './settings/CategoriesSection';
 import { ClosedPeriodsSection } from './settings/ClosedPeriodsSection';
 import { UsersSection } from './settings/UsersSection';
 import { PageHeader } from '../components/PageHeader';
+import type { ExpenseCategory } from '../types';
 
 type Section = 'account' | 'companies' | 'users' | 'categories' | 'chart-of-accounts' | 'payment-methods' | 'budgets' | 'closed-periods' | 'connections' | 'audit';
 
@@ -133,7 +133,7 @@ export function Admin() {
           {activeSection === 'account' && <MyAccountSection />}
           {activeSection === 'users' && <UsersSection />}
           {activeSection === 'companies' && <CompaniesTab />}
-          {activeSection === 'categories' && <CategoriesTab />}
+          {activeSection === 'categories' && <CategoriesSection />}
           {activeSection === 'chart-of-accounts' && <ChartOfAccountsSection />}
           {activeSection === 'payment-methods' && <PaymentMethodsSection />}
           {activeSection === 'budgets' && <BudgetsSection />}
@@ -293,137 +293,6 @@ function CompaniesTab() {
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-// ── Categories ───────────────────────────────────────────────────────────────
-
-interface AdminCategory extends CategoryTreeNode {
-  description: string | null;
-  isActive: boolean;
-}
-
-function CategoriesTab() {
-  const qc = useQueryClient();
-  const [name, setName] = useState('');
-  const [newParent, setNewParent] = useState('');
-  const [error, setError] = useState('');
-  const { data: categories = [], isLoading } = useQuery<AdminCategory[]>({
-    queryKey: ['admin-categories'],
-    queryFn: () => client.get('/admin/categories').then((r) => r.data.categories),
-  });
-
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['admin-categories'] });
-    qc.invalidateQueries({ queryKey: ['expense-categories'] });
-  };
-  const addMutation = useMutation({
-    mutationFn: () => client.post('/admin/categories', { name, parentId: newParent || null }),
-    onSuccess: () => { invalidate(); setName(''); setError(''); },
-    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not add category'),
-  });
-  const patchMutation = useMutation({
-    mutationFn: ({ id, ...body }: { id: string; name?: string; isActive?: boolean; parentId?: string | null }) =>
-      client.patch(`/admin/categories/${id}`, body),
-    onSuccess: () => { invalidate(); setError(''); },
-    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not update category'),
-  });
-
-  const ordered = useMemo(() => flattenTree(categories), [categories]);
-  const { rows, toggle, expandAll, collapseAll } = useCollapsibleTree(categories);
-  // Valid parents for a node: everything except itself and its own descendants.
-  const validParents = (id: string) => {
-    const blocked = descendantIdSet(categories, id);
-    return categories.filter((c) => !blocked.has(c.id));
-  };
-
-  if (isLoading) return <div className="text-sm text-charcoal/40">Loading…</div>;
-
-  return (
-    <div className="space-y-4">
-      <ErrorPanel message={error} onDismiss={() => setError('')} />
-      <div className="flex flex-wrap gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="New category name"
-          className="w-64 rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
-        />
-        <select
-          value={newParent}
-          onChange={(e) => setNewParent(e.target.value)}
-          className="rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
-        >
-          <option value="">— top level —</option>
-          {ordered.map(({ cat, depth }) => (
-            <option key={cat.id} value={cat.id}>{' '.repeat(depth * 3)}{cat.name}</option>
-          ))}
-        </select>
-        <button
-          onClick={() => addMutation.mutate()}
-          disabled={!name.trim()}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-60"
-        >
-          Add
-        </button>
-      </div>
-      <div className="flex items-center gap-3 text-xs">
-        <button onClick={expandAll} className="text-brand-600 underline hover:text-brand-700">Expand all</button>
-        <button onClick={collapseAll} className="text-brand-600 underline hover:text-brand-700">Collapse all</button>
-      </div>
-      <div className="rounded-xl border border-ink/10 bg-white">
-        {rows.map(({ cat, depth, hasChildren, collapsed, descendantCount }) => (
-          <div key={cat.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-ink/5 px-5 py-3 last:border-0">
-            <div className="flex items-center gap-1.5" style={{ paddingLeft: depth * 20 }}>
-              {hasChildren ? (
-                <button
-                  onClick={() => toggle(cat.id)}
-                  className="rounded p-0.5 text-charcoal/40 hover:bg-brand-50 hover:text-charcoal/70"
-                  aria-label={collapsed ? `Expand ${cat.name}` : `Collapse ${cat.name}`}
-                  aria-expanded={!collapsed}
-                >
-                  {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </button>
-              ) : (
-                <span className="inline-block w-5" />
-              )}
-              <div>
-                <p className="font-medium text-ink">
-                  {cat.name}
-                  {hasChildren && collapsed && (
-                    <span className="ml-2 text-xs font-normal text-charcoal/40">{descendantCount}</span>
-                  )}
-                </p>
-                {cat.description && <p className="text-xs text-charcoal/40">{cat.description}</p>}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                value={cat.parentId ?? ''}
-                onChange={(e) => patchMutation.mutate({ id: cat.id, parentId: e.target.value || null })}
-                className="rounded-lg border border-ink/10 px-2 py-1 text-xs text-charcoal/70 focus:border-brand-500 focus:outline-none"
-                title="Parent category"
-              >
-                <option value="">— top level —</option>
-                {validParents(cat.id).map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => patchMutation.mutate({ id: cat.id, isActive: !cat.isActive })}
-                className={`rounded-full px-2.5 py-0.5 text-xs ${cat.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}
-                title={cat.isActive ? 'Click to hide (hides whole subtree from pickers)' : 'Click to activate'}
-              >
-                {cat.isActive ? 'Active' : 'Hidden'}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className="text-xs text-charcoal/40">
-        Hiding a category hides its whole subtree from pickers. Existing expenses keep their category either way.
-      </p>
     </div>
   );
 }
@@ -791,7 +660,7 @@ function ConnectionCategories({ connectionId, appName, onClose }: {
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<Set<string> | null>(null);
 
-  const { data: categories = [] } = useQuery<AdminCategory[]>({
+  const { data: categories = [] } = useQuery<ExpenseCategory[]>({
     queryKey: ['admin-categories'],
     queryFn: () => client.get('/admin/categories').then((r) => r.data.categories),
   });

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, ChevronDown, AlertCircle } from 'lucide-react';
+import { AlertCircle, Search, X } from 'lucide-react';
 import client from '../../api/client';
 import { companyApi } from '../../api/companies';
 import { expenseApi } from '../../api/expenses';
 import { SearchableSelect, type SearchableOption } from '../../components/SearchableSelect';
-import { useCollapsibleTree } from '../../lib/useCollapsibleTree';
 import { pathFromRoot } from '../../lib/categoryTree';
+import { filterCoaAccounts, groupCoaByAccount } from '@midas/shared';
 import type { ExpenseCategory } from '../../types';
 
 interface Mapping {
@@ -22,22 +22,22 @@ interface ZohoAccount {
   accountType: string;
 }
 
+const searchCls = 'w-full rounded-lg border border-ink/15 bg-white py-2.5 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 lg:py-2';
+
 /**
- * Links each Midas expense category to an account from one company's live Zoho
- * Books chart of accounts. Account ids differ per sister company, so mappings
- * are per (category, company); unmapped categories inherit from the nearest
- * mapped ancestor when an expense is pushed.
+ * Zoho accounts for one company, each with the Midas categories that post to it.
+ * Several Midas categories may share one Zoho account (e.g. booth fees → Booth Expense).
  */
 export function ChartOfAccountsSection() {
   const qc = useQueryClient();
   const [company, setCompany] = useState('');
+  const [search, setSearch] = useState('');
   const [error, setError] = useState('');
 
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => companyApi.list(),
   });
-  // isActive is optional on the shared Company type — treat "absent" as active.
   const zohoCompanies = useMemo(
     () => companies.filter((c) => c.zohoEnabled && c.isActive !== false),
     [companies],
@@ -51,6 +51,7 @@ export function ChartOfAccountsSection() {
     queryKey: ['admin-categories'],
     queryFn: () => client.get('/admin/categories').then((r) => r.data.categories),
   });
+  const byId = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
 
   const {
     data: accountData,
@@ -81,13 +82,13 @@ export function ChartOfAccountsSection() {
     mutationFn: (v: { categoryId: string; zohoAccountId: string }) =>
       client.put('/admin/category-zoho-accounts', { ...v, companyName: company }),
     onSuccess: () => { invalidate(); setError(''); },
-    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not save the mapping'),
+    onError: (err: unknown) => setError(axiosMessage(err, 'Could not save the mapping')),
   });
   const clearMutation = useMutation({
     mutationFn: (categoryId: string) =>
       client.delete('/admin/category-zoho-accounts', { params: { categoryId, companyName: company } }),
     onSuccess: () => { invalidate(); setError(''); },
-    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not clear the mapping'),
+    onError: (err: unknown) => setError(axiosMessage(err, 'Could not clear the mapping')),
   });
 
   const [syncResult, setSyncResult] = useState('');
@@ -109,54 +110,69 @@ export function ChartOfAccountsSection() {
       void qc.invalidateQueries({ queryKey: ['expense-categories'] });
       void qc.invalidateQueries({ queryKey: ['coa-mappings'] });
     },
-    onError: (err: any) => setError(err?.response?.data?.error?.message ?? 'Could not import categories from Zoho'),
+    onError: (err: unknown) => setError(axiosMessage(err, 'Could not import categories from Zoho')),
   });
 
-  const { rows, toggle, expandAll, collapseAll } = useCollapsibleTree(categories);
-  const accountName = (id: string) => accounts.find((a) => a.accountId === id)?.accountName ?? id;
+  const accountRows = useMemo(
+    () => groupCoaByAccount(
+      accounts.map((a) => ({
+        accountId: a.accountId,
+        accountName: a.accountName,
+        accountCode: a.accountCode,
+      })),
+      mappings,
+    ),
+    [accounts, mappings],
+  );
 
-  /** Account ids already claimed by some OTHER category for this company. */
-  const claimedElsewhere = useMemo(() => {
-    const byAccount = new Map<string, string>();
-    for (const m of mappings) byAccount.set(m.zohoAccountId, m.categoryId);
-    return byAccount;
-  }, [mappings]);
+  const searchableRows = useMemo(() => accountRows.map((row) => ({
+    ...row,
+    categoryNames: row.categoryIds.map((id) => byId.get(id)?.name ?? id),
+  })), [accountRows, byId]);
 
-  /**
-   * One account maps to one category per company, so accounts already used
-   * elsewhere are hidden. The row's own mapping always stays selectable — as
-   * does a saved id Zoho no longer returns, so it never silently disappears.
-   */
-  const optionsFor = (categoryId: string, mapped: string): SearchableOption[] => {
-    const opts: SearchableOption[] = accounts
-      .filter((a) => {
-        const owner = claimedElsewhere.get(a.accountId);
-        return !owner || owner === categoryId;
-      })
-      .map((a) => ({
-        value: a.accountId,
-        label: a.accountName,
-        hint: a.accountCode ?? undefined,
-      }));
-    if (mapped && !opts.some((o) => o.value === mapped)) {
-      opts.unshift({ value: mapped, label: mapped, hint: 'not in current Zoho list' });
-    }
-    return opts;
-  };
+  const visibleAccounts = useMemo(
+    () => filterCoaAccounts(searchableRows, search),
+    [searchableRows, search],
+  );
 
-  const claimedCount = claimedElsewhere.size;
+  const liveAccountIds = useMemo(() => new Set(accounts.map((a) => a.accountId)), [accounts]);
 
-  /** Nearest mapped ancestor (excluding the category itself) — what it inherits. */
   const inheritedFrom = (categoryId: string): { name: string; accountId: string } | null => {
     const chain = pathFromRoot(categories, categoryId).slice(0, -1).reverse();
     for (const ancestorId of chain) {
       const hit = mappedByCategory.get(ancestorId);
       if (hit) {
-        return { name: categories.find((c) => c.id === ancestorId)?.name ?? 'parent', accountId: hit };
+        return { name: byId.get(ancestorId)?.name ?? 'parent', accountId: hit };
       }
     }
     return null;
   };
+
+  const unmapped = useMemo(
+    () => categories.filter((c) => !mappedByCategory.has(c.id)),
+    [categories, mappedByCategory],
+  );
+  const q = search.trim().toLowerCase();
+  const unmappedVisible = useMemo(
+    () => unmapped.filter((c) => {
+      if (!q) return true;
+      return `${c.name} ${c.description ?? ''}`.toLowerCase().includes(q);
+    }),
+    [unmapped, q],
+  );
+
+  const addOptions = (excludeIds: Set<string>): SearchableOption[] => (
+    unmapped
+      .filter((c) => !excludeIds.has(c.id))
+      .map((c) => {
+        const path = pathFromRoot(categories, c.id).map((id) => byId.get(id)?.name ?? id);
+        return {
+          value: c.id,
+          label: c.name,
+          hint: path.length > 1 ? path.slice(0, -1).join(' › ') : undefined,
+        };
+      })
+  );
 
   const mappedCount = mappings.length;
 
@@ -171,9 +187,9 @@ export function ChartOfAccountsSection() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">
-        Link each Midas category to an account from this company's Zoho chart of accounts. Zoho account
-        ids differ per company, so mappings are saved per company. A category left unmapped uses the
-        nearest mapped parent above it.
+        Attach Midas categories to this company's Zoho accounts. Several categories can share one
+        account — they stay separate in Midas and post together in Books. Unmapped categories inherit
+        from a mapped parent at push time.
       </p>
 
       {error && (
@@ -190,7 +206,7 @@ export function ChartOfAccountsSection() {
         <select
           id="coa-company"
           value={company}
-          onChange={(e) => setCompany(e.target.value)}
+          onChange={(e) => { setCompany(e.target.value); setSearch(''); }}
           className="rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
         >
           {zohoCompanies.map((c) => (
@@ -200,19 +216,29 @@ export function ChartOfAccountsSection() {
         <span className="text-xs text-charcoal/40">
           {accountsLoading
             ? 'Loading Zoho accounts…'
-            : `${accounts.length} Zoho accounts · ${mappedCount} mapped · ${Math.max(0, accounts.length - claimedCount)} still available`}
+            : `${accounts.length} Zoho accounts · ${mappedCount} categor${mappedCount === 1 ? 'y' : 'ies'} mapped · ${unmapped.length} unmapped`}
         </span>
-        <div className="ml-auto flex items-center gap-3 text-xs">
+        <div className="ml-auto">
           <button
             onClick={() => { setSyncResult(''); syncMutation.mutate(); }}
             disabled={syncMutation.isPending}
-            className="min-h-11 rounded-lg border border-brand-300 px-3 py-1.5 font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-60 lg:min-h-0"
+            className="min-h-11 rounded-lg border border-brand-300 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-60 lg:min-h-0"
           >
             {syncMutation.isPending ? 'Importing…' : 'Import categories from Zoho'}
           </button>
-          <button onClick={expandAll} className="inline-flex min-h-11 items-center text-brand-600 underline hover:text-brand-700 lg:min-h-0">Expand all</button>
-          <button onClick={collapseAll} className="inline-flex min-h-11 items-center text-brand-600 underline hover:text-brand-700 lg:min-h-0">Collapse all</button>
         </div>
+      </div>
+
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-charcoal/40" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search accounts or categories…"
+          aria-label="Search chart of accounts"
+          className={searchCls}
+        />
       </div>
 
       {syncResult && (
@@ -231,77 +257,102 @@ export function ChartOfAccountsSection() {
         </div>
       )}
 
-      {/* Deep indentation can outgrow a phone screen — scroll inside this card, never the page */}
       <div className="overflow-x-auto rounded-xl border border-ink/10 bg-white">
-        {rows.map(({ cat, depth, hasChildren, collapsed, descendantCount }) => {
-          const mapped = mappedByCategory.get(cat.id) ?? '';
-          const inherited = mapped ? null : inheritedFrom(cat.id);
+        {visibleAccounts.length === 0 ? (
+          <p className="px-5 py-10 text-center text-sm text-muted">
+            {search.trim() ? `No accounts match “${search.trim()}”.` : 'No Zoho accounts loaded.'}
+          </p>
+        ) : visibleAccounts.map((row) => {
+          const stale = !liveAccountIds.has(row.accountId);
           return (
-            <div key={cat.id} className="flex flex-wrap items-center gap-3 border-b border-ink/5 px-5 py-2.5 last:border-0">
-              <div className="flex min-w-[16rem] flex-1 items-center gap-1.5" style={{ paddingLeft: depth * 20 }}>
-                {hasChildren ? (
-                  <button
-                    onClick={() => toggle(cat.id)}
-                    className="-m-3 rounded p-3.5 text-charcoal/40 hover:bg-brand-50 hover:text-charcoal/70 lg:m-0 lg:p-0.5"
-                    aria-label={collapsed ? `Expand ${cat.name}` : `Collapse ${cat.name}`}
-                    aria-expanded={!collapsed}
-                  >
-                    {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </button>
-                ) : (
-                  <span className="inline-block w-5" />
-                )}
-                <span className={`text-sm ${cat.isActive ? 'text-ink' : 'text-charcoal/40 line-through'}`}>
-                  {cat.name}
-                  {hasChildren && collapsed && (
-                    <span className="ml-2 text-xs text-charcoal/40">{descendantCount}</span>
-                  )}
-                </span>
+            <div key={row.accountId} className="border-b border-ink/5 px-5 py-4 last:border-0">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-ink">{row.accountName}</p>
+                  <p className="text-xs text-charcoal/40">
+                    {row.accountCode ?? 'No account code'}
+                    {stale ? ' · not in current Zoho list' : ''}
+                  </p>
+                </div>
+                <div className="w-full sm:w-72">
+                  <SearchableSelect
+                    key={row.categoryIds.join(',')}
+                    options={addOptions(new Set(row.categoryIds))}
+                    value=""
+                    disabled={accountsFailed || accountsLoading || unmapped.length === 0}
+                    placeholder={unmapped.length === 0 ? 'All categories mapped' : 'Add a Midas category…'}
+                    onChange={(categoryId) => {
+                      if (categoryId) setMutation.mutate({ categoryId, zohoAccountId: row.accountId });
+                    }}
+                  />
+                </div>
               </div>
-
-              <div className="w-full sm:w-72">
-                <SearchableSelect
-                  options={optionsFor(cat.id, mapped)}
-                  value={mapped}
-                  disabled={accountsFailed || accountsLoading}
-                  placeholder={inherited ? `Inherited from ${inherited.name}` : 'Search accounts…'}
-                  onChange={(accountId) => {
-                    if (accountId) setMutation.mutate({ categoryId: cat.id, zohoAccountId: accountId });
-                    else if (mapped) clearMutation.mutate(cat.id);
-                  }}
-                />
-              </div>
-
-              <div className="flex w-40 items-center justify-end gap-2">
-                {mapped ? (
-                  <>
-                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">Mapped</span>
-                    <button
-                      onClick={() => clearMutation.mutate(cat.id)}
-                      className="inline-flex min-h-11 items-center px-1 text-xs text-charcoal/40 underline hover:text-charcoal/70 lg:min-h-0 lg:px-0"
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {row.categoryIds.length === 0 ? (
+                  <span className="text-xs text-charcoal/40">No Midas categories attached</span>
+                ) : row.categoryIds.map((id) => {
+                  const cat = byId.get(id);
+                  return (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800"
                     >
-                      Clear
-                    </button>
-                  </>
-                ) : inherited ? (
-                  <span
-                    className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-600"
-                    title={`Uses ${accountName(inherited.accountId)} from ${inherited.name}`}
-                  >
-                    Inherited
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-muted">Unmapped</span>
-                )}
+                      {cat?.name ?? id}
+                      <button
+                        type="button"
+                        onClick={() => clearMutation.mutate(id)}
+                        disabled={accountsFailed}
+                        className="rounded-full p-0.5 text-brand-600 hover:bg-brand-100 hover:text-danger disabled:opacity-40"
+                        aria-label={`Remove ${cat?.name ?? id}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
               </div>
             </div>
           );
         })}
       </div>
 
+      {unmappedVisible.length > 0 && (
+        <div className="rounded-xl border border-ink/10 bg-white p-5">
+          <h2 className="text-sm font-semibold text-charcoal/80">Unmapped Midas categories</h2>
+          <p className="mt-0.5 text-xs text-charcoal/40">
+            Add them to an account above. A mapped parent covers children at push time until you attach them explicitly.
+          </p>
+          <ul className="mt-3 divide-y divide-ink/5">
+            {unmappedVisible.map((c) => {
+              const inherited = inheritedFrom(c.id);
+              return (
+                <li key={c.id} className="flex items-center justify-between gap-3 py-2">
+                  <span className={`text-sm ${c.isActive ? 'text-ink' : 'text-charcoal/40 line-through'}`}>{c.name}</span>
+                  {inherited ? (
+                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-600">
+                      inherits from {inherited.name}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-muted">Unmapped</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       <p className="text-xs text-charcoal/40">
         A per-expense account chosen during accountant review always wins over these defaults.
+        Import from Zoho creates a Midas category per Zoho account — skip it while trimming the list.
       </p>
     </div>
   );
+}
+
+function axiosMessage(err: unknown, fallback: string): string {
+  const data = err && typeof err === 'object' && 'response' in err
+    ? (err as { response?: { data?: { error?: { message?: string } } } }).response?.data
+    : undefined;
+  return data?.error?.message ?? fallback;
 }

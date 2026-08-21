@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.59.0 (2026-08-21)
+
+### Categories and Chart of Accounts
+- Parent pickers are searchable comboboxes. The category list and Chart of Accounts have a search box so you are not scrolling the whole page for a name near the bottom.
+- Unused categories can be deleted. If expenses, child categories, transactions, or budgets still reference one, delete is refused and you can hide it instead.
+- Chart of Accounts is now account-first: attach several Midas categories to one Zoho account for that company (booth rental, electrical, hanging → one Books account).
+
 ## 0.58.0 (2026-08-21)
 
 ### Cashbook merged into Midas

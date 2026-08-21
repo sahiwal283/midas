@@ -1,5 +1,11 @@
 export { MIDAS_VERSION } from '../version';
 export { groupPaymentMethodsForCompany, patchForCompanyMove } from './paymentMethodGroups';
+export {
+  categoryDeleteBlocker,
+  matchingCategoryIdSet,
+  groupCoaByAccount,
+  filterCoaAccounts,
+} from './categorySettings';
 
 // ── Roles ────────────────────────────────────────────────────────────────────
 

@@ -6,9 +6,10 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db/index';
 import {
   users, expenseCategories, categoryZohoAccounts, appConnections, appConnectionCategories, ssoLinks,
-  expenses, expenseMessages, captures, companies,
+  expenses, expenseMessages, captures, companies, budgets, expenseDetails,
   paymentMethods, auditLogs,
 } from '../db/schema';
+import { categoryDeleteBlocker } from '@midas/shared';
 import { env } from '../config/env';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, createError } from '../middleware/error';
@@ -591,6 +592,42 @@ router.patch('/categories/:id', accounting, asyncHandler(async (req, res) => {
     .returning();
 
   res.json({ category: updated });
+}));
+
+router.delete('/categories/:id', accounting, asyncHandler(async (req, res) => {
+  const cat = await db.query.expenseCategories.findFirst({
+    where: eq(expenseCategories.id, req.params.id),
+  });
+  if (!cat) throw notFound('Category not found');
+
+  const [expRow] = await db.select({ n: count() }).from(expenses)
+    .where(eq(expenses.categoryId, cat.id));
+  const [txnRow] = await db.select({ n: count() }).from(expenseDetails)
+    .where(eq(expenseDetails.categoryId, cat.id));
+  const [childRow] = await db.select({ n: count() }).from(expenseCategories)
+    .where(eq(expenseCategories.parentId, cat.id));
+  const [budRow] = await db.select({ n: count() }).from(budgets)
+    .where(eq(budgets.categoryId, cat.id));
+
+  const blocker = categoryDeleteBlocker({
+    expenses: Number(expRow?.n ?? 0),
+    transactions: Number(txnRow?.n ?? 0),
+    children: Number(childRow?.n ?? 0),
+    budgets: Number(budRow?.n ?? 0),
+  });
+  if (blocker) throw createError(blocker, 409, 'CATEGORY_IN_USE');
+
+  await db.delete(expenseCategories).where(eq(expenseCategories.id, cat.id));
+
+  await auditLog({
+    entityType: 'expense_category',
+    entityId: cat.id,
+    userId: req.user!.id,
+    action: 'admin.category.deleted',
+    before: { name: cat.name, parentId: cat.parentId },
+  });
+
+  res.json({ ok: true });
 }));
 
 // Import expense-class accounts from each Zoho-enabled company's live chart
