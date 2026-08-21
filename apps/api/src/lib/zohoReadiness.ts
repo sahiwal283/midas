@@ -56,6 +56,8 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   const hasReceipt = (expense.receipts?.length ?? 0) > 0;
   const hasExpenseAccount = !!(expense.categoryId || expense.zohoExpenseAccountId);
   const hasPaymentMethod = !!expense.paymentMethodId;
+  // Push refuses unmapped cards (MISSING_ZOHO_PAID_THROUGH) — surface it here.
+  const hasPaidThrough = !!expense.paymentMethod?.zohoAccountName;
   const hasZohoEntity = !!expense.zohoEntity;
   const alreadySynced = !!expense.zohoExpenseId;
   const hasSubmitter = !!expense.userId;
@@ -74,6 +76,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
     { label: 'Submitter (user)', pass: hasSubmitter },
     { label: 'Expense account set', pass: hasExpenseAccount },
     { label: 'Payment method set', pass: hasPaymentMethod },
+    { label: 'Payment method mapped to Zoho account', pass: hasPaidThrough },
     { label: 'Accounting entity (Zoho brand)', pass: hasZohoEntity },
     { label: 'Receipt attached', pass: hasReceipt },
     { label: 'No open accountant requests', pass: !hasOpenRequests },
@@ -86,6 +89,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   if (!hasSubmitter) missing.push('submitter (user)');
   if (!hasExpenseAccount) missing.push('expense account (Zoho COA or category)');
   if (!hasPaymentMethod) missing.push('payment method');
+  if (!hasPaidThrough) missing.push('Zoho paid-through mapping on the payment method (Settings → Payment Methods)');
   if (!hasZohoEntity) missing.push('accounting entity (zohoEntity)');
   if (!hasReceipt) missing.push('receipt attachment');
   if (hasOpenRequests) missing.push('unresolved accountant requests');

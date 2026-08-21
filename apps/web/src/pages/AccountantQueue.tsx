@@ -382,7 +382,16 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
 
   const zohoMutation = useMutation({
     mutationFn: (id: string) => accountantApi.pushToZoho(id),
-    onSuccess: refetchQueueAndSummary,
+    onSuccess: () => {
+      setToast({ text: 'Pushed to Zoho.' });
+      refetchQueueAndSummary();
+    },
+    onError: (err: any) => {
+      setToast({
+        text: 'Zoho push failed.',
+        details: [err?.response?.data?.error?.message ?? 'Unknown error'],
+      });
+    },
   });
 
   const bulkApproveMutation = useMutation({

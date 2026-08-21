@@ -16,6 +16,13 @@ export interface FlagsInput {
    * expense is complete and correct, it simply has nowhere to be pushed.
    */
   companyZohoEnabled?: boolean;
+  /**
+   * Payment method with its Zoho paid-through mapping, when the caller loaded
+   * the relation. An unmapped card cannot push (MISSING_ZOHO_PAID_THROUGH), so
+   * it must not read as ready. Undefined (relation not loaded) keeps legacy
+   * behaviour, exactly like companyZohoEnabled.
+   */
+  paymentMethod?: { zohoAccountName: string | null } | null;
 }
 
 export type Flag =
@@ -55,6 +62,7 @@ export function computeFlags(row: FlagsInput): Flag[] {
     !row.zohoExpenseId &&
     hasExpenseAccount &&
     !!row.paymentMethodId &&
+    (row.paymentMethod === undefined || !!row.paymentMethod?.zohoAccountName) &&
     (row.receipts?.length ?? 0) > 0;
   if (zohoReady) flags.push('ready_for_zoho');
 

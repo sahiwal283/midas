@@ -26,7 +26,7 @@ const base = {
   reimbursementStatus: 'not_requested',
   userId: 'user-001',
   category: { name: 'Meals' },
-  paymentMethod: { label: 'Corporate AMEX', zohoAccountName: null },
+  paymentMethod: { label: 'Corporate AMEX', zohoAccountName: 'AMEX-1234' },
   receipts: [{ id: 'r-001' }],
   messages: [],
 };
@@ -48,7 +48,7 @@ describe('evaluateZohoReadiness — ready expense', () => {
 
   it('includes push-gate checks without treating sync as a failure', () => {
     const result = evaluateZohoReadiness(base);
-    expect(result.checks).toHaveLength(10);
+    expect(result.checks).toHaveLength(11);
     expect(result.checks.every((c) => c.pass)).toBe(true);
     expect(result.checks.some((c) => c.label === 'Not already synced')).toBe(false);
   });
@@ -94,6 +94,15 @@ describe('evaluateZohoReadiness — missing fields', () => {
     const result = evaluateZohoReadiness({ ...base, paymentMethodId: null, paymentMethod: null });
     expect(result.ready).toBe(false);
     expect(result.missing).toContain('payment method');
+  });
+
+  it('not ready when the card has no Zoho paid-through mapping', () => {
+    const result = evaluateZohoReadiness({
+      ...base,
+      paymentMethod: { label: 'Corporate AMEX', zohoAccountName: null },
+    });
+    expect(result.ready).toBe(false);
+    expect(result.missing.some((m) => m.includes('paid-through'))).toBe(true);
   });
 
   it('not ready without zohoEntity', () => {

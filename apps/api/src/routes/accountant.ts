@@ -132,7 +132,7 @@ router.get('/queue', asyncHandler(async (req, res) => {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
       category: { columns: { id: true, name: true } },
-      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true, requiresReimbursement: true } },
+      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true, requiresReimbursement: true, zohoAccountName: true } },
       receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
     },
     orderBy: [desc(expenses.createdAt)],
@@ -200,6 +200,7 @@ router.get('/queue/summary', asyncHandler(async (_req, res) => {
     where: and(inArray(expenses.status, QUEUE_STATUSES), eq(expenses.expenseKind, 'business')),
     with: {
       receipts: { columns: { id: true } },
+      paymentMethod: { columns: { zohoAccountName: true } },
     },
     columns: {
       status: true,
@@ -299,7 +300,7 @@ router.get('/expenses', asyncHandler(async (req, res) => {
       user: { columns: { id: true, name: true, email: true } },
       reviewedBy: { columns: { id: true, name: true, email: true } },
       category: { columns: { id: true, name: true } },
-      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true, requiresReimbursement: true } },
+      paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true, requiresReimbursement: true, zohoAccountName: true } },
       receipts: { columns: { id: true, ocrStatus: true, ocrNeedsReview: true } },
     },
     orderBy: [desc(expenses.createdAt)],

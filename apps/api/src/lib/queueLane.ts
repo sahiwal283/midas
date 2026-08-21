@@ -13,6 +13,12 @@ export function readyForZohoCondition() {
     isNotNull(expenses.paymentMethodId),
     or(isNotNull(expenses.categoryId), isNotNull(expenses.zohoExpenseAccountId)),
     sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id})`,
+    // An unmapped card fails the push with MISSING_ZOHO_PAID_THROUGH — not ready.
+    sql`exists (
+      select 1 from payment_methods pm
+      where pm.id = ${expenses.paymentMethodId}
+        and pm.zoho_account_name is not null
+    )`,
     sql`exists (
       select 1 from companies c
       where c.name = ${expenses.zohoEntity}

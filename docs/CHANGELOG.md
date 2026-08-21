@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.60.2 (2026-08-21)
+
+### Fixed: Zoho push failing silently from the review queue
+- **Single-row "Push to Zoho" now reports its result** — success and failure both show a toast with the server's reason. Previously errors were swallowed, so pushes looked like they did nothing.
+- **"Ready for Zoho" now requires the card's paid-through mapping.** Expenses on payment methods with no Zoho paid-through account (which the push correctly refuses with MISSING_ZOHO_PAID_THROUGH) no longer count as ready — in the lane, the summary counts, or the readiness panel, which gained a "Payment method mapped to Zoho account" check naming the fix (Settings → Payment Methods).
+- Data: mapped Nirvana ACH ···8689 to Zoho "PNC Checking #8689".
+
 ## 0.60.1 (2026-08-21)
 
 ### Chart of Accounts
