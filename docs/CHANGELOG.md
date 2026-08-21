@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.57.0 (2026-08-21)
+
+### Collapsible desktop sidebar
+- The navy side nav collapses to a 72px icon rail via a Collapse control above the user footer. Icon-only links keep their identity through hover tooltips and aria-labels; section groups render as subtle dividers; the gold active spine and notification bell stay. The choice persists per browser (localStorage) and animates in 200ms. Mobile navigation is untouched.
+
 ## 0.56.1 (2026-08-21)
 
 ### Fixed
