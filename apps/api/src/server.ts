@@ -14,6 +14,7 @@ import messagesRouter from './routes/messages';
 import capturesRouter from './routes/captures';
 import filesRouter from './routes/files';
 import accountantRouter from './routes/accountant';
+import cashbookRouter from './routes/cashbook';
 import adminRouter from './routes/admin';
 import extRouter from './routes/ext';
 import extensionRouter from './routes/extensionExpenses';
@@ -85,6 +86,7 @@ app.use('/api/v1/expenses/:expenseId/messages', messagesRouter);
 app.use('/api/v1/captures', capturesRouter);
 app.use('/api/v1/files', filesRouter); // authenticated receipt/capture streaming (no public /uploads)
 app.use('/api/v1/accountant', accountantRouter);
+app.use('/api/v1/cashbook', cashbookRouter);
 app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/ext', extRouter);             // app-to-app API (Bearer API key auth)
 app.use('/api/v1/extension', extensionRouter); // browser extension (session cookie auth)

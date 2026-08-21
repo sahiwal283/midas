@@ -1,6 +1,6 @@
 import {
   pgTable, pgEnum, uuid, text, timestamp, boolean,
-  numeric, date, jsonb, integer, char, index, uniqueIndex,
+  numeric, date, jsonb, integer, char, index, uniqueIndex, bigint,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
@@ -635,4 +635,54 @@ export const transactionLineItemsRelations = relations(transactionLineItems, ({ 
 
 export const zohoItemsRelations = relations(zohoItems, ({ many }) => ({
   lineItems: many(transactionLineItems),
+}));
+
+// ── Cashbook ──────────────────────────────────────────────────────────────────
+// Cash drawers merged from the standalone Cashbook app. Money is integer
+// cents, always. Ledgers are append-only: entries void, they never delete.
+// The payroll-linked business has NO local ledger rows — its entries live in
+// the payroll app's database (see lib/payrollDrawer.ts).
+
+export const cashEntryKindEnum = pgEnum('cash_entry_kind', ['DEPOSIT', 'WITHDRAWAL']);
+
+export const cashBusinesses = pgTable('cash_businesses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  /** True for the business mirroring the payroll app's cash drawer. */
+  payrollLinked: boolean('payroll_linked').notNull().default(false),
+  archivedAt: timestamp('archived_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('cash_businesses_name_unique').on(t.name),
+]);
+
+export const cashDrawerEntries = pgTable('cash_drawer_entries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  businessId: uuid('business_id').notNull().references(() => cashBusinesses.id, { onDelete: 'cascade' }),
+  kind: cashEntryKindEnum('kind').notNull(),
+  /** Always positive; direction is encoded by `kind`. */
+  amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
+  /** Required for DEPOSIT — every cash-in ties back to an invoice. */
+  invoiceNumber: text('invoice_number'),
+  notes: text('notes'),
+  /** 'PETTY_CASH' marks a categorized petty-cash purchase (a WITHDRAWAL). */
+  category: text('category'),
+  receiptPath: text('receipt_path'),
+  /** When the cash actually moved. Backdatable; never in the future.
+   *  `createdAt` stays the untouchable audit timestamp. */
+  entryDate: date('entry_date').notNull().default(sql`CURRENT_DATE`),
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  /** Author line migrated from the standalone app when no Midas user matched. */
+  createdByLabel: text('created_by_label'),
+  voidedAt: timestamp('voided_at'),
+  voidedById: uuid('voided_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  index('cash_entries_business_idx').on(t.businessId, t.createdAt),
+  index('cash_entries_entry_date_idx').on(t.businessId, t.entryDate),
+]);
+
+export const cashDrawerEntriesRelations = relations(cashDrawerEntries, ({ one }) => ({
+  business: one(cashBusinesses, { fields: [cashDrawerEntries.businessId], references: [cashBusinesses.id] }),
+  createdBy: one(users, { fields: [cashDrawerEntries.createdById], references: [users.id] }),
 }));

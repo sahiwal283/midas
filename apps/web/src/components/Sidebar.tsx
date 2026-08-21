@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ReceiptText, ClipboardList, Settings, LogOut, Briefcase,
-  BarChart3, Activity, Heart, PanelLeftClose, PanelLeftOpen,
+  BarChart3, Activity, Heart, PanelLeftClose, PanelLeftOpen, Wallet,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
@@ -116,6 +116,7 @@ export function Sidebar() {
                   an expense detail page (/accountant/<id>) lights up neither. */}
               <RailLink to="/accountant/events" icon={<ClipboardList className="h-4 w-4 shrink-0" />} label="Event Review" collapsed={collapsed} isActive={accountantActive.eventReview} />
               <RailLink to="/accountant/daily" icon={<ReceiptText className="h-4 w-4 shrink-0" />} label="Daily Review" collapsed={collapsed} isActive={accountantActive.dailyReview} />
+              <RailLink to="/cashbook" icon={<Wallet className="h-4 w-4 shrink-0" />} label="Cashbook" collapsed={collapsed} />
               <RailLink to="/reports" icon={<BarChart3 className="h-4 w-4 shrink-0" />} label="Reports" collapsed={collapsed} />
             </div>
           </>

@@ -18,6 +18,7 @@ import { PartnerExpenses } from './pages/PartnerExpenses';
 import { PurchaseOrderNew } from './pages/PurchaseOrderNew';
 import { PurchaseOrderDetail } from './pages/PurchaseOrderDetail';
 import { Reports } from './pages/Reports';
+import { Cashbook } from './pages/Cashbook';
 import { IntegrationHealth } from './pages/IntegrationHealth';
 
 const queryClient = new QueryClient({
@@ -71,6 +72,14 @@ export default function App() {
                 }
               />
 
+              <Route
+                path="/cashbook"
+                element={
+                  <ProtectedRoute roles={['accountant', 'admin', 'developer']}>
+                    <Cashbook />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/accountant" element={<Navigate to="/accountant/daily" replace />} />
               <Route
                 path="/accountant/daily"

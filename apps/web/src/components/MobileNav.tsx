@@ -3,7 +3,7 @@ import { NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, ReceiptText, Camera, X, ClipboardList, BarChart3,
-  Briefcase, Settings, LogOut, Upload, Activity,
+  Briefcase, Settings, LogOut, Upload, Activity, Wallet,
 } from 'lucide-react';
 import { MIDAS_VERSION } from '@midas/shared';
 import client from '../api/client';
@@ -54,6 +54,7 @@ export function MobileNav() {
               <>
                 <SheetLink to="/accountant/events" icon={<ClipboardList className="h-4 w-4" />} label="Event Review" onNavigate={() => setMoreOpen(false)} />
                 <SheetLink to="/accountant/daily" icon={<ReceiptText className="h-4 w-4" />} label="Daily Review" onNavigate={() => setMoreOpen(false)} />
+                <SheetLink to="/cashbook" icon={<Wallet className="h-4 w-4" />} label="Cashbook" onNavigate={() => setMoreOpen(false)} />
                 <SheetLink to="/reports" icon={<BarChart3 className="h-4 w-4" />} label="Reports" onNavigate={() => setMoreOpen(false)} />
               </>
             )}

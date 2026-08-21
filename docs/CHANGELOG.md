@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.58.0 (2026-08-21)
+
+### Cashbook merged into Midas
+- New **Cashbook** page under the Accountant section (role-gated): per-business cash drawers with On hand / Deposits / Withdrawals cards, Add cash (invoice required), Petty cash purchase (optional receipt upload), Manual withdrawal, an append-only ledger with void, CSV export, and new-business creation. Money is integer cents; ledgers void, never delete.
+- The payroll-linked **Boomin/Haute** drawer reads and writes the payroll app's database directly, serializing on the payroll app's own advisory lock so a Midas withdrawal and a payroll run can't jointly overdraft; payroll-run withdrawals are read-only and link to the payroll app. Payroll rows can't be backdated (no date field there), matching the source schema.
+- **Nirvana Kulture**'s ledger (and the cashbook business list) migrates into Midas Postgres (migration 0027 + `scripts/migrate-cashbook.sql`); authors map by email to Midas users. Requires `PAYROLL_DATABASE_URL` (and optional `PAYROLL_APP_URL`) in the API env for the payroll drawer; unset leaves local drawers fully functional. The standalone cashbook site can be retired after verification.
+
 ## 0.57.1 (2026-08-21)
 
 ### Fixed
