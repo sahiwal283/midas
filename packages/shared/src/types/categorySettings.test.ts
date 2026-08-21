@@ -4,6 +4,7 @@ import {
   matchingCategoryIdSet,
   groupCoaByAccount,
   filterCoaAccounts,
+  staleCoaMappings,
 } from './categorySettings';
 
 describe('categoryDeleteBlocker', () => {
@@ -78,11 +79,24 @@ describe('groupCoaByAccount', () => {
     expect(rows.find((r) => r.accountId === 'z-meals')?.categoryIds).toEqual([]);
   });
 
-  it('keeps a mapping whose Zoho account is no longer in the live list', () => {
+  it('does not invent a Zoho account row for a mapping that is no longer in the live list', () => {
     const rows = groupCoaByAccount(accounts, [
       { categoryId: 'orphan', zohoAccountId: 'z-gone' },
     ]);
-    expect(rows.some((r) => r.accountId === 'z-gone' && r.categoryIds.includes('orphan'))).toBe(true);
+    expect(rows.some((r) => r.accountId === 'z-gone')).toBe(false);
+  });
+});
+
+describe('staleCoaMappings', () => {
+  const accounts = [
+    { accountId: 'z-booth', accountName: 'Booth Expense', accountCode: '5100' },
+  ];
+
+  it('returns mappings whose Zoho account id is missing from the live list', () => {
+    expect(staleCoaMappings(accounts, [
+      { categoryId: 'space', zohoAccountId: 'z-booth' },
+      { categoryId: 'orphan', zohoAccountId: 'z-gone' },
+    ])).toEqual([{ categoryId: 'orphan', zohoAccountId: 'z-gone' }]);
   });
 });
 

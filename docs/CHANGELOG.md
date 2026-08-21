@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.60.1 (2026-08-21)
+
+### Chart of Accounts
+- Mappings that still pointed at deleted Zoho accounts no longer show up as raw account IDs at the bottom of the list. They sit in a separate “removed from Zoho” section you can clear. Haute and Nirvana leftovers were remapped to the current account (or dropped when nothing equivalent remains).
+
 ## 0.60.0 (2026-08-21)
 
 ### Reference number

@@ -94,16 +94,13 @@ export function groupCoaByAccount(accounts: CoaAccount[], mappings: CoaMapping[]
     ...a,
     categoryIds: byAccount.get(a.accountId) ?? [],
   }));
-  for (const [accountId, categoryIds] of byAccount) {
-    if (rows.some((r) => r.accountId === accountId)) continue;
-    rows.push({
-      accountId,
-      accountName: accountId,
-      accountCode: null,
-      categoryIds,
-    });
-  }
   return rows;
+}
+
+/** Mappings whose Zoho account is not in this company's current live chart. */
+export function staleCoaMappings(accounts: CoaAccount[], mappings: CoaMapping[]): CoaMapping[] {
+  const live = new Set(accounts.map((a) => a.accountId));
+  return mappings.filter((m) => !live.has(m.zohoAccountId));
 }
 
 export interface FilterableCoaAccount {

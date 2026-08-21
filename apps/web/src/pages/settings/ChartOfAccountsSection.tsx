@@ -6,7 +6,7 @@ import { companyApi } from '../../api/companies';
 import { expenseApi } from '../../api/expenses';
 import { SearchableSelect, type SearchableOption } from '../../components/SearchableSelect';
 import { pathFromRoot } from '../../lib/categoryTree';
-import { filterCoaAccounts, groupCoaByAccount } from '@midas/shared';
+import { filterCoaAccounts, groupCoaByAccount, staleCoaMappings } from '@midas/shared';
 import type { ExpenseCategory } from '../../types';
 
 interface Mapping {
@@ -135,7 +135,10 @@ export function ChartOfAccountsSection() {
     [searchableRows, search],
   );
 
-  const liveAccountIds = useMemo(() => new Set(accounts.map((a) => a.accountId)), [accounts]);
+  const staleMappings = useMemo(
+    () => (accountsFailed ? [] : staleCoaMappings(accounts, mappings)),
+    [accountsFailed, accounts, mappings],
+  );
 
   const inheritedFrom = (categoryId: string): { name: string; accountId: string } | null => {
     const chain = pathFromRoot(categories, categoryId).slice(0, -1).reverse();
@@ -160,6 +163,13 @@ export function ChartOfAccountsSection() {
     }),
     [unmapped, q],
   );
+  const staleVisible = useMemo(() => {
+    if (!q) return staleMappings;
+    return staleMappings.filter((m) => {
+      const name = (byId.get(m.categoryId)?.name ?? '').toLowerCase();
+      return name.includes(q) || m.zohoAccountId.toLowerCase().includes(q);
+    });
+  }, [staleMappings, q, byId]);
 
   const addOptions = (excludeIds: Set<string>): SearchableOption[] => (
     unmapped
@@ -263,7 +273,6 @@ export function ChartOfAccountsSection() {
             {search.trim() ? `No accounts match “${search.trim()}”.` : 'No Zoho accounts loaded.'}
           </p>
         ) : visibleAccounts.map((row) => {
-          const stale = !liveAccountIds.has(row.accountId);
           return (
             <div key={row.accountId} className="border-b border-ink/5 px-5 py-4 last:border-0">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -271,7 +280,6 @@ export function ChartOfAccountsSection() {
                   <p className="font-medium text-ink">{row.accountName}</p>
                   <p className="text-xs text-charcoal/40">
                     {row.accountCode ?? 'No account code'}
-                    {stale ? ' · not in current Zoho list' : ''}
                   </p>
                 </div>
                 <div className="w-full sm:w-72">
@@ -315,6 +323,36 @@ export function ChartOfAccountsSection() {
           );
         })}
       </div>
+
+      {staleVisible.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <h2 className="text-sm font-semibold text-amber-950">Removed from this company&apos;s Zoho chart</h2>
+          <p className="mt-0.5 text-xs text-amber-900/70">
+            These Midas categories still point at Zoho accounts that are gone from {company}.
+            Clear them here, then attach the category to a current account above if it still needs one.
+          </p>
+          <ul className="mt-3 divide-y divide-amber-200/80">
+            {staleVisible.map((m) => {
+              const cat = byId.get(m.categoryId);
+              return (
+                <li key={`${m.categoryId}-${m.zohoAccountId}`} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink">{cat?.name ?? m.categoryId}</p>
+                    <p className="truncate font-mono text-[11px] text-charcoal/40">{m.zohoAccountId}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => clearMutation.mutate(m.categoryId)}
+                    className="shrink-0 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                  >
+                    Clear mapping
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {unmappedVisible.length > 0 && (
         <div className="rounded-xl border border-ink/10 bg-white p-5">

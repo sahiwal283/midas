@@ -5,6 +5,7 @@ export {
   matchingCategoryIdSet,
   groupCoaByAccount,
   filterCoaAccounts,
+  staleCoaMappings,
 } from './categorySettings';
 export {
   REFERENCE_NUMBER_MAX,
