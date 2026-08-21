@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.57.1 (2026-08-21)
+
+### Fixed
+- **Deleted demo users no longer resurrect.** `db:seed` runs on every API container start and re-created any missing *@midas.local account — restoring deliberately deleted logins with published default passwords. Demo users now seed only into an empty users table (true first boot). The five resurrected seed accounts were re-deleted from production.
+
 ## 0.57.0 (2026-08-21)
 
 ### Collapsible desktop sidebar
