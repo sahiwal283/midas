@@ -1635,23 +1635,19 @@ function RowActions({
     return <span className="text-xs text-charcoal/40">—</span>;
   }
 
-  const link = touch
-    ? 'inline-flex min-h-11 items-center text-xs font-medium'
-    : 'text-xs font-medium';
-
   return (
-    <div className={`flex items-center gap-3 ${touch ? 'flex-wrap' : 'whitespace-nowrap'}`}>
+    <div className={`flex items-center gap-1.5 ${touch ? 'flex-wrap' : 'whitespace-nowrap'}`}>
       {canReview && (
         <>
           <ActionBtn color="green" size={touch ? 'touch' : 'xs'} onClick={onApprove} disabled={isActing}>
             Approve
           </ActionBtn>
-          <button type="button" onClick={onReject} disabled={isActing} className={`${link} text-danger hover:underline disabled:opacity-50`}>
+          <ActionBtn color="red" size={touch ? 'touch' : 'xs'} onClick={onReject} disabled={isActing}>
             Reject
-          </button>
-          <button type="button" onClick={onAsk} disabled={isActing} className={`${link} text-muted hover:text-ink hover:underline disabled:opacity-50`}>
+          </ActionBtn>
+          <ActionBtn color="blue" size={touch ? 'touch' : 'xs'} onClick={onAsk} disabled={isActing}>
             Needs review
-          </button>
+          </ActionBtn>
         </>
       )}
       {isAwaiting && (

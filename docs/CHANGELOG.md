@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.56.1 (2026-08-21)
+
+### Fixed
+- **Reject and Needs review are real buttons again** in the review queue rows. The compact restyle had reduced them to bare text links, which didn't read as clickable; they're now outlined buttons (Reject in danger red, Needs review neutral) beside the solid Approve, so every action has a visible boundary and press state.
+
 ## 0.56.0 (2026-08-21)
 
 ### Review pages: Queue | All toggle
