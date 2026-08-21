@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.60.0 (2026-08-21)
+
+### Reference number
+- Expenses store an optional receipt / invoice / sales-order number (max 50 characters). OCR prefills it when it finds one; typed values are never overwritten. Accountants can edit it until the expense is in Zoho. Push sends Zoho Books `reference_number` when set and leaves already-synced records alone.
+
 ## 0.59.1 (2026-08-21)
 
 ### Categories: rename in place

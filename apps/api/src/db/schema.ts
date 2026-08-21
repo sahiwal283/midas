@@ -204,6 +204,8 @@ export const expenses = pgTable('expenses', {
   currency: char('currency', { length: 3 }).default('USD').notNull(),
   date: date('date').notNull(),
   description: text('description'),
+  /** Receipt / invoice / sales-order # — Zoho Books Reference Number (max 50). */
+  referenceNumber: text('reference_number'),
   status: expenseStatusEnum('status').default('draft').notNull(),
   /** Zoho/integration pipeline — separate from workflow status. */
   integrationStatus: integrationStatusEnum('integration_status').default('not_required').notNull(),

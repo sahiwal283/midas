@@ -19,6 +19,7 @@ import { storage } from '../lib/storage';
 import { runReceiptOcr } from '../lib/runReceiptOcr';
 import { auditLog } from '../lib/audit';
 import { env } from '../config/env';
+import { normalizeReferenceNumber } from '@midas/shared';
 
 const router = Router();
 router.use(authenticate);
@@ -47,6 +48,7 @@ const submitSchema = z.object({
   currency: z.string().length(3).default('USD'),
   categoryId: z.string().uuid().optional(),
   description: z.string().max(2000).optional(),
+  referenceNumber: z.string().max(80).optional(),
   reimbursementRequired: z.boolean().default(false),
   pageUrl: z.string().url().optional().or(z.literal('')),
   pageTitle: z.string().max(500).optional(),
@@ -91,6 +93,7 @@ router.post('/expenses', asyncHandler(async (req, res) => {
     date: body.date,
     categoryId: body.categoryId ?? null,
     description: body.description ?? null,
+    referenceNumber: normalizeReferenceNumber(body.referenceNumber),
     sourceApp: 'browser_extension',
     sourceRefId: body.pageUrl || null,
     sourceType: body.pageUrl ? 'online_receipt' : 'manual',

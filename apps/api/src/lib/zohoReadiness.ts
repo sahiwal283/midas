@@ -14,6 +14,7 @@ export interface ZohoMappedPayload {
   currency: string;
   date: string;
   description: string | null;
+  referenceNumber?: string | null;
   zohoEntity: string;
   categoryName: string | null;
   paymentMethodLabel: string | null;
@@ -109,6 +110,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
     currency: expense.currency,
     date: expense.date,
     description: expense.description,
+    referenceNumber: expense.referenceNumber ?? null,
     zohoEntity: expense.zohoEntity!,
     categoryName: expense.zohoExpenseAccountName ?? expense.category?.name ?? null,
     paymentMethodLabel: expense.paymentMethod?.label ?? null,

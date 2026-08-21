@@ -1,3 +1,4 @@
+import { normalizeReferenceNumber } from '@midas/shared';
 import { env } from '../config/env';
 import { resolveBrandFromEntity } from './zohoBrand';
 
@@ -19,6 +20,8 @@ export interface ZohoServicePayload {
   paid_through_account_id: string | null;
   /** Zoho Books vendor (contact) id resolved from the merchant name — set just before push. */
   vendor_id?: string | null;
+  /** Zoho Books expense Reference Number — omitted from the wire body when empty. */
+  reference_number?: string;
   category: { id: string | null; name: string | null; proposedZohoAccount: string | null };
   paymentMethod: { id: string | null; label: string | null; proposedPaidThroughAccount: string | null };
   reimbursable: boolean;
@@ -43,6 +46,7 @@ export interface PayloadExpense {
   currency: string;
   date: string;
   description: string | null;
+  referenceNumber?: string | null;
   categoryId: string | null;
   paymentMethodId: string | null;
   zohoEntity: string | null;
@@ -86,6 +90,7 @@ export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePay
     || null;
   const paidThrough = resolvePaidThroughAccountId(expense.paymentMethod?.zohoAccountName);
   const brand = resolveBrandFromEntity(expense.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND;
+  const referenceNumber = normalizeReferenceNumber(expense.referenceNumber);
 
   return {
     idempotencyKey: buildIdempotencyKey(expense.id),
@@ -97,6 +102,7 @@ export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePay
     description: expense.description,
     account_id: accountId,
     paid_through_account_id: paidThrough,
+    ...(referenceNumber ? { reference_number: referenceNumber } : {}),
     category: {
       id: expense.categoryId,
       name: expense.zohoExpenseAccountName ?? expense.category?.name ?? null,

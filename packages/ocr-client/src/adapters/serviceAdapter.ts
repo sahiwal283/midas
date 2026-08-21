@@ -314,6 +314,7 @@ function mapResponse(raw: unknown): OcrResult {
       location: rawFields.location != null ? field('location') : undefined,
       taxAmount: rawFields.taxAmount != null ? field('taxAmount') : undefined,
       tipAmount: rawFields.tipAmount != null ? field('tipAmount') : undefined,
+      referenceNumber: rawFields.referenceNumber != null ? field('referenceNumber') : undefined,
     },
     categories,
     costEstimateUsd: typeof cost.estimated_usd === 'number' ? cost.estimated_usd : null,

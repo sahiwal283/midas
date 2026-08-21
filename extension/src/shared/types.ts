@@ -84,4 +84,5 @@ export interface OcrFields {
   merchant?: { value?: string | null };
   amount?: { value?: number | string | null };
   date?: { value?: string | null };
+  referenceNumber?: { value?: string | null };
 }

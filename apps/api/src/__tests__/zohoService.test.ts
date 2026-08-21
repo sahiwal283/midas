@@ -64,6 +64,12 @@ describe('buildZohoServicePayload', () => {
     expect(p.brand).toBe('haute_brands'); // from zohoEntity via resolveBrandFromEntity
     expect(p.submitter).toEqual({ userId: 'user-1' });
     expect(p.receipt).toEqual({ count: 1 });
+    expect(p.reference_number).toBeUndefined();
+  });
+
+  it('sends a trimmed reference_number when the expense has one', () => {
+    const p = buildZohoServicePayload({ ...baseExpense, referenceNumber: '  INV-42  ' });
+    expect(p.reference_number).toBe('INV-42');
   });
 
   it('defaults source.app to "midas" and is generic (no event_id coupling)', () => {

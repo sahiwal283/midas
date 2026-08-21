@@ -6,6 +6,11 @@ export {
   groupCoaByAccount,
   filterCoaAccounts,
 } from './categorySettings';
+export {
+  REFERENCE_NUMBER_MAX,
+  normalizeReferenceNumber,
+  pickReferenceNumber,
+} from './referenceNumber';
 
 // ── Roles ────────────────────────────────────────────────────────────────────
 
@@ -201,6 +206,8 @@ export interface Expense {
   currency: string;
   date: string;
   description: string | null;
+  /** Receipt / invoice / sales-order number sent to Zoho as Reference Number. */
+  referenceNumber?: string | null;
   status: ExpenseStatus;
   /** Separate from workflow status — Zoho pipeline. */
   integrationStatus?: IntegrationStatus;
@@ -268,6 +275,7 @@ export interface Receipt {
       date?: OcrField;
       /** OCR-suggested expense category — used to preselect the COA account in the wizard. */
       category?: OcrField;
+      referenceNumber?: OcrField;
     };
   } | null;
   ocrCostEstimateUsd: string | null;
@@ -329,6 +337,7 @@ export interface CreateExpensePayload {
   categoryId?: string;
   paymentMethodId?: string;
   description?: string;
+  referenceNumber?: string | null;
   zohoEntity?: string;
   zohoExpenseAccountId?: string;
   zohoExpenseAccountName?: string;
@@ -391,6 +400,7 @@ export interface ZohoMappedPayload {
   currency: string;
   date: string;
   description: string | null;
+  referenceNumber?: string | null;
   zohoEntity: string;
   categoryName: string | null;
   paymentMethodLabel: string | null;

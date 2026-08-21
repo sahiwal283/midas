@@ -31,6 +31,7 @@ interface ExpenseForm {
   zohoExpenseAccountId: string;
   zohoExpenseAccountName: string;
   description: string;
+  referenceNumber: string;
 }
 
 const DEFAULT_FORM: ExpenseForm = {
@@ -42,6 +43,7 @@ const DEFAULT_FORM: ExpenseForm = {
   zohoExpenseAccountId: '',
   zohoExpenseAccountName: '',
   description: '',
+  referenceNumber: '',
 };
 
 // ── Root component ────────────────────────────────────────────────────────────
@@ -114,6 +116,9 @@ export function PopupApp() {
             merchant: fields.merchant?.value ?? f.merchant,
             amount: fields.amount?.value != null ? String(fields.amount.value) : f.amount,
             date: fields.date?.value ?? f.date,
+            referenceNumber: f.referenceNumber.trim()
+              ? f.referenceNumber
+              : (fields.referenceNumber?.value ?? f.referenceNumber),
           }));
           setOcrMissing(false);
         } else {
@@ -158,6 +163,7 @@ export function PopupApp() {
         zohoExpenseAccountId: (zohoOn && form.zohoExpenseAccountId) || undefined,
         zohoExpenseAccountName: (zohoOn && form.zohoExpenseAccountName) || undefined,
         description: form.description.trim() || undefined,
+        referenceNumber: form.referenceNumber.trim() || undefined,
       });
       const submitted = await api.submitExpense(id);
       const outcome = submitted.autoPushed
@@ -439,6 +445,16 @@ function ExpenseFormScreen({
             />
           </Field>
         )}
+
+        <Field label="Reference number">
+          <input
+            value={form.referenceNumber}
+            onChange={(e) => set('referenceNumber', e.target.value)}
+            placeholder="Receipt #, invoice #, sales order…"
+            maxLength={50}
+            style={styles.input}
+          />
+        </Field>
 
         <Field label="Notes">
           <input

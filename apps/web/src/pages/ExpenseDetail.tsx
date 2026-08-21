@@ -15,6 +15,7 @@ import { ReceiptPreview } from '../components/ReceiptPreview';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { ReimbursementControl } from '../components/ReimbursementControl';
 import { CategoryRecode } from '../components/CategoryRecode';
+import { ReferenceNumberField } from '../components/ReferenceNumberField';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, MessageRequestType, AuditLogEntry } from '../types';
 import { roleAllowed } from '../lib/roles';
@@ -162,6 +163,9 @@ function ZohoReadinessPanel({ expense }: { expense: Expense }) {
             <p><span className="font-medium">Category:</span> {mappedPayload.categoryName ?? '—'}</p>
             <p><span className="font-medium">Payment method:</span> {mappedPayload.paymentMethodLabel ?? '—'}</p>
             <p><span className="font-medium">Brand:</span> {mappedPayload.brand}</p>
+            {mappedPayload.referenceNumber && (
+              <p><span className="font-medium">Reference number:</span> {mappedPayload.referenceNumber}</p>
+            )}
             {mappedPayload.description && <p><span className="font-medium">Description:</span> {mappedPayload.description}</p>}
           </div>
         </details>
@@ -331,7 +335,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
-    merchant: '', amount: '', date: '', description: '',
+    merchant: '', amount: '', date: '', description: '', referenceNumber: '',
     paymentMethodId: '', company: '', categoryId: '',
   });
 
@@ -363,6 +367,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
               amount: Number(form.amount),
               date: form.date,
               description: form.description,
+              referenceNumber: form.referenceNumber.trim() || null,
               ...(form.paymentMethodId ? { paymentMethodId: form.paymentMethodId } : {}),
               ...(form.company ? { zohoEntity: form.company } : {}),
               ...(form.categoryId ? { categoryId: form.categoryId } : {}),
@@ -392,6 +397,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
       amount: String(expense.amount ?? ''),
       date: expense.date ?? '',
       description: expense.description ?? '',
+      referenceNumber: expense.referenceNumber ?? '',
       paymentMethodId: expense.paymentMethodId ?? '',
       company: expense.zohoEntity ?? '',
       categoryId: expense.categoryId ?? '',
@@ -430,7 +436,7 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
       {!editing ? (
         <p className="text-xs text-charcoal/40">
           {mode === 'all'
-            ? 'You can update the merchant, amount, date, payment method, company, category, and notes.'
+            ? 'You can update the merchant, amount, date, payment method, company, category, reference number, and notes.'
             : 'This expense is waiting for review — only the notes can be changed.'}
         </p>
       ) : (
@@ -504,6 +510,17 @@ function EditDetailsCard({ expense, mode }: { expense: Expense; mode: 'all' | 'n
                   value={form.categoryId}
                   onChange={(id) => setForm((f) => ({ ...f, categoryId: id }))}
                   inputClassName={inputCls}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-charcoal/70">Reference number</label>
+                <input
+                  type="text"
+                  maxLength={50}
+                  value={form.referenceNumber}
+                  onChange={(e) => setForm((f) => ({ ...f, referenceNumber: e.target.value }))}
+                  placeholder="Receipt #, invoice #, sales order…"
+                  className={inputCls}
                 />
               </div>
             </>
@@ -718,6 +735,7 @@ export function ExpenseDetail() {
           <p className="mt-1 text-sm text-muted">
             {expense.date}
             {expense.category && <span> · {expense.category.name}</span>}
+            {expense.referenceNumber && <span> · #{expense.referenceNumber}</span>}
             {expense.paymentMethod && (
               <span>
                 {' · '}
@@ -843,6 +861,13 @@ export function ExpenseDetail() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main column */}
         <div className="space-y-6 lg:col-span-2">
+          {expense.referenceNumber && (
+            <div className="rounded-xl border border-ink/10 bg-white p-5">
+              <h2 className="mb-2 text-sm font-semibold text-charcoal/80">Reference number</h2>
+              <p className="break-words text-sm text-charcoal/70">{expense.referenceNumber}</p>
+            </div>
+          )}
+
           {expense.description && (
             <div className="rounded-xl border border-ink/10 bg-white p-5">
               <h2 className="mb-2 text-sm font-semibold text-charcoal/80">Description</h2>
@@ -996,6 +1021,14 @@ export function ExpenseDetail() {
           {/* Field editing — owner only, gated by the API's state rules */}
           {editMode !== 'none' && (
             <EditDetailsCard expense={expense} mode={editMode} />
+          )}
+
+          {isPrivileged && (
+            <ReferenceNumberField
+              expenseId={expense.id}
+              value={expense.referenceNumber}
+              zohoExpenseId={expense.zohoExpenseId}
+            />
           )}
 
           {/* Category recode — accountant/admin, including after Zoho push */}

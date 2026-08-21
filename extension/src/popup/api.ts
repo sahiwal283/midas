@@ -101,6 +101,7 @@ export const api = {
       zohoExpenseAccountId?: string;
       zohoExpenseAccountName?: string;
       description?: string;
+      referenceNumber?: string;
     },
   ): Promise<ExpenseResponse> {
     return apiFetch<{ expense: ExpenseResponse }>(`/expenses/${expenseId}`, {

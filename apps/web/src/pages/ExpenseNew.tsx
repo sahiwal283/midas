@@ -11,6 +11,7 @@ import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue
 import { compressReceiptImage } from '../lib/receiptCompress';
 import { takePendingCapture } from '../lib/pendingCapture';
 import { VendorCombobox } from '../components/VendorCombobox';
+import { pickReferenceNumber } from '@midas/shared';
 import type { Receipt } from '../types';
 
 type WizardStep = 'choose' | 'form' | 'done';
@@ -61,6 +62,7 @@ export function ExpenseNew() {
     company: '',
     categoryId: '',
     description: '',
+    referenceNumber: '',
     expenseKind: 'business' as 'business' | 'partner',
   });
 
@@ -159,7 +161,7 @@ export function ExpenseNew() {
     setOcrCategorySuggestion(fields?.category?.value ?? null);
     const low = new Set<string>();
     const confThreshold = 0.7;
-    for (const key of ['merchant', 'amount', 'date'] as const) {
+    for (const key of ['merchant', 'amount', 'date', 'referenceNumber'] as const) {
       const conf = fields?.[key]?.confidence;
       if (typeof conf === 'number' && conf < confThreshold) low.add(key);
     }
@@ -169,12 +171,21 @@ export function ExpenseNew() {
       low.add('date');
     }
     setLowConfidenceFields(low);
-    setForm((f) => ({
-      ...f,
-      merchant: fields?.merchant?.value ?? f.merchant,
-      amount: fields?.amount?.value != null ? String(fields.amount.value) : f.amount,
-      date: fields?.date?.value ?? f.date,
-    }));
+    setForm((f) => {
+      const nextRef = f.referenceNumber.trim()
+        ? f.referenceNumber
+        : (pickReferenceNumber({
+          field: fields?.referenceNumber?.value,
+          text: r.ocrText,
+        }) ?? f.referenceNumber);
+      return {
+        ...f,
+        merchant: fields?.merchant?.value ?? f.merchant,
+        amount: fields?.amount?.value != null ? String(fields.amount.value) : f.amount,
+        date: fields?.date?.value ?? f.date,
+        referenceNumber: nextRef,
+      };
+    });
   }
 
   // Preselect the Midas category matching the OCR suggestion — never overriding
@@ -284,6 +295,7 @@ export function ExpenseNew() {
         zohoEntity: form.company || undefined,
         categoryId: form.categoryId || undefined,
         description: form.description || undefined,
+        referenceNumber: form.referenceNumber.trim() || undefined,
         expenseKind: form.expenseKind,
       };
 
@@ -628,6 +640,22 @@ export function ExpenseNew() {
               </p>
             </Field>
           )}
+
+          <Field label="Reference number (optional)">
+            <input
+              type="text"
+              maxLength={50}
+              value={form.referenceNumber}
+              onChange={(e) => set('referenceNumber', e.target.value)}
+              placeholder="Receipt #, invoice #, sales order…"
+              className={`${inputCls}${lowConfidenceFields.has('referenceNumber') ? ' border-amber-400 ring-1 ring-amber-200' : ''}`}
+            />
+            {lowConfidenceFields.has('referenceNumber') ? (
+              <p className="mt-1 text-xs text-amber-700">Double-check the receipt or invoice number.</p>
+            ) : (
+              <p className="mt-1 text-xs text-charcoal/40">Sent to Zoho as Reference Number when this expense is pushed.</p>
+            )}
+          </Field>
 
           <Field label="Notes (optional)">
             <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={2} placeholder="Anything the accountant should know" className={`${inputCls} resize-none`} />

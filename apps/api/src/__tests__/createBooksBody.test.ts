@@ -42,4 +42,10 @@ describe('toCreateBooksBody', () => {
     const body = toCreateBooksBody({ ...base, description: null });
     expect(body.merchant).toBe('S&D Supply');
   });
+
+  it('forwards reference_number when set and omits it when empty', () => {
+    expect(toCreateBooksBody({ ...base, reference_number: '02456' }).reference_number).toBe('02456');
+    expect(toCreateBooksBody({ ...base, reference_number: null }).reference_number).toBeUndefined();
+    expect(toCreateBooksBody(base).reference_number).toBeUndefined();
+  });
 });

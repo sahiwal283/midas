@@ -26,6 +26,7 @@ export const expenseApi = {
     categoryId?: string;
     paymentMethodId?: string;
     description?: string;
+    referenceNumber?: string | null;
     zohoEntity?: string;
     zohoExpenseAccountId?: string;
     zohoExpenseAccountName?: string;
@@ -40,6 +41,7 @@ export const expenseApi = {
     categoryId: string;
     paymentMethodId: string;
     description: string;
+    referenceNumber: string | null;
     zohoEntity: string;
     zohoExpenseAccountId: string;
     zohoExpenseAccountName: string;
@@ -198,6 +200,9 @@ export const accountantApi = {
 
   setZohoEntity: (id: string, zohoEntity: string) =>
     client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/zoho-entity`, { zohoEntity }).then((r) => r.data.expense),
+
+  updateReferenceNumber: (id: string, referenceNumber: string | null) =>
+    client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/reference-number`, { referenceNumber }).then((r) => r.data.expense),
 
   pushToZoho: (id: string) =>
     client.post(`/accountant/expenses/${id}/zoho-push`).then((r) => r.data),

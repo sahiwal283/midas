@@ -196,7 +196,7 @@ class LLMEnhancementEngine:
     ) -> Dict[str, Any]:
         """Merge rule-based and LLM fields; use LLM when it has higher confidence."""
         merged = {}
-        for field_name in self.CRITICAL_FIELDS + ['location', 'cardLastFour', 'taxAmount', 'tipAmount']:
+        for field_name in self.CRITICAL_FIELDS + ['location', 'cardLastFour', 'taxAmount', 'tipAmount', 'referenceNumber']:
             rule_field = rule_based.get(field_name, {})
             rule_value = rule_field.get('value')
             rule_conf = rule_field.get('confidence', 0)
@@ -238,7 +238,7 @@ class LLMEnhancementEngine:
     def _format_llm_fields(self, llm_fields: Dict[str, Any]) -> Dict[str, Any]:
         formatted = {}
         for field_name in ['merchant', 'amount', 'date', 'category', 'location',
-                           'cardLastFour', 'taxAmount', 'tipAmount']:
+                           'cardLastFour', 'taxAmount', 'tipAmount', 'referenceNumber']:
             if field_name in llm_fields:
                 field_data = llm_fields[field_name]
                 if isinstance(field_data, dict):

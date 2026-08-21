@@ -94,6 +94,7 @@ async def run_ocr_pipeline(
                 "date": {"value": None, "confidence": 0, "source": "llm"},
                 "cardLastFour": {"value": None, "confidence": 0, "source": "llm"},
                 "category": {"value": None, "confidence": 0, "source": "llm"},
+                "referenceNumber": {"value": None, "confidence": 0, "source": "llm"},
             },
             "categories": [],
             "quality": {

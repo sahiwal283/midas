@@ -24,6 +24,7 @@ import { assertActiveCompany } from '../lib/companies';
 import { isDailyAutoPushCandidate, incompleteSubmissionMessage } from '../lib/pendingCompletion';
 import { maybeAutoPushPending } from '../lib/pendingCompletionDb';
 import { notifyUser } from '../lib/notify';
+import { normalizeReferenceNumber } from '@midas/shared';
 
 const router = Router();
 
@@ -39,6 +40,8 @@ const createExpenseSchema = z.object({
   categoryId: z.string().uuid().optional(),
   paymentMethodId: z.string().uuid().optional(),
   description: z.string().optional(),
+  /** Receipt / invoice / sales-order # (Zoho Reference Number, max 50). */
+  referenceNumber: z.string().max(80).nullable().optional(),
   /** Accounting entity / Zoho Books org label (e.g. "Haute Brands"). */
   zohoEntity: z.string().min(1).optional(),
   /** Live Zoho expense COA account_id for this entity. */
@@ -182,6 +185,7 @@ router.post('/', asyncHandler(async (req, res) => {
     categoryId: body.categoryId ?? null,
     paymentMethodId: body.paymentMethodId ?? null,
     description: body.description,
+    referenceNumber: normalizeReferenceNumber(body.referenceNumber),
     zohoEntity,
     zohoExpenseAccountId: body.zohoExpenseAccountId ?? null,
     zohoExpenseAccountName: body.zohoExpenseAccountName ?? null,
@@ -210,6 +214,9 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   }
 
   let body = updateExpenseSchema.parse(req.body);
+  if (body.referenceNumber !== undefined) {
+    body = { ...body, referenceNumber: normalizeReferenceNumber(body.referenceNumber) };
+  }
 
   // Closed accounting periods lock the expense's current month — and reject
   // moving an expense into a closed month.
@@ -299,6 +306,7 @@ router.post('/:id/clone', asyncHandler(async (req, res) => {
     categoryId: source.categoryId,
     paymentMethodId: source.paymentMethodId,
     description: source.description,
+    referenceNumber: source.referenceNumber,
     zohoEntity: source.zohoEntity,
     zohoExpenseAccountId: source.zohoExpenseAccountId,
     zohoExpenseAccountName: source.zohoExpenseAccountName,

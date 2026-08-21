@@ -11,6 +11,7 @@ import {
 import { ReceiptPreview } from './ReceiptPreview';
 import { ReimbursementControl } from './ReimbursementControl';
 import { CategoryRecode } from './CategoryRecode';
+import { ReferenceNumberField } from './ReferenceNumberField';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ReimbursementStatus } from '../types';
 import type { UserRole } from '@midas/shared';
@@ -160,6 +161,15 @@ export function ExpenseQuickViewModal({
               </div>
 
               {isPrivileged && (
+                <ReferenceNumberField
+                  expenseId={expense.id}
+                  value={expense.referenceNumber}
+                  zohoExpenseId={expense.zohoExpenseId}
+                  variant="inline"
+                />
+              )}
+
+              {isPrivileged && (
                 <CategoryRecode
                   expenseId={expense.id}
                   categoryId={expense.categoryId}
@@ -167,6 +177,13 @@ export function ExpenseQuickViewModal({
                   zohoExpenseId={expense.zohoExpenseId}
                   variant="inline"
                 />
+              )}
+
+              {!isPrivileged && expense.referenceNumber && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Reference number</p>
+                  <p className="mt-1 text-sm text-charcoal/80">{expense.referenceNumber}</p>
+                </div>
               )}
 
               {expense.description && (

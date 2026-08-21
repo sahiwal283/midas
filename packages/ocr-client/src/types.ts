@@ -36,6 +36,7 @@ export interface OcrResult {
     location?: OcrField;
     taxAmount?: OcrField;
     tipAmount?: OcrField;
+    referenceNumber?: OcrField;
   };
   /** Normalized line items when the OCR engine extracts them (PO / detailed receipts). */
   lineItems?: OcrLineItem[];

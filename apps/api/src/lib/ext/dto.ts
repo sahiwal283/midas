@@ -9,6 +9,7 @@ type ExpenseRow = {
   currency: string;
   date: string;
   description: string | null;
+  referenceNumber: string | null;
   status: string;
   integrationStatus?: string | null;
   reimbursementStatus: string;
@@ -61,6 +62,7 @@ export function toExtExpenseDto(row: ExpenseRow) {
     currency: row.currency,
     date: row.date,
     description: row.description,
+    referenceNumber: row.referenceNumber,
     status: wireStatus,
     reimbursementStatus: row.reimbursementStatus,
     sourceApp: row.sourceApp,

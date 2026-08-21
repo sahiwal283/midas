@@ -278,6 +278,7 @@ export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown
   const description = notes
     ? (merchant && !notes.toLowerCase().startsWith(merchant.toLowerCase()) ? `${merchant} — ${notes}` : notes)
     : merchant || null;
+  const referenceNumber = typeof p.reference_number === 'string' ? p.reference_number.trim() : '';
   return {
     idempotencyKey: 'idempotencyKey' in p ? p.idempotencyKey : undefined,
     expenseId: 'expenseId' in p ? p.expenseId : undefined,
@@ -292,6 +293,7 @@ export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown
     paid_through_account_id: 'paid_through_account_id' in p ? p.paid_through_account_id : undefined,
     vendor_id: 'vendor_id' in p ? (p.vendor_id ?? undefined) : undefined,
     reimbursable: 'reimbursable' in p ? p.reimbursable : undefined,
+    ...(referenceNumber ? { reference_number: referenceNumber } : {}),
     // Do not send nested `source`, `category`, or `paymentMethod` — Zoho Books treats
     // `source` as a short string field and rejects our provenance object.
   };

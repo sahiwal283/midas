@@ -22,6 +22,7 @@ import { pushPurchaseOrderToZoho } from '../lib/zohoPoPush';
 import { assertActiveCompany, isCompanyZohoEnabled } from '../lib/companies';
 import { zohoEnabledByCompanyName } from '../lib/companyZoho';
 import { resolveCategoryEntityAccountId } from '../lib/categoryZohoAccounts';
+import { normalizeReferenceNumber } from '@midas/shared';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -860,6 +861,39 @@ router.patch('/expenses/:id/zoho-entity', asyncHandler(async (req, res) => {
     action: 'zoho_entity.set',
     before: { zohoEntity: expense.zohoEntity },
     after: { zohoEntity },
+  });
+
+  res.json({ expense: updated });
+}));
+
+// ── Set reference number before Zoho push (receipt / invoice / sales order #) ─
+
+router.patch('/expenses/:id/reference-number', asyncHandler(async (req, res) => {
+  const raw = z.object({ referenceNumber: z.string().max(80).nullable() }).parse(req.body);
+  const referenceNumber = normalizeReferenceNumber(raw.referenceNumber);
+  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
+  if (!expense) throw notFound('Expense not found');
+  if (expense.zohoExpenseId) {
+    throw createError(
+      'This expense is synced to Zoho and cannot be edited. Corrections require an explicit adjustment.',
+      409,
+      'NOT_EDITABLE',
+    );
+  }
+
+  const [updated] = await db.update(expenses)
+    .set({ referenceNumber, updatedAt: new Date() })
+    .where(eq(expenses.id, req.params.id))
+    .returning();
+
+  await syncExpenseToTransaction(updated!);
+  await auditLog({
+    entityType: 'expense',
+    entityId: expense.id,
+    userId: req.user!.id,
+    action: 'reference_number.set',
+    before: { referenceNumber: expense.referenceNumber },
+    after: { referenceNumber },
   });
 
   res.json({ expense: updated });

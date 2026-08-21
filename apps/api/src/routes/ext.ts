@@ -41,6 +41,7 @@ import { ocr } from '../lib/ocr';
 import { runReceiptOcr } from '../lib/runReceiptOcr';
 import { storage } from '../lib/storage';
 import { env } from '../config/env';
+import { normalizeReferenceNumber, pickReferenceNumber } from '@midas/shared';
 
 const router = Router();
 router.use(authenticateApiKey);
@@ -214,6 +215,10 @@ router.post('/ocr/process', requireScope('ocr:process'), upload.single('file'), 
     const result = await ocr.process(tmpPath, `ext-ocr-${Date.now()}`);
     const amountRaw = result.fields.amount?.value;
     const amountNum = amountRaw != null && amountRaw !== '' ? Number(amountRaw) : null;
+    const referenceNumber = pickReferenceNumber({
+      field: result.fields.referenceNumber?.value,
+      text: result.text,
+    });
 
     res.json({
       ocrMode: 'sync',
@@ -233,6 +238,10 @@ router.post('/ocr/process', requireScope('ocr:process'), upload.single('file'), 
         cardLastFour: {
           value: result.fields.cardLastFour?.value ?? null,
           confidence: result.fields.cardLastFour?.confidence ?? 0,
+        },
+        referenceNumber: {
+          value: referenceNumber,
+          confidence: result.fields.referenceNumber?.confidence ?? (referenceNumber ? 0.7 : 0),
         },
       },
       ocr: {
@@ -365,6 +374,7 @@ const createSchema = z.object({
   currency: z.string().length(3).default('USD'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   description: z.string().optional().nullable(),
+  referenceNumber: z.string().max(80).optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),
   categoryName: z.string().optional().nullable(),
   paymentMethodId: z.string().uuid().optional().nullable(),
@@ -475,6 +485,7 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
     categoryId,
     paymentMethodId: body.paymentMethodId ?? null,
     description: body.description ?? null,
+    referenceNumber: normalizeReferenceNumber(body.referenceNumber),
     sourceApp: body.sourceApp,
     sourceRefId: body.sourceRefId,
     sourceLabel: body.sourceLabel ?? null,
@@ -520,6 +531,7 @@ const patchSchema = z.object({
   currency: z.string().length(3).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   description: z.string().nullable().optional(),
+  referenceNumber: z.string().max(80).nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
   categoryName: z.string().nullable().optional(),
   paymentMethodId: z.string().uuid().nullable().optional(),
@@ -609,6 +621,9 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
     ...(body.currency !== undefined ? { currency: body.currency } : {}),
     ...(body.date !== undefined ? { date: body.date } : {}),
     ...(body.description !== undefined ? { description: body.description } : {}),
+    ...(body.referenceNumber !== undefined
+      ? { referenceNumber: normalizeReferenceNumber(body.referenceNumber) }
+      : {}),
     ...(categoryId !== undefined ? { categoryId } : {}),
     ...(body.paymentMethodId !== undefined ? { paymentMethodId: body.paymentMethodId } : {}),
     ...(body.sourceLabel !== undefined ? { sourceLabel: body.sourceLabel } : {}),
@@ -787,6 +802,7 @@ const importItemSchema = z.object({
   currency: z.string().length(3).default('USD'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   description: z.string().optional().nullable(),
+  referenceNumber: z.string().max(80).optional().nullable(),
   categoryName: z.string().optional().nullable(),
   cardUsed: z.string().optional().nullable(),
   location: z.string().optional().nullable(),
