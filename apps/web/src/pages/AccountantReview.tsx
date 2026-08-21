@@ -125,12 +125,15 @@ function ZohoReadinessCard({ expense }: { expense: Expense }) {
   const hasReceipt = (expense.receipts?.length ?? 0) > 0;
   const hasCategory = !!(expense.categoryId || expense.zohoExpenseAccountId);
   const hasPayment = !!expense.paymentMethodId;
+  // Push refuses cards without a Zoho paid-through mapping — mirror that here.
+  const hasPaidThrough = !!expense.paymentMethod?.zohoAccountName;
   const hasCompany = !!expense.zohoEntity;
-  const ready = hasReceipt && hasCategory && hasPayment && hasCompany && expense.status === 'approved';
+  const ready = hasReceipt && hasCategory && hasPayment && hasPaidThrough && hasCompany && expense.status === 'approved';
   const failed: string[] = [];
   if (!hasReceipt) failed.push('Receipt attached');
   if (!hasCategory) failed.push('Category set');
   if (!hasPayment) failed.push('Payment method set');
+  if (hasPayment && !hasPaidThrough) failed.push('Payment method mapped to a Zoho account (Settings → Payment Methods)');
   if (!hasCompany) failed.push('Company set');
   if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') failed.push('Approved');
 
@@ -273,8 +276,13 @@ export function AccountantReview() {
     },
   });
 
+  const [zohoPushError, setZohoPushError] = useState('');
   const zohoRetryMutation = useMutation({
     mutationFn: () => accountantApi.pushToZoho(id!),
+    onMutate: () => setZohoPushError(''),
+    onError: (err: any) => {
+      setZohoPushError(err?.response?.data?.error?.message ?? 'Zoho push failed.');
+    },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['expense', id] });
       qc.invalidateQueries({ queryKey: ['accountant-queue'] });
@@ -457,6 +465,11 @@ export function AccountantReview() {
           <ZohoReadinessCard expense={expense} />
 
           {/* Zoho sync history */}
+          {zohoPushError && (
+            <div className="rounded-xl border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger">
+              {zohoPushError}
+            </div>
+          )}
           <ZohoSyncCard
             expense={expense}
             onRetry={() => zohoRetryMutation.mutate()}
