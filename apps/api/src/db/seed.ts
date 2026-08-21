@@ -106,9 +106,16 @@ async function seed() {
     { email: 'developer@midas.local', name: 'Developer User', role: 'developer' as const, password: 'developer123' },
   ];
 
-  for (const u of defaultUsers) {
-    const existing = await db.query.users.findFirst({ where: eq(users.email, u.email) });
-    if (!existing) {
+  // Demo users are bootstrap-only: they exist so a fresh local database has
+  // logins. The seed runs on every container start, so on a live system a
+  // per-email existence check would resurrect deliberately deleted demo
+  // accounts (with published default passwords). Any user in the table means
+  // this is not a fresh database — skip the block entirely.
+  const anyUser = await db.query.users.findFirst({ columns: { id: true } });
+  if (anyUser) {
+    console.log('  ~ users exist — skipping demo user seed');
+  } else {
+    for (const u of defaultUsers) {
       const passwordHash = await bcrypt.hash(u.password, 12);
       await db.insert(users).values({
         username: u.email.split('@')[0],
