@@ -2,7 +2,7 @@
   "name": "@midas/ocr-client",
   "version": "0.1.0",
   "private": true,
-  "description": "Reusable OCR client for the Midas Expense Engine: talks to services/ocr-engine, plus shared preprocessing and rule-based field inference used by every embedder.",
+  "description": "Reusable OCR client for the Midas Expense Engine: talks to the OCR engine service (canonical source: ~/Work/services/ocrService), plus shared preprocessing and rule-based field inference used by every embedder.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {

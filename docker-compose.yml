@@ -21,15 +21,21 @@ services:
     ports:
       - "4000:4000"
 
-  # The canonical OCR engine (see services/ocr-engine/README.md). Not started by default —
-  # only needed when OCR_MODE=service. Local/dev defaults to free, local-only providers
-  # (rapidocr + tesseract); never enable document_ai/google_vision outside production.
+  # The canonical OCR engine now lives in its own repo (~/Work/services/ocrService,
+  # v0.17.0+) — Midas no longer vendors the Python source. Not started by default —
+  # only needed when OCR_MODE=service and you want a local container instead of the
+  # LAN service. Three ways to get OCR locally:
+  #   1. OCR_MODE=mock (default for offline tests/CI — no network calls at all)
+  #   2. OCR_BASE_URL=http://192.168.1.195:8000 (live LAN service — no image needed)
+  #   3. Build the image locally, then `docker compose --profile ocr up -d ocr-engine`:
+  #        cd ~/Work/services/ocrService && make ui-build && docker build -t ocr-service:0.17.0 .
+  #      Local/dev env should use free, local-only providers (rapidocr + tesseract);
+  #      never enable document_ai/google_vision outside production.
   ocr-engine:
-    build:
-      context: ./services/ocr-engine
+    image: ocr-service:0.17.0
     restart: unless-stopped
     env_file:
-      - path: ./services/ocr-engine/.env
+      - path: ./.env.ocr-engine
         required: false
     profiles:
       - ocr

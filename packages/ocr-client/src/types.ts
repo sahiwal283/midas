@@ -1,6 +1,7 @@
 // ── OCR engine response contract ────────────────────────────────────────────
-// This shape is the wire contract with services/ocr-engine (POST /ocr/). It must stay
-// in sync with that service's response format — see docs/OCR_ENGINE.md.
+// This shape is the wire contract with the OCR engine service (POST /ocr/), canonical
+// source at ~/Work/services/ocrService. It must stay in sync with that service's
+// response format — see docs/OCR_ENGINE.md.
 
 export interface OcrField {
   value: string | null;

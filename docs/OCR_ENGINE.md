@@ -4,6 +4,13 @@ Midas owns the complete OCR **pipeline** for receipt processing — not only the
 Python OCR container. There is one pipeline, used identically by standalone
 Midas and by Midas embedded in another app.
 
+**The Python OCR engine is no longer vendored in this repo.** As of the Phase 3
+distribution cleanup (2026-08-22), the canonical engine source lives in its own
+repo, `~/Work/services/ocrService` (v0.17.0+), and is the single OCR codebase
+shared by Midas and the Trade Show App. Midas consumes it purely over HTTP via
+`@midas/ocr-client` (`packages/ocr-client`) — see "Local engine (optional)"
+below for how to run a copy locally.
+
 ---
 
 ## What Trade Show App actually does (source of truth)
@@ -90,9 +97,10 @@ Verified 2026-08-03 against the same receipt on CT 2220 (Trade Show) and CT 3120
 Do not "improve" the inference heuristics or category map without re-running a
 side-by-side parity check against Trade Show — users prefer this OCR as-is.
 
-`services/ocr-engine/` is a vendored copy of the Python engine source for
-ownership/versioning. **Runtime** should call the same live engine Trade Show
-uses (`http://192.168.1.195:8000`) unless you intentionally run a local copy.
+The Python engine source lives in `~/Work/services/ocrService` (canonical,
+v0.17.0+) — Midas no longer vendors a copy. **Runtime** should call the same
+live engine Trade Show uses (`http://192.168.1.195:8000`) unless you
+intentionally run a local copy (see "Local engine (optional)" below).
 
 OCR is **live by default** (`OCR_MODE=service`). `mock` is only for offline
 tests/CI.
@@ -148,13 +156,22 @@ Operational history of earlier Midas ↔ OCR probes: `docs/ocr-integration.md`.
 
 ## Local engine (optional)
 
-```bash
-docker compose --profile ocr up -d ocr-engine   # localhost:8001
-OCR_BASE_URL=http://localhost:8001
-```
+Three ways to get OCR locally — pick the one that fits:
 
-Local `.env.example` for `services/ocr-engine` defaults to free providers
-(`rapidocr` / `tesseract`) so a laptop copy does not bill Document AI. That
-local config is **not** identical to CT 9500 production
-(`rapidocr` / `document_ai`). For behavior parity with Trade Show, point at
-CT 9500.
+1. **`OCR_MODE=mock`** — no network calls at all; used for offline unit tests/CI.
+2. **Point at the live LAN service** — `OCR_BASE_URL=http://192.168.1.195:8000`
+   (same engine Trade Show uses; simplest, no image to build).
+3. **Build and run the image locally**, from the canonical repo:
+
+   ```bash
+   cd ~/Work/services/ocrService && make ui-build && docker build -t ocr-service:0.17.0 .
+   docker compose --profile ocr up -d ocr-engine   # localhost:8001
+   OCR_BASE_URL=http://localhost:8001
+   ```
+
+   There is no image registry on this LAN, so the image must be built locally
+   by name — this isn't a `docker pull`. Default the local container's env to
+   free providers (`rapidocr` / `tesseract`) so a laptop copy does not bill
+   Document AI. That local config is **not** identical to CT 9500 production
+   (`rapidocr` / `document_ai`). For behavior parity with Trade Show, point at
+   CT 9500 instead (option 2).

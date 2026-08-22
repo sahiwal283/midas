@@ -80,10 +80,11 @@ function nullField(source: OcrField['source'] = 'llm'): OcrField {
 }
 
 /**
- * Talks to services/ocr-engine (the canonical Midas OCR engine). Every consumer —
- * standalone Midas, embedded Midas, or a direct integration — should use this
- * adapter rather than calling the engine's HTTP API directly, so preprocessing
- * and fallback field inference are always applied identically.
+ * Talks to the ocr-service engine (canonical source: ~/Work/services/ocrService,
+ * shared by Midas and the Trade Show App). Every consumer — standalone Midas,
+ * embedded Midas, or a direct integration — should use this adapter rather than
+ * calling the engine's HTTP API directly, so preprocessing and fallback field
+ * inference are always applied identically.
  */
 export class ServiceOcrAdapter implements OcrAdapter {
   private readonly inferenceEngine: RuleBasedInferenceEngine;

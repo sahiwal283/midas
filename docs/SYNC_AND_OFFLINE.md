@@ -78,9 +78,9 @@ background IIFE). That made embedders think the platform was async. **That is
 no longer the default.** OCR now completes inside the upload request unless
 `?async=1` is set.
 
-Server-side async OCR *job queues* inside `services/ocr-engine` are an internal
-engine concern for multi-page/paid providers — not the app-to-app expense
-contract.
+Server-side async OCR *job queues* inside the OCR engine service
+(`~/Work/services/ocrService`) are an internal engine concern for
+multi-page/paid providers — not the app-to-app expense contract.
 
 ---
 
