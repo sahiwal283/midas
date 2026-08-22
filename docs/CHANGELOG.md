@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0 (2026-08-22) — General availability
+
+Midas is live. First stable release; versioning is semver from here, so
+breaking changes to the app-to-app API or the expense schema move the major.
+
+**What ships in 1.0**
+
+- **Capture** — mobile photo capture with client-side compression and an installable PWA, a Chrome extension for online receipts, manual entry, and the `/api/v1/ext` app-to-app API that the trade show app submits through. Receipts run through the OCR service on upload.
+- **Accountant review** — Event and Daily queues with a lane rail (pending approval, needs further review, missing receipt / expense account / payment / company, ready for Zoho, reimbursement), bulk approve and bulk push, per-lane filters, and a Queue/All toggle that opens the full expense browser scoped to each page.
+- **Zoho Books** — per-company push with live chart-of-accounts and paid-through mapping, vendor resolution, receipt attachment, retry on failure, and readiness checks that refuse to call an expense pushable when it isn't.
+- **Money movement** — reimbursement tracking, purchase orders, monthly budgets, closed periods, and Cashbook: per-business cash drawers including the payroll-linked drawer that writes through to the payroll app under its own advisory lock.
+- **Reporting** — daily and trade-show scopes with spend by period, category, company, payment method, vendor and employee; per-show tiles that open a full event breakdown (company totals, category × company matrix, detailed expense report, CSV exports).
+- **Platform** — Authentik SSO with local break-glass logins, role-scoped navigation (user / accountant / admin / partner / developer), append-only audit logging, web push and email notifications, multi-company support, and an admin console for users, companies, categories, chart of accounts and payment methods.
+
+The Chrome extension keeps its own version line (currently 0.3.0) because Chrome uses it for update distribution.
+
 ## 0.62.1 (2026-08-22)
 
 ### Push to Zoho from the expense detail page
