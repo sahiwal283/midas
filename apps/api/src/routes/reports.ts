@@ -5,7 +5,7 @@ import { budgets, expenses, paymentMethods, users, transactions } from '../db/sc
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, createError } from '../middleware/error';
 import { granularityFor, periodKey, fillPeriods } from '../lib/reportBuckets';
-import { rollUpByTopAncestor, descendantIds, topLevelAncestorId } from '../lib/categoryTree';
+import { rollUpByTopAncestor, descendantIds } from '../lib/categoryTree';
 import { normalizeMerchant } from '../lib/merchants';
 import { scopeCondition } from '../lib/queueScope';
 
@@ -321,9 +321,10 @@ router.get('/event-breakdown', asyncHandler(async (req, res) => {
     columns: { id: true, parentId: true, isActive: true, name: true },
   });
   const catNameOf = (id: string) => allCats.find((c) => c.id === id)?.name ?? 'Unknown';
-  // Roll spend up to top-level categories so the matrix stays readable —
-  // same helper (and cycle safety) the summary report's category chart uses.
-  const topCatNameOf = (id: string) => catNameOf(topLevelAncestorId(allCats, id));
+  // Leaf categories, NOT rolled up to top-level ancestors: a single show has
+  // few categories, and the hotel-vs-flight split is the whole point of a
+  // per-show breakdown. (The summary report rolls up because it charts a
+  // year of spend across the entire tree.)
 
   const entityTotals = new Map<string, { spend: number; count: number }>();
   const matrix = new Map<string, Map<string, number>>();
@@ -340,7 +341,7 @@ router.get('/event-breakdown', asyncHandler(async (req, res) => {
     et.spend += amt;
     et.count += 1;
     entityTotals.set(entity, et);
-    const cat = e.categoryId ? topCatNameOf(e.categoryId) : 'Uncategorized';
+    const cat = e.categoryId ? catNameOf(e.categoryId) : 'Uncategorized';
     const catRow = matrix.get(cat) ?? new Map<string, number>();
     catRow.set(entity, (catRow.get(entity) ?? 0) + amt);
     matrix.set(cat, catRow);
