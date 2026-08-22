@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.62.1 (2026-08-22)
+
+### Push to Zoho from the expense detail page
+- A **Push to Zoho** button now sits in the "Zoho push — Ready" card on the accountant expense view, so a ready expense can be pushed straight from the page you opened to check its receipt — no trip back to the queue. Failures surface in the inline error banner added in 0.60.2.
+- An expense whose previous push failed passes every readiness check but is not `approved`, so the card used to read "Not ready" above an empty list; it now points at the retry in the sync card below.
+
 ## 0.62.0 (2026-08-22)
 
 ### Upcoming Events on the accountant dashboard

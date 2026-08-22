@@ -119,7 +119,15 @@ function ReadinessLine({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-function ZohoReadinessCard({ expense }: { expense: Expense }) {
+function ZohoReadinessCard({
+  expense,
+  onPush,
+  pushing,
+}: {
+  expense: Expense;
+  onPush: () => void;
+  pushing: boolean;
+}) {
   if (expense.zohoExpenseId) return null;
 
   const hasReceipt = (expense.receipts?.length ?? 0) > 0;
@@ -146,12 +154,28 @@ function ZohoReadinessCard({ expense }: { expense: Expense }) {
           : <span className="text-xs font-medium text-muted">Not ready</span>}
       </h2>
       {ready ? (
-        <p className="text-xs text-success">All push checks passed.</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-success">All push checks passed.</p>
+          {/* Pushing from here saves a trip back to the queue — the whole
+              point of landing on this page to check the receipt first. */}
+          <button
+            type="button"
+            onClick={onPush}
+            disabled={pushing}
+            className="min-h-11 cursor-pointer rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-cream shadow-sm transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0"
+          >
+            {pushing ? 'Pushing…' : 'Push to Zoho'}
+          </button>
+        </div>
       ) : (
         <ul className="space-y-1.5">
-          {failed.map((label) => (
-            <ReadinessLine key={label} ok={false} label={label} />
-          ))}
+          {failed.length === 0 ? (
+            // Every check passes but the status is zoho_sync_failed — the
+            // retry lives in the sync card below, so don't render a blank list.
+            <li className="text-xs text-amber-800">A previous push failed — retry it below.</li>
+          ) : (
+            failed.map((label) => <ReadinessLine key={label} ok={false} label={label} />)
+          )}
         </ul>
       )}
     </div>
@@ -462,7 +486,11 @@ export function AccountantReview() {
           </div>
 
           {/* Zoho readiness */}
-          <ZohoReadinessCard expense={expense} />
+          <ZohoReadinessCard
+            expense={expense}
+            onPush={() => zohoRetryMutation.mutate()}
+            pushing={zohoRetryMutation.isPending}
+          />
 
           {/* Zoho sync history */}
           {zohoPushError && (
