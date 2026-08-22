@@ -60,7 +60,9 @@ API:
 | `@midas/ocr-client` | The full OCR client — preprocessing, HTTP adapter, rule-based inference (`packages/ocr-client`, see `docs/OCR_ENGINE.md`) |
 | `@midas/import` | Generic import pipeline framework (`packages/import`, see `docs/IMPORT_FRAMEWORK.md`) |
 
-Plus the `services/ocr-engine` Python container, run as a sibling service.
+Plus the `ocr-service` Python container (image built from
+`~/Work/services/ocrService`, v0.17.0+ — no longer vendored in this repo), run
+as a sibling service.
 
 This strategy is for an application that wants Midas's engine internals
 in-process rather than as a remote API call — e.g. it needs OCR results
@@ -115,7 +117,7 @@ for import idempotency).
 | Concern | Extension point | Default |
 |---|---|---|
 | OCR category taxonomy | `ServiceOcrAdapter({ categoryKeywords })` | `DEFAULT_CATEGORY_KEYWORDS` (generic) |
-| OCR provider | `services/ocr-engine/.env` `PRIMARY_OCR_PROVIDER`/`FALLBACK_OCR_PROVIDER` | `rapidocr`/`tesseract` (free, local) |
+| OCR provider | `ocr-service` container env (`./.env.ocr-engine`, see `docs/OCR_ENGINE.md`) `PRIMARY_OCR_PROVIDER`/`FALLBACK_OCR_PROVIDER` | `rapidocr`/`tesseract` (free, local) |
 | Bulk data import | Implement `ImportSource` (`@midas/import`) | `JsonFileImportSource` example |
 | Owning entity | `ownerType`/`ownerId` on every expense | `null` (direct Midas entry) |
 | File storage | `STORAGE_MODE=local\|s3` (`apps/api/src/lib/storage.ts`) | `local` |

@@ -2,13 +2,14 @@
 
 The Node-side OCR client for the Midas Expense Engine. Every embedder (standalone
 Midas, Midas embedded in another app) should use this package instead of calling
-`services/ocr-engine` directly, so preprocessing and fallback field inference are
-always applied identically.
+the OCR engine service (`~/Work/services/ocrService`, canonical, v0.17.0+)
+directly, so preprocessing and fallback field inference are always applied
+identically.
 
 ## What this package owns
 
 - **`OcrAdapter` interface** — `MockOcrAdapter` (default, no network calls) and
-  `ServiceOcrAdapter` (talks to `services/ocr-engine` over HTTP).
+  `ServiceOcrAdapter` (talks to the OCR engine service over HTTP).
 - **Preprocessing** (`prepareReceiptImageForOcr`) — HEIC → JPEG, EXIF auto-orient,
   max-dimension resize, before the file is sent to the engine.
 - **Rule-based field inference** (`RuleBasedInferenceEngine`) — regex/keyword

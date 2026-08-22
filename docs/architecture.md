@@ -4,7 +4,7 @@
 
 Midas is the canonical Expense Engine: a standalone internal expense platform that other internal apps (Argo, Milo, Trade Show App, etc.) embed rather than each implementing their own expense tracking, OCR, or reimbursement workflow. See `docs/EMBEDDING.md` for the two supported embedding strategies (service delegation over the app-to-app API, or direct use of Midas's npm packages).
 
-Midas owns the **complete** expense system end to end, including OCR — there is exactly one OCR implementation (`services/ocr-engine` + `@midas/ocr-client`), used identically whether Midas is standalone or embedded. See `docs/OCR_ENGINE.md`.
+Midas owns the **complete** expense system end to end, including OCR — there is exactly one OCR implementation (the canonical `ocr-service` engine at `~/Work/services/ocrService`, consumed over HTTP via `@midas/ocr-client`), used identically whether Midas is standalone or embedded. See `docs/OCR_ENGINE.md`.
 
 No embedder-specific logic (e.g. anything trade-show-specific) lives in Midas. Every expense can be linked to an arbitrary external owning entity via the polymorphic `ownerType`/`ownerId` pair (`sourceApp`/`sourceRefId` columns) — see "Extensibility: polymorphic ownership" below.
 
@@ -18,10 +18,6 @@ midas/
 │   ├── api/             Express + TypeScript + Drizzle ORM backend
 │   └── web/             React + Vite + Tailwind frontend
 ├── extension/           Manifest V3 browser extension
-├── services/
-│   └── ocr-engine/      Python FastAPI OCR engine (preprocessing, multi-provider
-│                         extraction, field parsing, confidence scoring) — see
-│                         docs/OCR_ENGINE.md
 ├── packages/
 │   ├── shared/          Shared TypeScript types incl. OwnerRef (used by api + web)
 │   ├── ocr-client/      Node OCR client: preprocessing + HTTP adapter + rule-based
@@ -59,7 +55,7 @@ All external integrations are behind interfaces with a `mock` and `service` impl
 | Storage | `STORAGE_MODE=local\|s3` | `local` |
 | Telegram | `TELEGRAM_BOT_TOKEN` | disabled if unset |
 
-**Midas does NOT implement Zoho OAuth directly** (belongs in a separate service). **Midas DOES own OCR** — `services/ocr-engine` (Python) is Midas's own in-repo OCR engine, called through `@midas/ocr-client` (`OCR_MODE=mock|service`). See `docs/OCR_ENGINE.md` for the full subsystem writeup; the `mock`/`service` toggle here is about whether the real engine is called, not about whether Midas "owns" OCR — it always does.
+**Midas does NOT implement Zoho OAuth directly** (belongs in a separate service). **Midas DOES own OCR** — the canonical `ocr-service` engine (Python) lives in its own repo, `~/Work/services/ocrService` (v0.17.0+), called through `@midas/ocr-client` (`OCR_MODE=mock|service`). See `docs/OCR_ENGINE.md` for the full subsystem writeup; the `mock`/`service` toggle here is about whether the real engine is called, not about whether Midas "owns" OCR — it always does.
 
 **Sync model:** Midas is **sync-primary** for expense/receipt/OCR APIs (response includes completed OCR). Offline / flaky-network clients use a client-side **To upload** queue as a safety net — see `docs/SYNC_AND_OFFLINE.md`. Do not treat Midas as async-only.
 

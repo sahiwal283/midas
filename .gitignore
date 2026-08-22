@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 .env.local
+.env.ocr-engine
 *.log
 
 # Local test credentials (never commit real passwords)

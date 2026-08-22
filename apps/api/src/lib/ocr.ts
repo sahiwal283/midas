@@ -5,10 +5,11 @@ import {
   type OcrAdapter,
 } from '@midas/ocr-client';
 
-// The OCR engine lives in services/ocr-engine (see docs/OCR_ENGINE.md) and this
-// package's shared client lives in @midas/ocr-client — preprocessing, provider
-// selection, and rule-based field inference all live there so every embedder of
-// Midas gets identical OCR behavior. This file only wires Midas's env config in.
+// The OCR engine lives in its own repo, ~/Work/services/ocrService (canonical,
+// v0.17.0+; see docs/OCR_ENGINE.md) — not vendored here. This package's shared
+// client lives in @midas/ocr-client — preprocessing, provider selection, and
+// rule-based field inference all live there so every embedder of Midas gets
+// identical OCR behavior. This file only wires Midas's env config in.
 
 export type { OcrField, OcrResult, OcrAdapter } from '@midas/ocr-client';
 export {
