@@ -1,5 +1,31 @@
 # Changelog
 
+## Extension 1.0.0 (2026-08-22)
+
+The Midas browser extension reaches 1.0, merging in the capabilities of an
+older in-house Zoho capture extension. (The extension versions independently of
+the app — Chrome uses its manifest version for update distribution.)
+
+- **Reads order details straight off the page.** Merchant, amount, date, order
+  number and line items are extracted before any network call, so the form is
+  filled the moment the popup opens. Resolution prefers structured data (JSON-LD
+  `Order`/`Invoice`, microdata, Open Graph), then values next to an explicit
+  label ("Order Total", "Order placed"), then site-specific selectors, and only
+  falls back to whole-page guessing when nothing better exists.
+- **Page data outranks OCR.** OCR now fills only the fields the page could not
+  supply and never overwrites a page value or something you typed. Prefilled
+  fields carry a small `page` / `receipt` tag so a wrong value is traceable.
+- **Four ways to capture**: drag-to-crop (as before), whole visible page,
+  **PDF upload**, and **clipboard paste**. Paste needs no extra permission —
+  the extension still requests only `activeTab`, `storage`, `scripting`, `tabs`.
+- Fixes carried over from the merged extension, now covered by tests: the
+  largest price on a page no longer wins over the labelled order total (a
+  struck-through "was" price used to), the first date on the page no longer
+  beats a labelled order date (a footer copyright used to), and an order number
+  can no longer parse as an amount.
+- First tests in the extension: 21 unit tests over the extraction rules with
+  jsdom fixtures.
+
 ## 1.0.0 (2026-08-22) — General availability
 
 Midas is live. First stable release; versioning is semver from here, so

@@ -5,8 +5,10 @@ import type {
   PaymentMethodOption,
   CompanyOption,
   ExpenseAccountOption,
+  CaptureMode,
 } from '../shared/types';
 import { PENDING_CAPTURE_KEY } from '../shared/types';
+import { describeItems } from '../shared/pageData';
 import { getConfig } from '../shared/config';
 import { api, ApiError } from './api';
 import { SearchableSelect } from './SearchableSelect';
@@ -56,6 +58,8 @@ export function PopupApp() {
   const [capture, setCapture] = useState<CaptureResult | null>(null);
   const [form, setForm] = useState<ExpenseForm>(DEFAULT_FORM);
   const [ocrMissing, setOcrMissing] = useState(false);
+  /** Which fields were prefilled, and by what — shown as a marker on the form. */
+  const [fieldSources, setFieldSources] = useState<Record<string, 'page' | 'receipt'>>({});
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [formError, setFormError] = useState('');
@@ -80,9 +84,13 @@ export function PopupApp() {
 
   // ── Capture start ───────────────────────────────────────────────────────────
 
-  async function startCapture() {
+  async function startCapture(mode: CaptureMode = 'crop') {
     setScreen({ id: 'starting' });
-    const res = await sendMessage<{ ok?: boolean; error?: string }>({ type: 'START_CAPTURE', intent: 'expense' });
+    const res = await sendMessage<{ ok?: boolean; error?: string }>({
+      type: 'START_CAPTURE',
+      intent: 'expense',
+      mode,
+    });
     if (res?.error) {
       setScreen({ id: 'error', message: res.error, isAuth: false, retry: () => setScreen({ id: 'home' }) });
       return;
@@ -92,10 +100,77 @@ export function PopupApp() {
     window.close();
   }
 
+  /**
+   * PDF upload and clipboard paste both land here: no tab snapshot, no crop —
+   * the file itself is the receipt, so it goes straight into the same
+   * draft → upload → OCR → form pipeline.
+   */
+  async function startFileCapture(file: File) {
+    if (file.size > 10 * 1024 * 1024) {
+      setScreen({ id: 'error', message: 'That file is larger than 10 MB.', isAuth: false, retry: () => setScreen({ id: 'home' }) });
+      return;
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const result: CaptureResult = {
+        imageDataUrl: dataUrl,
+        pageUrl: tab?.url ?? '',
+        pageTitle: tab?.title ?? file.name,
+        fileName: file.name,
+        mimeType: file.type,
+        // A pasted image or uploaded PDF is its own document — page scraping
+        // would describe whatever tab happens to be open, not this receipt.
+        pageData: null,
+      };
+      setCapture(result);
+      await runExpensePrepare(result);
+    } catch (err) {
+      setScreen({
+        id: 'error',
+        message: err instanceof Error ? err.message : 'Could not read that file',
+        isAuth: false,
+        retry: () => setScreen({ id: 'home' }),
+      });
+    }
+  }
+
   // ── Quick expense pipeline ──────────────────────────────────────────────────
 
   /** Draft + receipt upload + reference data, with per-step resume on retry. */
+  /**
+   * Fill the form from page-extracted data. Runs before any network call, so
+   * the form is populated the instant the popup opens.
+   */
+  function applyPageData(c: CaptureResult): Set<string> {
+    const pd = c.pageData;
+    const filled = new Set<string>();
+    if (!pd) return filled;
+
+    setForm((f) => {
+      const next = { ...f };
+      if (pd.merchant?.value) { next.merchant = pd.merchant.value; filled.add('merchant'); }
+      if (pd.amount?.value != null) { next.amount = String(pd.amount.value); filled.add('amount'); }
+      if (pd.date?.value) { next.date = pd.date.value; filled.add('date'); }
+      if (pd.reference?.value) { next.referenceNumber = pd.reference.value; filled.add('referenceNumber'); }
+      const items = describeItems(pd.items);
+      if (items && !next.description.trim()) { next.description = items; filled.add('description'); }
+      return next;
+    });
+
+    if (filled.size > 0) {
+      setFieldSources((prev) => {
+        const next = { ...prev };
+        filled.forEach((k) => { next[k] = 'page'; });
+        return next;
+      });
+    }
+    return filled;
+  }
+
   async function runExpensePrepare(c: CaptureResult) {
+    // Page data first — it costs nothing and is exact where it exists.
+    const fromPage = applyPageData(c);
     try {
       let draftId = draftIdRef.current;
       if (!draftId) {
@@ -107,22 +182,37 @@ export function PopupApp() {
 
       if (!receiptUploadedRef.current) {
         setScreen({ id: 'expense_prepare', label: 'Reading receipt…' });
-        const receipt = await api.uploadReceipt(draftId, c.imageDataUrl);
+        const receipt = await api.uploadReceipt(draftId, c.imageDataUrl, c.fileName);
         receiptUploadedRef.current = true;
         const fields = receipt.ocrData?.fields;
         if (fields && (fields.merchant?.value || fields.amount?.value != null || fields.date?.value)) {
-          setForm((f) => ({
-            ...f,
-            merchant: fields.merchant?.value ?? f.merchant,
-            amount: fields.amount?.value != null ? String(fields.amount.value) : f.amount,
-            date: fields.date?.value ?? f.date,
-            referenceNumber: f.referenceNumber.trim()
-              ? f.referenceNumber
-              : (fields.referenceNumber?.value ?? f.referenceNumber),
-          }));
+          // Page data wins: the DOM carries the exact figure, OCR is vision on
+          // an image. OCR only fills fields the page could not provide.
+          const usedOcr = new Set<string>();
+          setForm((f) => {
+            const next = { ...f };
+            if (!fromPage.has('merchant') && fields.merchant?.value) {
+              next.merchant = fields.merchant.value; usedOcr.add('merchant');
+            }
+            if (!fromPage.has('amount') && fields.amount?.value != null) {
+              next.amount = String(fields.amount.value); usedOcr.add('amount');
+            }
+            if (!fromPage.has('date') && fields.date?.value) {
+              next.date = fields.date.value; usedOcr.add('date');
+            }
+            if (!fromPage.has('referenceNumber') && !f.referenceNumber.trim() && fields.referenceNumber?.value) {
+              next.referenceNumber = fields.referenceNumber.value; usedOcr.add('referenceNumber');
+            }
+            return next;
+          });
+          setFieldSources((prev) => {
+            const next = { ...prev };
+            usedOcr.forEach((k) => { next[k] = 'receipt'; });
+            return next;
+          });
           setOcrMissing(false);
         } else {
-          setOcrMissing(true);
+          setOcrMissing(fromPage.size === 0);
         }
       }
 
@@ -187,7 +277,13 @@ export function PopupApp() {
 
   return (
     <Shell midasWebUrl={midasWebUrl}>
-      {screen.id === 'home' && <HomeScreen onExpense={() => startCapture()} />}
+      {screen.id === 'home' && (
+        <HomeScreen
+          onCrop={() => void startCapture('crop')}
+          onFullPage={() => void startCapture('full')}
+          onFile={(f) => void startFileCapture(f)}
+        />
+      )}
 
       {screen.id === 'starting' && <Spinner label="Capturing page…" />}
 
@@ -199,6 +295,7 @@ export function PopupApp() {
           form={form}
           setForm={setForm}
           ocrMissing={ocrMissing}
+          fieldSources={fieldSources}
           paymentMethods={paymentMethods}
           companies={companies}
           error={formError}
@@ -244,19 +341,77 @@ export function PopupApp() {
 
 // ── Screens ───────────────────────────────────────────────────────────────────
 
-function HomeScreen({ onExpense }: { onExpense: () => void }) {
+function HomeScreen({
+  onCrop,
+  onFullPage,
+  onFile,
+}: {
+  onCrop: () => void;
+  onFullPage: () => void;
+  onFile: (file: File) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [pasteHint, setPasteHint] = useState('Paste a screenshot (⌘V / Ctrl+V)');
+
+  // A real paste event carries the image — no clipboardRead permission needed.
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith('image/'));
+      if (!item) return;
+      const file = item.getAsFile();
+      if (!file) return;
+      e.preventDefault();
+      setPasteHint('Reading pasted image…');
+      onFile(file);
+    }
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [onFile]);
+
   return (
     <div style={{ padding: '4px 0' }}>
-      <p style={styles.hint}>Snapshot this page, then drag to crop the receipt.</p>
+      <p style={styles.hint}>File an expense from this page, a PDF, or your clipboard.</p>
 
       <ActionCard
-        title="New Expense"
-        description="Crop the receipt and file an expense — OCR pre-fills the details for you."
-        onClick={onExpense}
+        title="Crop this page"
+        description="Drag a rectangle around the receipt — order details are read from the page automatically."
+        onClick={onCrop}
         primary
       />
+      <ActionCard
+        title="Capture whole page"
+        description="Snapshot the visible tab without cropping."
+        onClick={onFullPage}
+      />
+      <ActionCard
+        title="Upload a PDF"
+        description="For emailed invoices and downloaded receipts."
+        onClick={() => fileRef.current?.click()}
+      />
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/pdf,image/png,image/jpeg,image/webp"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFile(f);
+          e.target.value = '';
+        }}
+      />
+      <p style={{ ...styles.hint, textAlign: 'center', marginTop: 10, marginBottom: 0 }}>{pasteHint}</p>
     </div>
   );
+}
+
+/** File → data URL, the shape the receipt upload already expects. */
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read that file'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function ExpenseFormScreen({
@@ -264,6 +419,7 @@ function ExpenseFormScreen({
   form,
   setForm,
   ocrMissing,
+  fieldSources,
   paymentMethods,
   companies,
   error,
@@ -273,6 +429,7 @@ function ExpenseFormScreen({
   form: ExpenseForm;
   setForm: React.Dispatch<React.SetStateAction<ExpenseForm>>;
   ocrMissing: boolean;
+  fieldSources: Record<string, 'page' | 'receipt'>;
   paymentMethods: PaymentMethodOption[];
   companies: CompanyOption[];
   error: string;
@@ -356,8 +513,17 @@ function ExpenseFormScreen({
 
   return (
     <div>
-      {/* Cropped receipt thumbnail */}
-      <img src={capture.imageDataUrl} alt="Receipt preview" style={{ ...styles.preview, maxHeight: 110, objectFit: 'contain', background: '#f9fafb' }} />
+      {/* Receipt thumbnail — a PDF has no inline preview, so name it instead. */}
+      {capture.mimeType === 'application/pdf' ? (
+        <div style={{ ...styles.preview, maxHeight: 110, background: '#f9fafb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 4, padding: 12 }}>
+          <span style={{ fontSize: 22 }}>📄</span>
+          <span style={{ fontSize: 11, color: '#6b7280', wordBreak: 'break-all', textAlign: 'center' }}>
+            {capture.fileName ?? 'receipt.pdf'}
+          </span>
+        </div>
+      ) : (
+        <img src={capture.imageDataUrl} alt="Receipt preview" style={{ ...styles.preview, maxHeight: 110, objectFit: 'contain', background: '#f9fafb' }} />
+      )}
       <p style={styles.pageInfo}>{capture.pageTitle || capture.pageUrl}</p>
 
       {ocrMissing && (
@@ -373,7 +539,7 @@ function ExpenseFormScreen({
       )}
 
       <form onSubmit={handleSubmit} style={{ marginTop: 6 }}>
-        <Field label="Merchant *">
+        <Field label="Merchant *" source={fieldSources.merchant}>
           <input
             required
             value={form.merchant}
@@ -384,7 +550,7 @@ function ExpenseFormScreen({
         </Field>
 
         <div style={styles.row}>
-          <Field label="Amount (USD) *" style={{ flex: 1 }}>
+          <Field label="Amount (USD) *" source={fieldSources.amount} style={{ flex: 1 }}>
             <input
               required
               type="number"
@@ -396,7 +562,7 @@ function ExpenseFormScreen({
               style={styles.input}
             />
           </Field>
-          <Field label="Date *" style={{ flex: 1 }}>
+          <Field label="Date *" source={fieldSources.date} style={{ flex: 1 }}>
             <input
               required
               type="date"
@@ -446,7 +612,7 @@ function ExpenseFormScreen({
           </Field>
         )}
 
-        <Field label="Reference number">
+        <Field label="Reference number" source={fieldSources.referenceNumber}>
           <input
             value={form.referenceNumber}
             onChange={(e) => set('referenceNumber', e.target.value)}
@@ -589,10 +755,36 @@ function ActionCard({ title, description, onClick, primary }: { title: string; d
   );
 }
 
-function Field({ label, children, style }: { label: string; children: React.ReactNode; style?: React.CSSProperties }) {
+function Field({
+  label,
+  children,
+  style,
+  source,
+}: {
+  label: string;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  /** Shows where a prefilled value came from, so a wrong one is traceable. */
+  source?: 'page' | 'receipt';
+}) {
   return (
     <div style={{ marginBottom: 10, ...style }}>
-      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 3 }}>{label}</label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 3 }}>
+        {label}
+        {source && (
+          <span
+            title={source === 'page' ? 'Read from the page' : 'Read from the receipt image'}
+            style={{
+              fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+              padding: '1px 4px', borderRadius: 3,
+              background: source === 'page' ? '#e0f2fe' : '#f3e8ff',
+              color: source === 'page' ? '#075985' : '#6b21a8',
+            }}
+          >
+            {source === 'page' ? 'page' : 'receipt'}
+          </span>
+        )}
+      </label>
       {children}
     </div>
   );

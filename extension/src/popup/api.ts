@@ -64,11 +64,21 @@ export const api = {
     }).then((r) => r.expense);
   },
 
-  /** Step 2 — upload the cropped PNG; sync OCR fills ocrData when it succeeds. */
-  async uploadReceipt(expenseId: string, imageDataUrl: string): Promise<ReceiptResponse> {
+  /**
+   * Step 2 — upload the receipt; sync OCR fills ocrData when it succeeds.
+   * The filename must match the real type: Midas keys its PDF viewer off the
+   * extension, so a PDF sent as "receipt.png" renders as a broken image.
+   */
+  async uploadReceipt(
+    expenseId: string,
+    imageDataUrl: string,
+    fileName?: string,
+  ): Promise<ReceiptResponse> {
     const blob = await (await fetch(imageDataUrl)).blob();
+    const name = fileName?.trim()
+      || (blob.type === 'application/pdf' ? 'receipt.pdf' : 'receipt.png');
     const form = new FormData();
-    form.append('file', blob, 'receipt.png');
+    form.append('file', blob, name);
     return apiFetch<{ receipt: ReceiptResponse }>(`/expenses/${expenseId}/receipts`, {
       method: 'POST',
       body: form,

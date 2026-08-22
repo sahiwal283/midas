@@ -1,3 +1,8 @@
+import type { PageData } from './pageData';
+
+/** Re-exported so callers import page shapes from one place. */
+export type { PageData, ResolvedField, FieldSource } from './pageData';
+
 export interface ExtensionConfig {
   midasUrl: string; // e.g. http://localhost:5173 (web UI) — used for "Open in Midas" links
   midasApiUrl: string; // e.g. http://localhost:4000 (API origin — the extension appends /api/v1/…)
@@ -13,9 +18,17 @@ export interface CaptureResult {
   pageUrl: string;
   pageTitle: string;
   selectedText?: string;
+  /** Order data read off the page, when the page had any. */
+  pageData?: PageData | null;
+  /** Set for PDF receipts so the upload keeps the right mime/filename. */
+  fileName?: string;
+  mimeType?: string;
 }
 
 export type CaptureIntent = 'capture' | 'expense';
+
+/** Crop = drag a rectangle; full = the whole visible tab, no overlay. */
+export type CaptureMode = 'crop' | 'full';
 
 /** CSS-pixel selection rectangle reported by the crop overlay. */
 export interface CropRect {
@@ -44,7 +57,9 @@ export type ExtMessage =
   // Popup → service worker: snapshot the active tab, then show the crop
   // overlay in the page. The popup closes; the result lands in
   // storage.session as PendingCapture and the popup is reopened.
-  | { type: 'START_CAPTURE'; intent: CaptureIntent }
+  | { type: 'START_CAPTURE'; intent: CaptureIntent; mode?: CaptureMode }
+  // Service worker → content script: read order data out of the page.
+  | { type: 'EXTRACT_PAGE' }
   // Service worker → content script: show the drag-to-crop overlay.
   | { type: 'BEGIN_CROP' }
   // Content script → service worker: user finished (rect) or skipped (null).

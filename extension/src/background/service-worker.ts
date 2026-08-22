@@ -6,7 +6,9 @@
 // in the popup and talks to the standard session-cookie API directly — this
 // worker no longer calls POST /api/v1/extension/expenses.
 
-import type { ExtMessage, CaptureResult, CaptureIntent, CropRect, PendingCapture } from '../shared/types';
+import type {
+  ExtMessage, CaptureResult, CaptureIntent, CaptureMode, CropRect, PendingCapture, PageData,
+} from '../shared/types';
 import { PENDING_CAPTURE_KEY } from '../shared/types';
 import { getConfig } from '../shared/config';
 
@@ -20,6 +22,7 @@ interface InflightCapture {
   pageUrl: string;
   pageTitle: string;
   selectedText?: string;
+  pageData: PageData | null;
   tabId: number;
 }
 
@@ -28,7 +31,7 @@ const INFLIGHT_KEY = 'inflightCapture';
 chrome.runtime.onMessage.addListener((message: ExtMessage, sender, sendResponse) => {
   switch (message.type) {
     case 'START_CAPTURE':
-      startCapture(message.intent).then(sendResponse).catch((err) => sendResponse({ error: String(err) }));
+      startCapture(message.intent, message.mode).then(sendResponse).catch((err) => sendResponse({ error: String(err) }));
       return true;
 
     case 'CROP_DONE':
@@ -45,12 +48,16 @@ chrome.runtime.onMessage.addListener((message: ExtMessage, sender, sendResponse)
 
 // ── Capture + crop orchestration ──────────────────────────────────────────────
 
-async function startCapture(intent: CaptureIntent): Promise<{ ok?: boolean; error?: string }> {
+async function startCapture(
+  intent: CaptureIntent,
+  mode: CaptureMode = 'crop',
+): Promise<{ ok?: boolean; error?: string }> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || tab.windowId === undefined) return { error: 'No active tab found' };
 
   const dataUrl = await captureVisibleTab(tab.windowId);
   const selectedText = await getSelectedText(tab.id);
+  const pageData = await extractPage(tab.id);
 
   const inflight: InflightCapture = {
     intent,
@@ -58,11 +65,13 @@ async function startCapture(intent: CaptureIntent): Promise<{ ok?: boolean; erro
     pageUrl: tab.url ?? '',
     pageTitle: tab.title ?? '',
     selectedText,
+    pageData,
     tabId: tab.id,
   };
   await chrome.storage.session.set({ [INFLIGHT_KEY]: inflight });
 
-  const overlayShown = await beginCropOverlay(tab.id);
+  // Full-page mode skips the overlay entirely.
+  const overlayShown = mode === 'full' ? false : await beginCropOverlay(tab.id);
   if (!overlayShown) {
     // Restricted page (chrome://, Web Store, PDF viewer…): skip cropping and
     // use the full tab image directly.
@@ -73,6 +82,7 @@ async function startCapture(intent: CaptureIntent): Promise<{ ok?: boolean; erro
         pageUrl: inflight.pageUrl,
         pageTitle: inflight.pageTitle,
         selectedText,
+        pageData,
       },
       createdAt: Date.now(),
     });
@@ -109,6 +119,7 @@ async function finishCapture(
       pageUrl: inflight.pageUrl,
       pageTitle: inflight.pageTitle,
       selectedText: inflight.selectedText,
+      pageData: inflight.pageData,
     },
     createdAt: Date.now(),
   });
@@ -140,6 +151,32 @@ function captureVisibleTab(windowId: number): Promise<string> {
 }
 
 /** Ask the content script to show the crop overlay; inject it if not present. */
+/**
+ * Ask the page for its order data. Any failure (restricted page, no content
+ * script, scraping error) yields null — extraction is a bonus, never a gate.
+ */
+async function extractPage(tabId: number): Promise<PageData | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v: PageData | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
+    // Don't let a wedged content script stall the capture.
+    setTimeout(() => done(null), 1200);
+    try {
+      chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_PAGE' } satisfies ExtMessage, (res) => {
+        if (chrome.runtime.lastError) return done(null);
+        done((res as { ok?: boolean; data?: PageData } | undefined)?.data ?? null);
+      });
+    } catch {
+      done(null);
+    }
+  });
+}
+
 async function beginCropOverlay(tabId: number): Promise<boolean> {
   const send = () =>
     new Promise<boolean>((resolve) => {

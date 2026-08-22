@@ -98,6 +98,45 @@ the extension uses the browser's Midas session cookie, never its own tokens.
 
 ---
 
+## Page data extraction (1.0)
+
+Before any network call, the content script reads order data out of the DOM and
+the popup prefills from it — so the form is populated the instant it opens.
+`src/content/extract.ts` resolves each field by source precedence
+(`src/shared/pageData.ts`), best first:
+
+| Source | What it is | Why it ranks here |
+|---|---|---|
+| `structured` | JSON-LD (`Order`, `Invoice`, `Product`), microdata, Open Graph | Machine-authored by the site; exact |
+| `labeled` | Money/date adjacent to "Order Total", "Order placed", … | Local to an explicit label |
+| `site` | Hand-picked selectors (Amazon order details) | Correct but page-shape specific |
+| `heuristic` | Largest price on the page, hostname as merchant | Last resort; frequently wrong |
+
+**Precedence over OCR.** Page data wins; OCR fills only fields the page could
+not supply and never overwrites a page value. On an order page the DOM carries
+the exact total, while OCR is vision applied to a screenshot of it.
+
+Two bugs from the extension this merged in are covered by tests in
+`src/__tests__/extract.test.ts`: taking `Math.max` over every price on the page
+(a struck-through "was $199.99" beat the real total), and taking the first
+date-like string anywhere (usually a footer copyright). `parseMoney` also
+rejects non-money shapes so an order number like `114-3941689` can't parse as
+`114`.
+
+## Capture inputs (1.0)
+
+All four converge on one `CaptureResult`, so the downstream pipeline
+(draft → receipt upload → OCR → form → submit) is identical for each:
+
+- **Crop this page** — drag-to-crop overlay, with page extraction.
+- **Capture whole page** — visible tab, no overlay (`mode: 'full'`).
+- **Upload a PDF** — file picker; the real filename is sent so Midas renders it
+  as a PDF rather than a broken image.
+- **Clipboard paste** — a real `paste` event in the popup carries the image, so
+  no `clipboardRead` permission is requested.
+
+PDF and paste set `pageData: null` — the open tab is not the receipt's source.
+
 ## Architecture
 
 ```

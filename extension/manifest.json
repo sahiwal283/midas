@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Midas Capture",
-  "version": "0.3.0",
-  "description": "Capture receipts and submit expenses to Midas directly from any webpage.",
+  "version": "1.0.0",
+  "description": "Capture receipts and file expenses in Midas \u2014 reads order details straight off the page.",
   "permissions": [
     "activeTab",
     "storage",
@@ -18,14 +18,23 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content/content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content/content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     },
     {
-      "matches": ["https://midas.booute.duckdns.org/*", "http://localhost:5173/*"],
-      "js": ["presence/presence.js"],
+      "matches": [
+        "https://midas.booute.duckdns.org/*",
+        "http://localhost:5173/*"
+      ],
+      "js": [
+        "presence/presence.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     }

@@ -4,10 +4,22 @@
 // (CROP_DONE) and the worker crops the already-taken screenshot, so the dim
 // overlay never appears in the final image.
 import type { ExtMessage, CropRect } from '../shared/types';
+import { extractPageData } from './extract';
 
 let overlayActive = false;
 
 chrome.runtime.onMessage.addListener((message: ExtMessage, _sender, sendResponse) => {
+  if (message.type === 'EXTRACT_PAGE') {
+    // Never let a scraping error break the capture — the popup treats a
+    // missing payload as "page had nothing to offer".
+    try {
+      sendResponse({ ok: true, data: extractPageData(document, location.href) });
+    } catch (err) {
+      console.warn('[Midas] page extraction failed', err);
+      sendResponse({ ok: false });
+    }
+    return true;
+  }
   if (message.type === 'BEGIN_CROP') {
     if (overlayActive) {
       sendResponse({ ok: true });
