@@ -8,6 +8,7 @@ import {
 import { reportApi, type ReportRow, type ReportSummary, type ReportType } from '../api/reports';
 import { PRESETS, presetRange } from '../lib/reportRanges';
 import { PageHeader } from '../components/PageHeader';
+import { ShowTiles, EventBreakdownView } from './EventBreakdownView';
 
 /** Dataviz-validated categorical palette — fixed slot order, never cycled. */
 const SERIES = ['#1E3A55', '#D4AF37', '#2F7D5A', '#4E6E90', '#C94C4C', '#7A6414', '#16293C', '#94AAC4'];
@@ -209,6 +210,19 @@ export function Reports() {
   const [preset, setPreset] = useState('this_quarter');
   const [range, setRange] = useState(() => presetRange('this_quarter'));
   const [entity, setEntity] = useState('');
+  // Drill-down is URL-backed so a show breakdown is linkable and the browser
+  // back button returns to the grid.
+  const selectedShow = params.get('show');
+  const [showCompany, setShowCompany] = useState('');
+
+  function selectShow(next: string | null) {
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next) p.set('show', next);
+      else p.delete('show');
+      return p;
+    }, { replace: false });
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ['report-summary', range.from, range.to, entity, scope],
@@ -233,6 +247,7 @@ export function Reports() {
     setParams((prev) => {
       const p = new URLSearchParams(prev);
       p.set('scope', next);
+      p.delete('show');
       return p;
     }, { replace: true });
     setEntity('');
@@ -296,6 +311,10 @@ export function Reports() {
         })}
       </div>
 
+      {selectedShow ? (
+        <EventBreakdownView event={selectedShow} onBack={() => selectShow(null)} />
+      ) : (
+      <>
       <div className="mb-6 flex flex-col gap-3">
         <div className="flex flex-wrap gap-1 rounded-lg border border-ink/10 bg-brand-50 p-1 self-start">
           {PRESETS.map((p) => (
@@ -381,10 +400,13 @@ export function Reports() {
           ) : (
             <>
               {scope === 'event' && (
-                <Section kicker="Which shows cost the most" title="Show league table">
-                  <Card>
-                    <RankedTable rows={shows} nameHeader="Show" />
-                  </Card>
+                <Section kicker="Click a show for its full breakdown" title="Trade show investment">
+                  <ShowTiles
+                    shows={shows}
+                    companyFilter={showCompany}
+                    onCompanyFilter={setShowCompany}
+                    onSelect={(name) => selectShow(name)}
+                  />
                 </Section>
               )}
 
@@ -562,6 +584,8 @@ export function Reports() {
             </>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );

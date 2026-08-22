@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.61.0 (2026-08-22)
+
+### Trade show reports: per-show breakdowns
+- Reports → Trade Show replaces the flat "Show league table" with a **grid of show tiles**: each shows its total and a bar segmented by paying company, with company filter chips above (filtering re-scopes each tile to that company's spend).
+- **Clicking a tile opens the full show breakdown**, mirroring the trade show app's per-event report in Midas's design system: header band with the show total, company running totals, a "who paid for what" section (per-category bars split by company plus a company donut), a category × company matrix with row/column totals and a summary CSV, and a detailed expense report (date, merchant, category, card, amount, status, company, description) with its own CSV export. Merchant names link to the accountant detail page.
+- The drill-down is URL-backed (`?scope=event&show=<name>`), so it is linkable and the browser back button returns to the grid. It deliberately covers the **show's whole history** regardless of the page's date range — a show is a bounded thing, and a range preset should never surface half of one.
+- API: `byEvent` rows gain a per-company `entities` split; new `GET /reports/event-breakdown?event=` returns totals, company totals, the category × company matrix, and the expense rows.
+
 ## 0.60.2 (2026-08-21)
 
 ### Fixed: Zoho push failing silently from the review queue

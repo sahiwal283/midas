@@ -5,7 +5,7 @@ import { budgets, expenses, paymentMethods, users, transactions } from '../db/sc
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, createError } from '../middleware/error';
 import { granularityFor, periodKey, fillPeriods } from '../lib/reportBuckets';
-import { rollUpByTopAncestor, descendantIds } from '../lib/categoryTree';
+import { rollUpByTopAncestor, descendantIds, topLevelAncestorId } from '../lib/categoryTree';
 import { normalizeMerchant } from '../lib/merchants';
 import { scopeCondition } from '../lib/queueScope';
 
@@ -82,6 +82,13 @@ router.get('/summary', asyncHandler(async (req, res) => {
     spend: sum(expenses.amount),
     n: count(),
   }).from(expenses).where(scope).groupBy(expenses.sourceLabel);
+
+  // Per-company split for each show — powers the stacked bars on show tiles.
+  const byEventEntityRows = await db.select({
+    event: expenses.sourceLabel,
+    entity: expenses.zohoEntity,
+    spend: sum(expenses.amount),
+  }).from(expenses).where(scope).groupBy(expenses.sourceLabel, expenses.zohoEntity);
 
   const byPm = await db.select({ name: paymentMethods.label, spend: sum(expenses.amount), n: count() })
     .from(expenses).leftJoin(paymentMethods, eq(expenses.paymentMethodId, paymentMethods.id))
@@ -249,7 +256,13 @@ router.get('/summary', asyncHandler(async (req, res) => {
       })),
       'Midas (manual)',
     ),
-    byEvent: mapRows(byEventRows, 'Unlabeled show'),
+    byEvent: mapRows(byEventRows, 'Unlabeled show').map((row) => ({
+      ...row,
+      entities: byEventEntityRows
+        .filter((r) => (r.event ?? 'Unlabeled show') === row.name)
+        .map((r) => ({ name: r.entity ?? 'Unassigned', spend: num(r.spend) }))
+        .sort((a, b) => b.spend - a.spend),
+    })),
     byPaymentMethod: mapRows(byPm, 'Unspecified'),
     topVendors,
     topUsers: mapRows(topUsers, 'Unknown'),
@@ -270,6 +283,99 @@ router.get('/summary', asyncHandler(async (req, res) => {
         byEmployee: [...employees.values()].sort((a, b) => b.outstanding - a.outstanding).slice(0, 10),
       };
     })(),
+  });
+}));
+
+// Full breakdown of a single trade show, across its whole history — a show is
+// a bounded thing, so unlike /summary this takes no date range: clicking a
+// show must never surface half a show because a range preset was active.
+router.get('/event-breakdown', asyncHandler(async (req, res) => {
+  const { event } = req.query as Record<string, string | undefined>;
+  if (!event?.trim()) throw createError('event is required', 400, 'INVALID_EVENT');
+
+  const scope = and(
+    eq(expenses.expenseKind, 'business'),
+    not(inArray(expenses.status, ['draft', 'rejected'])),
+    scopeCondition('event'),
+    eq(expenses.sourceLabel, event),
+  );
+  const num = (v: unknown) => Number(v ?? 0);
+
+  const rows = await db.query.expenses.findMany({
+    where: scope,
+    with: {
+      category: { columns: { id: true, name: true } },
+      paymentMethod: { columns: { label: true, lastFour: true } },
+      user: { columns: { name: true } },
+    },
+    columns: {
+      id: true, date: true, merchant: true, description: true, amount: true,
+      status: true, integrationStatus: true, reimbursementStatus: true,
+      zohoEntity: true, categoryId: true,
+    },
+    orderBy: (e, { asc }) => [asc(e.date)],
+    limit: 1000,
+  });
+
+  const allCats = await db.query.expenseCategories.findMany({
+    columns: { id: true, parentId: true, isActive: true, name: true },
+  });
+  const catNameOf = (id: string) => allCats.find((c) => c.id === id)?.name ?? 'Unknown';
+  // Roll spend up to top-level categories so the matrix stays readable —
+  // same helper (and cycle safety) the summary report's category chart uses.
+  const topCatNameOf = (id: string) => catNameOf(topLevelAncestorId(allCats, id));
+
+  const entityTotals = new Map<string, { spend: number; count: number }>();
+  const matrix = new Map<string, Map<string, number>>();
+  let total = 0;
+  let approved = 0;
+  let pending = 0;
+  for (const e of rows) {
+    const amt = num(e.amount);
+    total += amt;
+    if (e.status === 'approved' || e.status === 'zoho_sync_failed') approved += 1;
+    else pending += 1;
+    const entity = e.zohoEntity ?? 'Unassigned';
+    const et = entityTotals.get(entity) ?? { spend: 0, count: 0 };
+    et.spend += amt;
+    et.count += 1;
+    entityTotals.set(entity, et);
+    const cat = e.categoryId ? topCatNameOf(e.categoryId) : 'Uncategorized';
+    const catRow = matrix.get(cat) ?? new Map<string, number>();
+    catRow.set(entity, (catRow.get(entity) ?? 0) + amt);
+    matrix.set(cat, catRow);
+  }
+
+  const entities = [...entityTotals.entries()]
+    .map(([name, v]) => ({ name, spend: v.spend, count: v.count }))
+    .sort((a, b) => b.spend - a.spend);
+
+  const categories = [...matrix.entries()]
+    .map(([category, cells]) => ({
+      category,
+      byEntity: Object.fromEntries(cells),
+      total: [...cells.values()].reduce((s, v) => s + v, 0),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  res.json({
+    event,
+    totals: { spend: total, count: rows.length, approved, pending },
+    byEntity: entities,
+    categories,
+    expenses: rows.map((e) => ({
+      id: e.id,
+      date: e.date,
+      merchant: e.merchant,
+      description: e.description,
+      amount: num(e.amount),
+      status: e.integrationStatus === 'failed' && e.status === 'approved' ? 'zoho_sync_failed' : e.status,
+      reimbursementStatus: e.reimbursementStatus,
+      zohoEntity: e.zohoEntity,
+      categoryName: e.categoryId ? catNameOf(e.categoryId) : null,
+      paymentMethod: e.paymentMethod ? `${e.paymentMethod.label}${e.paymentMethod.lastFour ? ` ···${e.paymentMethod.lastFour}` : ''}` : null,
+      userName: e.user?.name ?? null,
+    })),
   });
 }));
 
