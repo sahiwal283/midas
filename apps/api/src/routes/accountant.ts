@@ -16,6 +16,8 @@ import { missingEntityCondition, readyForZohoCondition } from '../lib/queueLane'
 import { splitRowsByScope } from '../lib/queueSummaryBuckets';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
+import { isTradeShowLinkEnabled, listWindowedEvents } from '../lib/tradeShowEvents';
+import { localTodayIso } from '../lib/cashLedger';
 import { notifyUser } from '../lib/notify';
 import { syncExpenseToTransaction } from '../lib/syncExpenseTransaction';
 import { pushPurchaseOrderToZoho } from '../lib/zohoPoPush';
@@ -898,6 +900,60 @@ router.patch('/expenses/:id/reference-number', asyncHandler(async (req, res) => 
   });
 
   res.json({ expense: updated });
+}));
+
+// Trade show events happening within ±10 days, with Midas's spend for each —
+// the accountant dashboard's Upcoming Events card. Reads the trade show app's
+// calendar; a cross-app failure degrades to an empty list rather than
+// breaking the dashboard.
+router.get('/upcoming-events', asyncHandler(async (_req, res) => {
+  if (!isTradeShowLinkEnabled()) {
+    res.json({ events: [], available: false });
+    return;
+  }
+
+  let windowed;
+  try {
+    windowed = await listWindowedEvents(localTodayIso());
+  } catch (err) {
+    console.error('[upcoming-events] trade show lookup failed:', err);
+    res.json({ events: [], available: false });
+    return;
+  }
+
+  if (windowed.length === 0) {
+    res.json({ events: [], available: true });
+    return;
+  }
+
+  // Midas ties trade-show expenses to their event by sourceLabel = event name.
+  const names = windowed.map((e) => e.name);
+  const spendRows = await db
+    .select({
+      name: expenses.sourceLabel,
+      spend: sql<string>`coalesce(sum(${expenses.amount}), 0)`,
+      n: sql<string>`count(*)`,
+    })
+    .from(expenses)
+    .where(and(
+      inArray(expenses.sourceLabel, names),
+      eq(expenses.expenseKind, 'business'),
+      sql`${expenses.status} not in ('draft', 'rejected')`,
+    ))
+    .groupBy(expenses.sourceLabel);
+  const spendByName = new Map(spendRows.map((r) => [r.name, r]));
+
+  res.json({
+    available: true,
+    events: windowed.map((e) => {
+      const s = spendByName.get(e.name);
+      return {
+        ...e,
+        spend: Number(s?.spend ?? 0),
+        expenseCount: Number(s?.n ?? 0),
+      };
+    }),
+  });
 }));
 
 export default router;

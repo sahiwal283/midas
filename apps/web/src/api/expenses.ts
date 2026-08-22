@@ -156,6 +156,24 @@ export interface QueuePage {
   totalPages: number;
 }
 
+export interface UpcomingEvent {
+  id: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  venue: string | null;
+  startDate: string;
+  endDate: string;
+  travelStartDate: string | null;
+  travelEndDate: string | null;
+  /** Travel dates drive this: 'active' | 'upcoming' | 'recent'. */
+  phase: 'upcoming' | 'active' | 'recent';
+  /** Days until start (upcoming) or since end (recent); 0 when active. */
+  days: number;
+  spend: number;
+  expenseCount: number;
+}
+
 export const accountantApi = {
   queue: (params?: Record<string, string>) =>
     client.get<QueuePage>('/accountant/queue', {
@@ -212,6 +230,9 @@ export const accountantApi = {
 
   queueSummary: () =>
     client.get<QueueSummary>('/accountant/queue/summary').then((r) => r.data),
+
+  upcomingEvents: () =>
+    client.get<{ events: UpcomingEvent[]; available: boolean }>('/accountant/upcoming-events').then((r) => r.data),
 
   getAuditTrail: (id: string) =>
     client.get<{ entries: AuditLogEntry[] }>(`/accountant/expenses/${id}/audit`).then((r) => r.data.entries),

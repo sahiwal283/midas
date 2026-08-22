@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Plus, ReceiptText, AlertCircle, CheckCircle2, Clock, RefreshCw, FileX, Banknote } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { UpcomingEventsCard } from '../components/UpcomingEventsCard';
 import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -177,6 +178,10 @@ function AccountantDashboard({ name }: { name: string }) {
             </Link>
           </div>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <UpcomingEventsCard />
       </div>
 
     </div>

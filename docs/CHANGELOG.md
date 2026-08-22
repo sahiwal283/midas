@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.62.0 (2026-08-22)
+
+### Upcoming Events on the accountant dashboard
+- New card listing trade show events within a ±10-day window — anything starting in 10 days or less, anything in progress, and anything that ended in the last 10 days — read live from the trade show app's calendar.
+- **Travel dates drive the window**, falling back to show dates when unset: flights and hotels land on travel day, so an event whose travel started yesterday is already generating expenses even though the show floor opens tomorrow. Show dates are what the card displays.
+- Each row shows the event name, a status pill (In N days / Happening now / Ended N days ago), dates, location, and Midas's own expense count and total for that show; clicking opens the show's report breakdown.
+- Requires `TRADESHOW_DATABASE_URL` (read-only `midas_ro` role, SELECT on `events` only). Unset — or any cross-app failure — hides the card rather than breaking the dashboard.
+
 ## 0.61.0 (2026-08-22)
 
 ### Trade show reports: per-show breakdowns
