@@ -19,6 +19,7 @@ import { ReferenceNumberField } from '../components/ReferenceNumberField';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, MessageRequestType, AuditLogEntry } from '../types';
 import { roleAllowed } from '../lib/roles';
+import { AccountantDetailsEdit } from '../components/AccountantDetailsEdit';
 
 // ── Status banner — human language per workflow state ─────────────────────────
 
@@ -1021,6 +1022,11 @@ export function ExpenseDetail() {
           {/* Field editing — owner only, gated by the API's state rules */}
           {editMode !== 'none' && (
             <EditDetailsCard expense={expense} mode={editMode} />
+          )}
+
+          {/* Push-blocker corrections — accountant/admin, on anyone's expense */}
+          {isPrivileged && editMode === 'none' && (
+            <AccountantDetailsEdit expense={expense} />
           )}
 
           {isPrivileged && (

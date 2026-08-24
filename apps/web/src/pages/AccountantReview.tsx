@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, XCircle, Send, MessageCircleQuestion, FileText
 import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge } from '../components/StatusBadge';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
+import { AccountantDetailsEdit } from '../components/AccountantDetailsEdit';
 import { receiptContentUrl } from '../components/ReceiptPreview';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, Receipt } from '../types';
@@ -484,6 +485,9 @@ export function AccountantReview() {
               </div>
             )}
           </div>
+
+          {/* Correct push blockers without a round-trip to the submitter */}
+          <AccountantDetailsEdit expense={expense} />
 
           {/* Zoho readiness */}
           <ZohoReadinessCard
