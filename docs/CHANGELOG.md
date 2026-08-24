@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.0 (2026-08-24)
+
+### Payment method → Zoho account mapping
+
+- **Several cards can now map to one Zoho paid-through account.** The picker
+  hid any account another card had already claimed, enforcing a one-to-one rule
+  that reality does not follow — three physical Nirvana PNC cards settle to a
+  single *PNC Bank - Credit* account, and the second and third had no way to be
+  mapped at all. Nothing in the database or API ever required this; the rule
+  lived only in the settings UI.
+- **Each card's picker shows its own company's accounts.** Accounts were fetched
+  once for the page's Company selector and handed to every row and to the Add
+  Method form, so the form had to quietly switch the page selector to load the
+  right list. Accounts are now fetched per company, cached, and looked up by the
+  card being edited.
+- Account options say what an account is already used by — `credit card ·
+  already on 2 cards` — so sharing is a visible choice rather than a silent one.
+- The "not in <company>'s account list" warning now means only what it was
+  written for: a saved account Zoho no longer returns.
+
+
 ## 1.1.0 (2026-08-24)
 
 ### Conversation notifications
