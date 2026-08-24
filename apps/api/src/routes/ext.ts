@@ -865,6 +865,100 @@ router.post('/expenses/:id/messages', requireScope('messages:write'), asyncHandl
   res.status(201).json({ message: toExtMessageDto(message as never) });
 }));
 
+/**
+ * Cross-expense message feed for polling consumers. Keyset-paged on
+ * (createdAt, id) with the same base64url {c,i} cursor as GET /ext/expenses.
+ *
+ * Each row inlines the expense context a notifier needs — without it a scanner
+ * does an N+1 fetch per message just to write "your $340 expense at Ruth's Chris".
+ */
+router.get('/messages', requireScope('messages:read'), asyncHandler(async (req, res) => {
+  const sourceApp = typeof req.query.sourceApp === 'string' ? req.query.sourceApp : undefined;
+  if (!sourceApp) throw createError('sourceApp query param is required', 400, 'VALIDATION_ERROR');
+  if (sourceApp !== req.appConnection!.appName) {
+    throw createError('sourceApp does not match this connection', 403, 'FORBIDDEN');
+  }
+
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
+  const conditions = [eq(expenses.sourceApp, sourceApp)];
+
+  const since = typeof req.query.since === 'string' ? req.query.since : undefined;
+  if (since) {
+    try {
+      const decoded = JSON.parse(Buffer.from(since, 'base64url').toString('utf8')) as { c: string; i: string };
+      conditions.push(
+        or(
+          gt(expenseMessages.createdAt, new Date(decoded.c)),
+          and(eq(expenseMessages.createdAt, new Date(decoded.c)), gt(expenseMessages.id, decoded.i)),
+        )!,
+      );
+    } catch {
+      throw createError('Invalid cursor', 400, 'VALIDATION_ERROR');
+    }
+  }
+
+  const rows = await db.select({
+    id: expenseMessages.id,
+    body: expenseMessages.body,
+    isSystem: expenseMessages.isSystem,
+    requestType: expenseMessages.requestType,
+    isResolved: expenseMessages.isResolved,
+    resolvedAt: expenseMessages.resolvedAt,
+    createdAt: expenseMessages.createdAt,
+    senderId: users.id,
+    senderName: users.name,
+    senderRole: users.role,
+    senderEmail: users.email,
+    expenseId: expenses.id,
+    sourceRefId: expenses.sourceRefId,
+    ownerUserId: expenses.userId,
+    externalUserId: expenses.externalUserId,
+    merchant: expenses.merchant,
+    amount: expenses.amount,
+    status: expenses.status,
+  })
+    .from(expenseMessages)
+    .innerJoin(expenses, eq(expenseMessages.expenseId, expenses.id))
+    .innerJoin(users, eq(expenseMessages.senderId, users.id))
+    .where(and(...conditions))
+    .orderBy(asc(expenseMessages.createdAt), asc(expenseMessages.id))
+    .limit(limit + 1);
+
+  const page = rows.slice(0, limit);
+  // Unlike GET /ext/expenses (a list), this is a resumable stream: a consumer
+  // must be able to say "continue after the last row I saw". So the cursor is
+  // the last row of the page whenever the page has rows, and null only when
+  // there was nothing to return. Returning null on a final partial page would
+  // leave a poller with no watermark and force it to replay from the start.
+  const last = page[page.length - 1];
+  const nextCursor = last
+    ? Buffer.from(JSON.stringify({ c: last.createdAt.toISOString(), i: last.id }), 'utf8').toString('base64url')
+    : null;
+
+  res.json({
+    messages: page.map((r) => ({
+      id: r.id,
+      body: r.body,
+      sender: { id: r.senderId, name: r.senderName, role: r.senderRole, email: r.senderEmail },
+      isSystem: r.isSystem,
+      requestType: r.requestType,
+      isResolved: r.isResolved,
+      resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+      createdAt: r.createdAt.toISOString(),
+      expense: {
+        id: r.expenseId,
+        sourceRefId: r.sourceRefId,
+        ownerUserId: r.ownerUserId,
+        externalUserId: r.externalUserId,
+        merchant: r.merchant,
+        amount: r.amount,
+        status: r.status,
+      },
+    })),
+    nextCursor,
+  });
+}));
+
 // ── Bulk import ──────────────────────────────────────────────────────────────
 
 const importItemSchema = z.object({

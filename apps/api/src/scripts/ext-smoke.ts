@@ -281,6 +281,56 @@ async function main() {
     detail: `HTTP ${bad.status}`,
   });
 
+  // ── Messages ───────────────────────────────────────────────────────────────
+  const postMsg = await req('POST', `/ext/expenses/${expenseId}/messages`, {
+    body: 'Smoke test message',
+  });
+  steps.push({
+    name: 'POST /ext/expenses/:id/messages',
+    ok: postMsg.status === 201
+      && !!(postMsg.json as { message?: { id?: string } })?.message?.id,
+    detail: `HTTP ${postMsg.status}`,
+  });
+
+  const thread = await req('GET', `/ext/expenses/${expenseId}/messages`);
+  const threadMessages = (thread.json as { messages?: unknown[] })?.messages;
+  steps.push({
+    name: 'GET /ext/expenses/:id/messages',
+    ok: thread.status === 200 && Array.isArray(threadMessages) && threadMessages.length > 0,
+    detail: `HTTP ${thread.status} count=${threadMessages?.length ?? 0}`,
+  });
+
+  // internalNote must never cross the Ext boundary, for any consumer.
+  steps.push({
+    name: 'Ext thread omits internalNote',
+    ok: !thread.text.includes('internalNote'),
+    detail: thread.text.includes('internalNote') ? 'LEAKED internalNote' : 'absent',
+  });
+
+  const feed = await req('GET', '/ext/messages?sourceApp=trade_show&limit=5');
+  const feedJson = feed.json as { messages?: Array<{ expense?: { ownerUserId?: string } }> };
+  steps.push({
+    name: 'GET /ext/messages',
+    ok: feed.status === 200
+      && Array.isArray(feedJson?.messages)
+      && (feedJson.messages.length === 0 || !!feedJson.messages[0].expense?.ownerUserId),
+    detail: `HTTP ${feed.status} count=${feedJson?.messages?.length ?? 0}`,
+  });
+
+  steps.push({
+    name: 'Ext feed omits internalNote',
+    ok: !feed.text.includes('internalNote'),
+    detail: feed.text.includes('internalNote') ? 'LEAKED internalNote' : 'absent',
+  });
+
+  // A mismatched sourceApp must be refused, not silently served.
+  const wrongApp = await req('GET', '/ext/messages?sourceApp=not_trade_show&limit=1');
+  steps.push({
+    name: 'GET /ext/messages rejects a foreign sourceApp',
+    ok: wrongApp.status === 403,
+    detail: `HTTP ${wrongApp.status}`,
+  });
+
   let failed = 0;
   for (const s of steps) {
     console.log(`${s.ok ? 'PASS' : 'FAIL'}  ${s.name} — ${s.detail}`);
