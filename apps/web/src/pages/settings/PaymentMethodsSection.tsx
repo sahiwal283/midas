@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, CreditCard, AlertCircle } from 'lucide-react';
 import { paymentMethodsApi, expenseApi } from '../../api/expenses';
 import { companyApi } from '../../api/companies';
@@ -8,7 +8,12 @@ import { SearchableSelect, type SearchableOption } from '../../components/Search
 import { useAuth } from '../../contexts/AuthContext';
 import client from '../../api/client';
 import type { PaymentMethod, User } from '../../types';
-import { groupPaymentMethodsForCompany, patchForCompanyMove } from '@midas/shared';
+import {
+  groupPaymentMethodsForCompany,
+  patchForCompanyMove,
+  countCardsPerZohoAccount,
+  shareHintFor,
+} from '@midas/shared';
 
 const BRAND_LABELS: Record<string, string> = {
   visa: 'Visa',
@@ -19,6 +24,13 @@ const BRAND_LABELS: Record<string, string> = {
   cash: 'Cash',
   other: 'Other',
 };
+
+interface CompanyAccounts {
+  accounts: ZohoPaidThroughAccount[];
+  loading: boolean;
+  failed: boolean;
+}
+const EMPTY_ACCOUNTS: CompanyAccounts = { accounts: [], loading: false, failed: false };
 
 const inputCls = 'w-full rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 lg:py-2';
 
@@ -111,18 +123,54 @@ export function PaymentMethodsSection() {
     if (!company && zohoCompanies.length > 0) setCompany(zohoCompanies[0].name);
   }, [company, zohoCompanies]);
 
-  const {
-    data: accountData,
-    isFetching: accountsLoading,
-    isError: accountsFailed,
-  } = useQuery({
-    queryKey: ['zoho-paid-through-accounts', company],
-    queryFn: () => expenseApi.zohoPaidThroughAccounts(company),
-    enabled: !!company,
-    staleTime: 60_000,
-    retry: 1,
+  // Accounts are fetched per company, so a card's picker always shows its OWN
+  // company's accounts rather than whichever company the page selector happens
+  // to be on. React Query dedupes and caches, so a company already loaded is free.
+  const neededCompanies = useMemo(() => {
+    const names = new Set<string>();
+    if (company) names.add(company);
+    if (form.defaultZohoEntity) names.add(form.defaultZohoEntity);
+    return [...names];
+  }, [company, form.defaultZohoEntity]);
+
+  const accountQueries = useQueries({
+    queries: neededCompanies.map((name) => ({
+      queryKey: ['zoho-paid-through-accounts', name],
+      queryFn: () => expenseApi.zohoPaidThroughAccounts(name),
+      staleTime: 60_000,
+      retry: 1,
+    })),
   });
-  const accounts: ZohoPaidThroughAccount[] = accountData?.accounts ?? [];
+
+  const accountsByCompany = new Map<string, CompanyAccounts>(
+    neededCompanies.map((name, i) => {
+      const q = accountQueries[i];
+      return [name, {
+        accounts: q?.data?.accounts ?? [],
+        loading: !!q?.isFetching,
+        failed: !!q?.isError,
+      }];
+    }),
+  );
+
+  const accountsFor = (name: string | null | undefined): CompanyAccounts =>
+    (name && accountsByCompany.get(name)) || EMPTY_ACCOUNTS;
+
+  /** A saved mapping the card's own company does not list — stale, not cross-company. */
+  const rowMismatch = (pm: PaymentMethod): boolean => {
+    if (!pm.zohoAccountName || !pm.defaultZohoEntity) return false;
+    const { accounts: list, loading, failed } = accountsFor(pm.defaultZohoEntity);
+    if (loading || failed) return false;
+    return !list.some((a) => a.accountId === pm.zohoAccountName);
+  };
+
+  // The page-level selector still drives the summary line and the "in Zoho but
+  // not in Midas" list — both describe the company you are browsing, not a card.
+  const {
+    accounts,
+    loading: accountsLoading,
+    failed: accountsFailed,
+  } = accountsFor(company);
   const accountName = (id: string) => accounts.find((a) => a.accountId === id)?.accountName ?? null;
 
   const { belonging, unassigned } = useMemo(
@@ -130,26 +178,28 @@ export function PaymentMethodsSection() {
     [methods, company],
   );
 
-  /** Account ids already claimed by some payment method (any company). */
-  const claimedAccountIds = useMemo(
-    () => new Set(methods.map((m) => m.zohoAccountName).filter(Boolean) as string[]),
-    [methods],
-  );
-  const unclaimedAccounts = accounts.filter((a) => !claimedAccountIds.has(a.accountId));
+  /** How many cards point at each account — several may share one. */
+  const cardsPerAccount = useMemo(() => countCardsPerZohoAccount(methods), [methods]);
+  /** Accounts no card points at yet. Drives the summary and the add-list. */
+  const unclaimedAccounts = accounts.filter((a) => !cardsPerAccount.has(a.accountId));
 
   /**
-   * One Zoho account maps to one card. Accounts claimed by OTHER methods are
-   * hidden; the row's own mapping stays selectable, as does a saved id Zoho no
-   * longer returns (so it never silently disappears).
+   * Several cards may map to one Zoho account — three physical PNC cards on one
+   * PNC credit line, say — so nothing is filtered out; the hint says what an
+   * account is already used by. A saved id Zoho no longer returns is kept as an
+   * option so it never silently disappears.
    */
   const accountOptionsFor = (pm: PaymentMethod): SearchableOption[] => {
-    const opts: SearchableOption[] = accounts
-      .filter((a) => !claimedAccountIds.has(a.accountId) || pm.zohoAccountName === a.accountId)
-      .map((a) => ({
-        value: a.accountId,
-        label: a.accountName,
-        hint: a.accountType.replace(/_/g, ' '),
-      }));
+    const opts: SearchableOption[] = accountsFor(pm.defaultZohoEntity).accounts
+      .map((a) => {
+        const share = shareHintFor(cardsPerAccount, a.accountId, pm.zohoAccountName);
+        const type = a.accountType.replace(/_/g, ' ');
+        return {
+          value: a.accountId,
+          label: a.accountName,
+          hint: share ? `${type} · ${share}` : type,
+        };
+      });
     if (pm.zohoAccountName && !opts.some((o) => o.value === pm.zohoAccountName)) {
       opts.unshift({ value: pm.zohoAccountName, label: pm.zohoAccountName, hint: 'not in current Zoho list' });
     }
@@ -327,9 +377,6 @@ export function PaymentMethodsSection() {
                 value={form.defaultZohoEntity}
                 onChange={(e) => {
                   set('defaultZohoEntity', e.target.value);
-                  // Keep the page's account list in sync so the picker below
-                  // always shows this company's Zoho accounts.
-                  if (e.target.value) setCompany(e.target.value);
                 }}
                 className={inputCls}
               >
@@ -342,13 +389,19 @@ export function PaymentMethodsSection() {
             <div>
               <label className="mb-1 block text-xs font-medium text-charcoal/80">Zoho paid-through account</label>
               <SearchableSelect
-                options={accounts
-                  .filter((a) => !claimedAccountIds.has(a.accountId) || form.zohoAccountName === a.accountId)
-                  .map((a) => ({ value: a.accountId, label: a.accountName, hint: a.accountType.replace(/_/g, ' ') }))}
+                options={accountsFor(form.defaultZohoEntity).accounts.map((a) => {
+                  const share = shareHintFor(cardsPerAccount, a.accountId, form.zohoAccountName || null);
+                  const type = a.accountType.replace(/_/g, ' ');
+                  return {
+                    value: a.accountId,
+                    label: a.accountName,
+                    hint: share ? `${type} · ${share}` : type,
+                  };
+                })}
                 value={form.zohoAccountName}
                 onChange={(id) => set('zohoAccountName', id)}
                 placeholder={form.defaultZohoEntity ? 'Search Zoho accounts…' : 'Pick a company first'}
-                disabled={!form.defaultZohoEntity || accountsLoading}
+                disabled={!form.defaultZohoEntity || accountsFor(form.defaultZohoEntity).loading}
               />
             </div>
           </div>
@@ -424,9 +477,9 @@ export function PaymentMethodsSection() {
                   pm={pm}
                   userName={userName}
                   accountOptions={accountOptionsFor(pm)}
-                  zohoDisabled={!pm.defaultZohoEntity || accountsLoading || accountsFailed}
-                  zohoMismatch={!!pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed}
-                  companyLabel={company}
+                  zohoDisabled={!pm.defaultZohoEntity || accountsFor(pm.defaultZohoEntity).loading || accountsFor(pm.defaultZohoEntity).failed}
+                  zohoMismatch={rowMismatch(pm)}
+                  companyLabel={pm.defaultZohoEntity ?? company}
                   companies={zohoCompanies}
                   editing={editingId === pm.id}
                   isAdmin={isAdmin}
@@ -454,7 +507,7 @@ export function PaymentMethodsSection() {
                   accountOptions={accountOptionsFor(pm)}
                   zohoDisabled
                   zohoMismatch={false}
-                  companyLabel={company}
+                  companyLabel={pm.defaultZohoEntity ?? company}
                   companies={zohoCompanies}
                   editing={editingId === pm.id}
                   isAdmin={isAdmin}
@@ -496,9 +549,9 @@ export function PaymentMethodsSection() {
                   pm={pm}
                   userName={userName}
                   accountOptions={accountOptionsFor(pm)}
-                  zohoDisabled={!pm.defaultZohoEntity || accountsLoading || accountsFailed}
-                  zohoMismatch={!!pm.zohoAccountName && !accountName(pm.zohoAccountName) && !accountsLoading && !accountsFailed}
-                  companyLabel={company}
+                  zohoDisabled={!pm.defaultZohoEntity || accountsFor(pm.defaultZohoEntity).loading || accountsFor(pm.defaultZohoEntity).failed}
+                  zohoMismatch={rowMismatch(pm)}
+                  companyLabel={pm.defaultZohoEntity ?? company}
                   companies={zohoCompanies}
                   editing={editingId === pm.id}
                   isAdmin={isAdmin}
@@ -528,7 +581,7 @@ export function PaymentMethodsSection() {
                   accountOptions={accountOptionsFor(pm)}
                   zohoDisabled
                   zohoMismatch={false}
-                  companyLabel={company}
+                  companyLabel={pm.defaultZohoEntity ?? company}
                   companies={zohoCompanies}
                   editing={editingId === pm.id}
                   isAdmin={isAdmin}

@@ -1,5 +1,10 @@
 export { MIDAS_VERSION } from '../version';
-export { groupPaymentMethodsForCompany, patchForCompanyMove } from './paymentMethodGroups';
+export {
+  groupPaymentMethodsForCompany,
+  patchForCompanyMove,
+  countCardsPerZohoAccount,
+  shareHintFor,
+} from './paymentMethodGroups';
 export {
   categoryDeleteBlocker,
   matchingCategoryIdSet,

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { groupPaymentMethodsForCompany, patchForCompanyMove } from './paymentMethodGroups';
+import {
+  groupPaymentMethodsForCompany,
+  patchForCompanyMove,
+  countCardsPerZohoAccount,
+  shareHintFor,
+} from './paymentMethodGroups';
 
 function pm(id: string, entity: string | null) {
   return { id, defaultZohoEntity: entity, zohoAccountName: null as string | null };
@@ -45,5 +50,57 @@ describe('patchForCompanyMove', () => {
       { defaultZohoEntity: 'Haute Brands', zohoAccountName: '4849' },
       '',
     )).toEqual({ defaultZohoEntity: null, zohoAccountName: null });
+  });
+});
+
+describe('countCardsPerZohoAccount', () => {
+  it('counts several cards sharing one account', () => {
+    const counts = countCardsPerZohoAccount([
+      { zohoAccountName: 'acct-pnc-credit' },
+      { zohoAccountName: 'acct-pnc-credit' },
+      { zohoAccountName: 'acct-pnc-credit' },
+      { zohoAccountName: 'acct-checking' },
+    ]);
+    expect(counts.get('acct-pnc-credit')).toBe(3);
+    expect(counts.get('acct-checking')).toBe(1);
+  });
+
+  it('ignores unmapped cards', () => {
+    const counts = countCardsPerZohoAccount([
+      { zohoAccountName: null },
+      { zohoAccountName: '' },
+      { zohoAccountName: 'acct-a' },
+    ]);
+    expect(counts.get('acct-a')).toBe(1);
+    expect(counts.size).toBe(1);
+  });
+
+  it('returns an empty map for no cards', () => {
+    expect(countCardsPerZohoAccount([]).size).toBe(0);
+  });
+});
+
+describe('shareHintFor', () => {
+  const counts = new Map([['acct-shared', 3], ['acct-solo', 1]]);
+
+  it('describes the other cards already on a shared account', () => {
+    expect(shareHintFor(counts, 'acct-shared', null)).toBe('already on 3 cards');
+  });
+
+  it('says nothing for an account no card uses', () => {
+    expect(shareHintFor(counts, 'acct-free', null)).toBeNull();
+  });
+
+  it('says nothing when the only card on it is the one being edited', () => {
+    expect(shareHintFor(counts, 'acct-solo', 'acct-solo')).toBeNull();
+  });
+
+  it('excludes the current card from the count it reports', () => {
+    expect(shareHintFor(counts, 'acct-shared', 'acct-shared')).toBe('also on 2 other cards');
+  });
+
+  it('uses the singular form for a single other card', () => {
+    expect(shareHintFor(new Map([['a', 2]]), 'a', 'a')).toBe('also on 1 other card');
+    expect(shareHintFor(new Map([['a', 1]]), 'a', null)).toBe('already on 1 card');
   });
 });
