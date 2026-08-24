@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.1 (2026-08-24)
+
+- **Payment Methods no longer scrolls sideways.** The table carried seven
+  columns at `px-6` padding plus a hard `min-w-[16rem]` on the Zoho account
+  cell, so Status sat off-screen behind a horizontal scrollbar. Brand and
+  Assignment now ride as a muted sub-line under the card name — the same shape
+  the mobile card view already used — leaving four fixed-width columns that fit
+  at any desktop width. Nothing was dropped; the Zoho account picker kept its
+  width, and the company dropdown is no longer truncated to "Nirvan…".
+
+
 ## 1.2.0 (2026-08-24)
 
 ### Payment method → Zoho account mapping
