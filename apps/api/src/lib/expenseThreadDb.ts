@@ -1,10 +1,12 @@
 /**
  * Database orchestration for expense message threads.
  *
- * Decisions live in expenseThread.ts (pure, tested). This module is the only
- * place that writes a message, so the audit trail and recipient notification
- * cannot be forgotten by a new caller. Both the session-auth route and the Ext
- * route go through postToThread.
+ * Decisions live in expenseThread.ts (pure, tested). This is the only path
+ * the session-auth and Ext *thread* routes share for posting a message, so
+ * the audit trail and recipient notification cannot be forgotten by either.
+ * Other writers (routes/accountant.ts, routes/expenses.ts,
+ * drizzleImportTarget.ts) insert directly with their own audit/notify and do
+ * not go through postToThread.
  */
 
 import { and, asc, eq, isNotNull } from 'drizzle-orm';
@@ -17,9 +19,9 @@ import { truncateExcerpt } from './notifyMessages';
 import { resolveMessageRecipient } from './messageRecipients';
 import { decideThreadPost } from './expenseThread';
 
-// Matches the sender columns the session-auth route has always selected — no
-// email. Widening this exposes an address that the current API never has;
-// keep in lockstep with any callers that need more (see Ext route review).
+// Base sender columns the session-auth route has always selected — no email
+// by default. postToThread's includeSenderEmail opts in per call (see below);
+// keep this in lockstep with listThread's equivalent default.
 const SENDER_COLUMNS = { id: true, name: true, role: true } as const;
 
 /**
@@ -59,6 +61,12 @@ export interface PostToThreadInput {
   /** Only honoured for privileged senders; callers must gate before calling. */
   requestType?: string | null;
   internalNote?: string | null;
+  /**
+   * Same opt-in as listThread's includeSenderEmail, off by default so the
+   * session-auth route's POST response stays byte-identical. The Ext route
+   * passes true so its POST response matches its GET response shape.
+   */
+  includeSenderEmail?: boolean;
 }
 
 /**
@@ -117,9 +125,14 @@ export async function postToThread(input: PostToThreadInput) {
     });
   }
 
+  const senderColumns = {
+    ...SENDER_COLUMNS,
+    email: input.includeSenderEmail === true,
+  } as const satisfies Record<string, boolean>;
+
   const full = await db.query.expenseMessages.findFirst({
     where: eq(expenseMessages.id, message.id),
-    with: { sender: { columns: SENDER_COLUMNS } },
+    with: { sender: { columns: senderColumns } },
   });
 
   // expense_messages is the canonical conversation record (see CLAUDE.md), so

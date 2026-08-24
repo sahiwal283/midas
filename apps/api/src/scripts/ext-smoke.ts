@@ -284,6 +284,10 @@ async function main() {
   // ── Messages ───────────────────────────────────────────────────────────────
   const postMsg = await req('POST', `/ext/expenses/${expenseId}/messages`, {
     body: 'Smoke test message',
+    // jsonHeaders carries no X-Actor-Email/-Username, so resolveExtUser needs a
+    // submitter identity from the body — Zod strips this key from `parsed`, but
+    // actorEmail(req) reads it off the raw req.body before that happens.
+    submitterEmail: 'smoke-ts@midas.local',
   });
   steps.push({
     name: 'POST /ext/expenses/:id/messages',

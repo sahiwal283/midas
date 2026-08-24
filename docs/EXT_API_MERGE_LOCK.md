@@ -20,6 +20,8 @@ Do not change paths or required fields without updating `CONTRACT_ALIGNMENT.md` 
 | `expenses:delete` | `DELETE /expenses/:id` |
 | `receipts:create` | `POST /expenses/:id/receipts` |
 | `expenses:import` | `POST /expenses/import` |
+| `messages:read` | `GET /expenses/:id/messages`, `GET /messages` |
+| `messages:write` | `POST /expenses/:id/messages` |
 
 Missing required scope → **403** `{ "error": { "code": "MISSING_SCOPE", "message": "..." } }`.  
 Invalid/missing key → **401** `UNAUTHENTICATED`.
@@ -216,6 +218,61 @@ Company-wide active cards (Trade Show `cardOptions` SoR in Midas):
 
 See `docs/TRADE_SHOW_PAYMENT_METHODS.md`.
 
+### 12. `GET /expenses/:id/messages` — scope `messages:read`
+
+Thread for one expense, oldest-first. `internalNote` is never included — Ext consumers must never see it, for any consumer.
+
+**Response 200:** `{ "messages": [ /* Message DTO, see below */ ] }`
+
+### 13. `POST /expenses/:id/messages` — scope `messages:write`
+
+**Body (JSON):**
+
+```json
+{
+  "body": "string, 1-2000 chars",
+  "requestType": "info_request|missing_receipt|missing_category|missing_payment_method|general (optional)",
+  "submitterEmail": "user@example.com"
+}
+```
+
+Actor resolution is the same as `POST /expenses` (§ Auth & scopes): `X-Actor-Email`/`X-Actor-Username` headers or `submitterEmail`/`submitterUsername` body fields. Unlike `POST /expenses`, this never auto-provisions a user even when `EXT_AUTO_PROVISION_USERS=true` — posting a message must never conjure an account. `requestType` is only honoured for a sender allowed to request info on the expense's current status; otherwise **403** `FORBIDDEN`.
+
+**Response 201:** `{ "message": /* Message DTO */ }`
+
+### 14. `GET /messages` — scope `messages:read`
+
+Cross-expense feed for polling consumers, keyset-paged on `(createdAt, id)` with the same base64url `{c,i}` cursor shape as `GET /expenses`.
+
+| Param | Required | Description |
+|---|---|---|
+| `sourceApp` | yes | must equal this connection's `appName` |
+| `since` | no | cursor from a prior page's `nextCursor` |
+| `limit` | no | default 100, max 200 |
+
+Each row inlines the expense context (`id`, `sourceRefId`, `ownerUserId`, `externalUserId`, `merchant`, `amount`, `status`) so a notifier does not need an N+1 fetch per message.
+
+**Response 200:** `{ "messages": [ /* Message DTO + expense */ ], "nextCursor": "string|null" }`.
+
+Unlike `GET /expenses`, this is a resumable stream: `nextCursor` is non-null whenever the page has rows (even the final page), so a poller always has a watermark to resume from; it is null only when there is nothing to return.
+
+### Message DTO
+
+```json
+{
+  "id": "uuid",
+  "body": "string",
+  "sender": { "id": "uuid|null", "name": "string", "role": "string|null", "email": "string|null" },
+  "isSystem": false,
+  "requestType": "string|null",
+  "isResolved": false,
+  "resolvedAt": "ISO8601|null",
+  "createdAt": "ISO8601"
+}
+```
+
+**Note — deliberate contract widening:** `sender.email` is populated on all three message endpoints (`GET`/`POST /expenses/:id/messages` and `GET /messages`). This is new relative to the session-auth message API, which never returns it. A consumer keys its own users by email — `submitterEmail` is how it creates expenses here — and a Midas user id means nothing to it, so email is the only usable join key for "is this my own message?". Do not rely on `sender.email` being present on any other Ext DTO; it is scoped to messages only.
+
 ---
 
 ## Deferred (not blocking Trade Show v1)
@@ -372,3 +429,4 @@ curl -sS -X POST "$MIDAS/api/v1/ext/expenses/import" \
 - [x] Status + reimbursement maps (incl. `rejected`)
 - [x] Receipt content stream
 - [x] Sandbox connection key with B4 scopes *(local: `npm run ext:create-connection`; see `docs/EXT_SANDBOX_HANDOFF.md`)*
+- [x] Expense message thread (`messages:read`/`messages:write`) + cross-expense polling feed; `sender.email` widening documented above

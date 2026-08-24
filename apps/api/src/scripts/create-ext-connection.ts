@@ -17,6 +17,8 @@ const TRADE_SHOW_SCOPES = [
   'receipts:create',
   'expenses:import',
   'ocr:process',
+  'messages:read',
+  'messages:write',
 ];
 
 async function main() {

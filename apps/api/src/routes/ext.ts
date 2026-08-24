@@ -859,6 +859,9 @@ router.post('/expenses/:id/messages', requireScope('messages:write'), asyncHandl
     senderRole: role,
     body: parsed.body,
     requestType: parsed.requestType ?? null,
+    // Match GET /ext/expenses/:id/messages: sender.email is the join key an
+    // Ext consumer uses to tell its own reply from someone else's.
+    includeSenderEmail: true,
   });
   if (!message) throw notFound('Expense not found');
 
@@ -884,17 +887,29 @@ router.get('/messages', requireScope('messages:read'), asyncHandler(async (req, 
 
   const since = typeof req.query.since === 'string' ? req.query.since : undefined;
   if (since) {
+    let decoded: { c: string; i: string };
+    let cursorDate: Date;
     try {
-      const decoded = JSON.parse(Buffer.from(since, 'base64url').toString('utf8')) as { c: string; i: string };
-      conditions.push(
-        or(
-          gt(expenseMessages.createdAt, new Date(decoded.c)),
-          and(eq(expenseMessages.createdAt, new Date(decoded.c)), gt(expenseMessages.id, decoded.i)),
-        )!,
-      );
+      decoded = JSON.parse(Buffer.from(since, 'base64url').toString('utf8')) as { c: string; i: string };
+      cursorDate = new Date(decoded.c);
+      if (Number.isNaN(cursorDate.getTime())) throw new Error('invalid cursor date');
     } catch {
       throw createError('Invalid cursor', 400, 'VALIDATION_ERROR');
     }
+    // expense_messages.created_at is timestamp(6) (microsecond precision), but the
+    // cursor we emit below is millisecond precision (a JS Date can't hold more, and
+    // toISOString() only ever prints ms). Truncate the column to milliseconds on
+    // both sides of the comparison so the value we emit is exactly the value we
+    // later compare against — otherwise a row with nonzero microseconds is always
+    // ">" the truncated cursor and the equality tiebreak never catches it either,
+    // so the newest row reappears on every poll and the watermark never converges.
+    const truncatedCreatedAt = sql`date_trunc('milliseconds', ${expenseMessages.createdAt})`;
+    conditions.push(
+      or(
+        gt(truncatedCreatedAt, cursorDate),
+        and(eq(truncatedCreatedAt, cursorDate), gt(expenseMessages.id, decoded.i)),
+      )!,
+    );
   }
 
   const rows = await db.select({
@@ -922,9 +937,9 @@ router.get('/messages', requireScope('messages:read'), asyncHandler(async (req, 
     .innerJoin(users, eq(expenseMessages.senderId, users.id))
     .where(and(...conditions))
     .orderBy(asc(expenseMessages.createdAt), asc(expenseMessages.id))
-    .limit(limit + 1);
+    .limit(limit);
 
-  const page = rows.slice(0, limit);
+  const page = rows;
   // Unlike GET /ext/expenses (a list), this is a resumable stream: a consumer
   // must be able to say "continue after the last row I saw". So the cursor is
   // the last row of the page whenever the page has rows, and null only when
