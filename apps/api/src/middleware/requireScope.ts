@@ -12,7 +12,9 @@ export type ExtScope =
   | 'receipts:create'
   | 'expenses:import'
   | 'expenses:review'
-  | 'zoho:push';
+  | 'zoho:push'
+  | 'messages:read'
+  | 'messages:write';
 
 /** Require a scope on the authenticated app connection. Empty permissions = deny all. */
 export function requireScope(...scopes: ExtScope[]) {

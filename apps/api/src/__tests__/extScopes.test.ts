@@ -51,4 +51,37 @@ describe('requireScope', () => {
 
     expect(next).toHaveBeenCalledOnce();
   });
+
+  it('returns 403 MISSING_SCOPE when messages:write is absent', () => {
+    const middleware = requireScope('messages:write');
+    const req = {
+      appConnection: { permissions: ['messages:read'] },
+    } as unknown as Request;
+    const res = mockRes();
+    const next = vi.fn();
+
+    middleware(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({
+      error: {
+        code: 'MISSING_SCOPE',
+        message: 'Missing required scope(s): messages:write',
+      },
+    });
+  });
+
+  it('calls next when messages:read is granted', () => {
+    const middleware = requireScope('messages:read');
+    const req = {
+      appConnection: { permissions: ['messages:read'] },
+    } as unknown as Request;
+    const res = mockRes();
+    const next = vi.fn();
+
+    middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledOnce();
+  });
 });
