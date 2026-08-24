@@ -28,17 +28,26 @@ RUN cd ../.. && npm install --workspace=apps/api
 COPY apps/api/ .
 RUN npm run build
 
-# The compiled API is CommonJS and `require()`s @midas/shared and
-# @midas/ocr-client at runtime (error classes, pickReferenceNumber, …). Both
-# packages point `main` at raw .ts, which Node cannot load — so compile them to
-# CJS here and repoint `main` at the build output. This rewrite lives only in
-# the image; the repo keeps `main` on src so dev and vitest resolve TypeScript
-# directly.
+# The compiled API is CommonJS and `require()`s the workspace packages at
+# runtime (@midas/shared's pickReferenceNumber, @midas/ocr-client's error
+# classes, @midas/import's ImportService). Every package points `main` at raw
+# .ts, which Node cannot load — the API dies with "SyntaxError: Unexpected
+# token 'export'" on first boot.
+#
+# Compile each package that ships a tsconfig.build.json to CommonJS and repoint
+# its `main`/`types` at the output. The loop is deliberate: adding a package
+# without this step is how the break returns. The rewrite lives only in the
+# image — the repo keeps `main` on src so dev and vitest resolve TS directly.
 WORKDIR /app
-RUN npx tsc -p packages/shared/tsconfig.build.json \
- && npx tsc -p packages/ocr-client/tsconfig.build.json \
- && npm pkg set main=./dist/types/index.js types=./dist/types/index.d.ts --prefix packages/shared \
- && npm pkg set main=./dist/index.js types=./dist/index.d.ts --prefix packages/ocr-client
+RUN set -e; for pkg in packages/*/; do \
+      [ -f "$pkg/tsconfig.build.json" ] || continue; \
+      npx tsc -p "$pkg/tsconfig.build.json"; \
+      main=$(node -p "require('./$pkg/package.json').main"); \
+      built=$(printf '%s' "$main" | sed -e 's#^\./src/#./dist/#' -e 's#\.ts$#.js#'); \
+      types=$(printf '%s' "$built" | sed -e 's#\.js$#.d.ts#'); \
+      npm pkg set main="$built" types="$types" --prefix "$pkg"; \
+      echo "built $pkg -> $built"; \
+    done
 WORKDIR /app/apps/api
 
 # ── production stage ──────────────────────────────────────────────────────────
