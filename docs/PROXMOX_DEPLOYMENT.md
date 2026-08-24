@@ -70,8 +70,12 @@ curl -sf http://localhost:5173/ | head -3
 ```bash
 # Push updated code to the container (from dev machine):
 cd /path/to/midas
-tar czf - --exclude=node_modules --exclude=.git --exclude=extension/dist \
-  --exclude=apps/web/dist --exclude=apps/api/dist . | \
+# NOTE: --exclude=.env is load-bearing. tar does NOT honour .gitignore, so
+# without it your local dev .env overwrites production's and the API loses its
+# database. (This has happened. /opt/midas/.env is root:root 600 on the box.)
+tar czf - --exclude=node_modules --exclude=.git --exclude=.env \
+  --exclude=extension/dist --exclude=apps/web/dist --exclude=apps/api/dist \
+  --exclude=packages/shared/dist --exclude=packages/ocr-client/dist . | \
   ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && tar xzf -'"
 
 # On midas-app-prod:

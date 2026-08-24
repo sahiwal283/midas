@@ -28,6 +28,19 @@ RUN cd ../.. && npm install --workspace=apps/api
 COPY apps/api/ .
 RUN npm run build
 
+# The compiled API is CommonJS and `require()`s @midas/shared and
+# @midas/ocr-client at runtime (error classes, pickReferenceNumber, …). Both
+# packages point `main` at raw .ts, which Node cannot load — so compile them to
+# CJS here and repoint `main` at the build output. This rewrite lives only in
+# the image; the repo keeps `main` on src so dev and vitest resolve TypeScript
+# directly.
+WORKDIR /app
+RUN npx tsc -p packages/shared/tsconfig.build.json \
+ && npx tsc -p packages/ocr-client/tsconfig.build.json \
+ && npm pkg set main=./dist/types/index.js types=./dist/types/index.d.ts --prefix packages/shared \
+ && npm pkg set main=./dist/index.js types=./dist/index.d.ts --prefix packages/ocr-client
+WORKDIR /app/apps/api
+
 # ── production stage ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS prod
 WORKDIR /app
