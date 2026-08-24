@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, XCircle, Send, MessageCircleQuestion, FileText } from 'lucide-react';
@@ -6,6 +6,8 @@ import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge } from '../components/StatusBadge';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { AccountantDetailsEdit } from '../components/AccountantDetailsEdit';
+import { MessageBubble } from '../components/MessageBubble';
+import { MessageComposer } from '../components/MessageComposer';
 import { receiptContentUrl } from '../components/ReceiptPreview';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, Receipt } from '../types';
@@ -185,59 +187,6 @@ function ZohoReadinessCard({
 
 // ── Conversation ──────────────────────────────────────────────────────────────
 
-function MessageItem({
-  message,
-  currentUserId,
-}: {
-  message: ExpenseMessage;
-  currentUserId?: string;
-}) {
-  if (message.isSystem) {
-    return (
-      <div className="rounded-lg border border-ink/10 bg-cream px-3 py-2 text-center text-xs text-muted break-words">
-        {message.body}
-      </div>
-    );
-  }
-
-  if (message.requestType) {
-    const resolved = message.isResolved;
-    return (
-      <div className={`rounded-lg border px-3 py-2.5 text-sm ${resolved ? 'border-success/30 bg-success/10' : 'border-amber-300 bg-amber-50'}`}>
-        <div className="mb-1 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${resolved ? 'bg-success/15 text-success' : 'bg-amber-200 text-amber-800'}`}>
-              {resolved ? 'Resolved' : 'Info Requested'}
-            </span>
-            <span className="font-medium text-charcoal/80">{message.sender?.name ?? 'Accountant'}</span>
-          </div>
-          <span className="text-xs text-charcoal/40">{new Date(message.createdAt).toLocaleString()}</span>
-        </div>
-        <p className={`break-words ${resolved ? 'text-success' : 'text-amber-900'}`}>{message.body}</p>
-        {message.internalNote && (
-          <p className="mt-2 rounded border border-yellow-200 bg-yellow-50 px-2 py-1 text-xs text-yellow-800 break-words">
-            <span className="font-semibold">Internal note: </span>{message.internalNote}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  const isMine = message.senderId === currentUserId;
-  return (
-    <div className={`rounded-lg p-3 text-sm ${isMine ? 'bg-brand-50 text-brand-900' : 'bg-cream text-ink'}`}>
-      <div className="mb-1 flex items-center gap-2">
-        <span className="font-medium">{message.sender?.name ?? '—'}</span>
-        {message.sender?.role !== 'user' && (
-          <span className="text-xs capitalize opacity-50">{message.sender?.role}</span>
-        )}
-        <span className="text-xs opacity-60">{new Date(message.createdAt).toLocaleString()}</span>
-      </div>
-      <p className="break-words">{message.body}</p>
-    </div>
-  );
-}
-
 // ── Detail row ────────────────────────────────────────────────────────────────
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -262,6 +211,7 @@ export function AccountantReview() {
   const [askType, setAskType] = useState('info_request');
   const [askInternal, setAskInternal] = useState('');
   const [reply, setReply] = useState('');
+  const [replyError, setReplyError] = useState<string | null>(null);
 
   const { data: expense, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -297,7 +247,15 @@ export function AccountantReview() {
     mutationFn: (body: string) => expenseApi.postMessage(id!, body),
     onSuccess: () => {
       setReply('');
+      setReplyError(null);
       qc.invalidateQueries({ queryKey: ['expense', id] });
+    },
+    onError: (err: unknown) => {
+      // Keep the text in the box — a dropped message is worse than a retry.
+      setReplyError(
+        (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message ?? 'Could not send your message. Please try again.',
+      );
     },
   });
 
@@ -323,12 +281,6 @@ export function AccountantReview() {
       requestType: askType,
       internalNote: askInternal.trim() || undefined,
     });
-  }
-
-  function handleReply(e: FormEvent) {
-    e.preventDefault();
-    if (!reply.trim()) return;
-    messageMutation.mutate(reply.trim());
   }
 
   if (isLoading) return <div className="p-8 text-charcoal/40">Loading…</div>;
@@ -514,27 +466,20 @@ export function AccountantReview() {
             <div className="mb-4 max-h-80 space-y-3 overflow-y-auto">
               {expense.messages && expense.messages.length > 0 ? (
                 expense.messages.map((m) => (
-                  <MessageItem key={m.id} message={m} currentUserId={user?.id} />
+                  <MessageBubble key={m.id} message={m} currentUserId={user?.id} isPrivileged />
                 ))
               ) : (
                 <p className="text-sm text-charcoal/40">No messages yet.</p>
               )}
             </div>
-            <form onSubmit={handleReply} className="flex gap-2">
-              <input
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                placeholder="Add a note or reply…"
-                className="min-w-0 flex-1 rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
-              />
-              <button
-                type="submit"
-                disabled={!reply.trim() || messageMutation.isPending}
-                className="min-h-11 min-w-11 rounded-lg bg-brand-600 px-3 py-2 text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:min-w-0"
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </form>
+            <MessageComposer
+              value={reply}
+              onChange={setReply}
+              onSubmit={() => messageMutation.mutate(reply.trim())}
+              pending={messageMutation.isPending}
+              error={replyError}
+              placeholder="Add a note or reply…"
+            />
           </div>
         </div>
       </div>

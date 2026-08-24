@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.1.0 (2026-08-24)
+
+### Conversation notifications
+
+- **Messages on an expense now notify the other side.** Posting a message
+  previously wrote the row and told nobody — the notification pipeline existed
+  but conversation was the one event that never used it. An accountant's message
+  now notifies the submitter, and the submitter's reply notifies the accountant
+  who claimed the review. Delivered in-app and by web push; messages
+  deliberately skip email, so a long thread doesn't become a full inbox.
+  Approvals, rejections and reimbursements still email as before.
+- Notification bodies quote the message, collapsed to one line and cut at a word
+  boundary at 120 characters.
+
+### Accountant edits
+
+- **Accountants can correct the fields that block a Zoho push.** Category,
+  company, reference number and reimbursement each already had a control, but
+  payment method, merchant, amount and date did not — a missing payment method
+  meant messaging the submitter and waiting. New
+  `PATCH /api/v1/accountant/expenses/:id/details` covers the remaining four,
+  reachable from both the review page and the expense detail page.
+- The patch refuses Zoho-synced expenses and respects closed accounting periods
+  in both directions, so a date edit cannot move an expense into closed books.
+  Linking a personal card promotes reimbursement to pending, as an owner's own
+  edit does.
+
+### Security
+
+- **Partners can no longer read other people's expense conversations.** The
+  message routes gated on `role !== 'user'`, which admitted the `partner` role
+  alongside accountants and admins — including access to accountant-only
+  internal notes. Both routes now use the same `roleAllowed(role,
+  ['accountant', 'admin'])` check as the rest of the app.
+
+### Hardening
+
+- Every message post is now written to the audit log, not just the
+  `awaiting_info → pending` transition it may trigger.
+- Whitespace-only messages are rejected rather than stored as blank rows.
+- Failed sends surface an error and keep your text instead of silently doing
+  nothing; the composer enforces the server's 2000-character cap and shows a
+  counter as you approach it.
+- The employee and accountant conversation views now share one message
+  component. They had drifted: the accountant's copy labelled every request
+  "Info Requested", so a missing-receipt or missing-payment-method request was
+  mislabelled on the page accountants work from.
+
 ## Extension 1.0.0 (2026-08-22)
 
 The Midas browser extension reaches 1.0, merging in the capabilities of an

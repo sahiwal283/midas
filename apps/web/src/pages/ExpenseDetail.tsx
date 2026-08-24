@@ -2,7 +2,7 @@ import { useState, FormEvent, ChangeEvent } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Paperclip, Send, Upload, AlertCircle, CheckCircle2,
+  ArrowLeft, Paperclip, Upload, AlertCircle, CheckCircle2,
   Clock, XCircle, RefreshCw, CreditCard, Trash2, Pencil,
 } from 'lucide-react';
 import { expenseApi, accountantApi } from '../api/expenses';
@@ -17,9 +17,11 @@ import { ReimbursementControl } from '../components/ReimbursementControl';
 import { CategoryRecode } from '../components/CategoryRecode';
 import { ReferenceNumberField } from '../components/ReferenceNumberField';
 import { useAuth } from '../contexts/AuthContext';
-import type { Expense, ExpenseMessage, MessageRequestType, AuditLogEntry } from '../types';
+import type { Expense, ExpenseMessage, AuditLogEntry } from '../types';
 import { roleAllowed } from '../lib/roles';
 import { AccountantDetailsEdit } from '../components/AccountantDetailsEdit';
+import { MessageBubble } from '../components/MessageBubble';
+import { MessageComposer } from '../components/MessageComposer';
 
 // ── Status banner — human language per workflow state ─────────────────────────
 
@@ -171,72 +173,6 @@ function ZohoReadinessPanel({ expense }: { expense: Expense }) {
           </div>
         </details>
       )}
-    </div>
-  );
-}
-
-// ── Message bubble ────────────────────────────────────────────────────────────
-
-const REQUEST_TYPE_LABELS: Partial<Record<MessageRequestType, string>> = {
-  missing_receipt: 'Please upload receipt',
-  missing_category: 'Please select category',
-  missing_payment_method: 'Please specify payment method',
-  info_request: 'Info Requested',
-  general: 'Question',
-};
-
-function MessageBubble({
-  message,
-  currentUserId,
-  isPrivileged,
-}: {
-  message: ExpenseMessage;
-  currentUserId?: string;
-  isPrivileged: boolean;
-}) {
-  if (message.isSystem) {
-    return (
-      <div className="rounded-lg border border-ink/10 bg-cream px-3 py-2 text-center text-xs text-muted break-words">
-        {message.body}
-      </div>
-    );
-  }
-
-  if (message.requestType) {
-    const resolved = message.isResolved;
-    const typeLabel = REQUEST_TYPE_LABELS[message.requestType as MessageRequestType] ?? 'Info Requested';
-    return (
-      <div className={`rounded-lg border px-3 py-2.5 text-sm ${resolved ? 'border-success/30 bg-success/10' : 'border-amber-300 bg-amber-50'}`}>
-        <div className="mb-1.5 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${resolved ? 'bg-success/15 text-success' : 'bg-amber-200 text-amber-800'}`}>
-              {resolved ? 'Resolved' : typeLabel}
-            </span>
-            <span className="font-medium text-charcoal/80">{message.sender?.name ?? 'Accountant'}</span>
-          </div>
-          <span className="text-xs text-charcoal/40">{new Date(message.createdAt).toLocaleString()}</span>
-        </div>
-        <p className={`break-words ${resolved ? 'text-success' : 'text-amber-900'}`}>{message.body}</p>
-        {isPrivileged && message.internalNote && (
-          <p className="mt-2 rounded bg-yellow-50 border border-yellow-200 px-2 py-1 text-xs text-yellow-800 break-words">
-            <span className="font-semibold">Internal note: </span>{message.internalNote}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  const isMine = message.senderId === currentUserId;
-  return (
-    <div className={`rounded-lg p-3 text-sm ${isMine ? 'bg-brand-50 text-brand-900' : 'bg-cream text-ink'}`}>
-      <div className="mb-1 flex items-center gap-2">
-        <span className="font-medium">{message.sender?.name ?? '—'}</span>
-        {message.sender?.role !== 'user' && (
-          <span className="text-xs opacity-50 capitalize">{message.sender?.role}</span>
-        )}
-        <span className="text-xs opacity-60">{new Date(message.createdAt).toLocaleString()}</span>
-      </div>
-      <p className="break-words">{message.body}</p>
     </div>
   );
 }
@@ -572,6 +508,7 @@ export function ExpenseDetail() {
   const location = useLocation();
   const qc = useQueryClient();
   const [message, setMessage] = useState('');
+  const [messageError, setMessageError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Set when arriving here from New Expense after the draft was created but the
   // receipt upload failed. Dismissed once a receipt is successfully uploaded.
@@ -594,7 +531,16 @@ export function ExpenseDetail() {
     mutationFn: (body: string) => expenseApi.postMessage(id!, body),
     onSuccess: () => {
       setMessage('');
+      setMessageError(null);
       qc.invalidateQueries({ queryKey: ['expense', id] });
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    onError: (err: unknown) => {
+      // Keep the text in the box — a dropped message is worse than a retry.
+      setMessageError(
+        (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message ?? 'Could not send your message. Please try again.',
+      );
     },
   });
 
@@ -641,12 +587,6 @@ export function ExpenseDetail() {
     const file = e.target.files?.[0];
     if (file) uploadMutation.mutate(file);
     e.target.value = '';
-  }
-
-  function handleSendMessage(e: FormEvent) {
-    e.preventDefault();
-    if (!message.trim()) return;
-    messageMutation.mutate(message.trim());
   }
 
   if (isLoading) return <div className="p-8 text-charcoal/40">Loading…</div>;
@@ -968,31 +908,21 @@ export function ExpenseDetail() {
                 <p className="text-sm text-charcoal/40">No messages yet.</p>
               )}
             </div>
-            <form onSubmit={handleSendMessage} className="flex gap-2">
-              <input
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder={
-                  isAwaiting && isOwner
-                    ? "Reply to the accountant's question…"
-                    : isPrivileged
-                    ? 'Add a note or reply…'
-                    : 'Write a message…'
-                }
-                className={`min-w-0 flex-1 rounded-lg border px-3 py-3 text-sm focus:outline-none lg:py-2 ${
-                  isAwaiting && isOwner
-                    ? 'border-amber-300 bg-amber-50 focus:border-amber-500'
-                    : 'border-ink/15 focus:border-brand-500'
-                }`}
-              />
-              <button
-                type="submit"
-                disabled={!message.trim() || messageMutation.isPending}
-                className="min-h-11 min-w-11 rounded-lg bg-brand-600 px-3 py-2 text-cream hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:min-w-0"
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </form>
+            <MessageComposer
+              value={message}
+              onChange={setMessage}
+              onSubmit={() => messageMutation.mutate(message.trim())}
+              pending={messageMutation.isPending}
+              error={messageError}
+              highlight={isAwaiting && isOwner}
+              placeholder={
+                isAwaiting && isOwner
+                  ? "Reply to the accountant's question…"
+                  : isPrivileged
+                  ? 'Add a note or reply…'
+                  : 'Write a message…'
+              }
+            />
           </div>
         </div>
 
