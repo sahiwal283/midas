@@ -20,6 +20,11 @@ export async function resolveExtUser(opts: {
   email?: string | null;
   username?: string | null;
   displayName?: string | null;
+  /**
+   * Defaults to the env setting. Message posting passes false: a conversation
+   * must never create an account, even where expense creation would.
+   */
+  autoProvision?: boolean;
 }): Promise<{ id: string; username: string; email: string | null; name: string; provisioned: boolean }> {
   const email = opts.email?.trim().toLowerCase() || null;
   const username = opts.username?.trim().toLowerCase() || null;
@@ -75,7 +80,8 @@ export async function resolveExtUser(opts: {
   }
 
   const label = username ?? email;
-  if (!env.EXT_AUTO_PROVISION_USERS) {
+  const allowProvision = opts.autoProvision ?? env.EXT_AUTO_PROVISION_USERS;
+  if (!allowProvision) {
     throw createError(`No Midas user found for ${label}`, 422, 'USER_NOT_FOUND');
   }
 

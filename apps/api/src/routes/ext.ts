@@ -17,6 +17,7 @@ import { db } from '../db/index';
 import {
   companies,
   expenseCategories,
+  expenseMessages,
   expenses,
   paymentMethods,
   receipts,
@@ -28,6 +29,8 @@ import { requireScope } from '../middleware/requireScope';
 import { asyncHandler, createError, notFound } from '../middleware/error';
 import { auditLog } from '../lib/audit';
 import { assertActiveCompany } from '../lib/companies';
+import { decideThreadPost } from '../lib/expenseThread';
+import { listThread, postToThread } from '../lib/expenseThreadDb';
 import { resolveCategoryIdOrOther } from '../lib/ext/categories';
 import { applyVocabulary } from '../lib/ext/categoryVocabulary';
 import { allowedCategoryIds } from '../lib/ext/categoryVocabularyDb';
@@ -35,6 +38,7 @@ import { EXT_EXPENSE_WITH, toExtExpenseDto } from '../lib/ext/dto';
 import { duplicateDateWindow, findDuplicateMatches, type ExtWarning } from '../lib/ext/extWarnings';
 import { ExtImportTargetPort } from '../lib/ext/importTarget';
 import { mapImportExpenseStatus, mapImportReimbursementStatus } from '../lib/ext/maps';
+import { toExtMessageDto } from '../lib/ext/messageDto';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { resolveExtUser } from '../lib/ext/users';
 import { ocr } from '../lib/ocr';
@@ -784,6 +788,82 @@ router.get(
     res.send(data);
   }),
 );
+
+// ── Messages ─────────────────────────────────────────────────────────────────
+
+/**
+ * A trade_show key must not read or write conversations on another app's
+ * expenses. Note GET /ext/expenses/:id does not scope this way today; message
+ * bodies are free-text human conversation and should not inherit that.
+ */
+async function loadScopedExpense(req: { params: { id: string }; appConnection?: { appName: string } }) {
+  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
+  if (!expense) throw notFound('Expense not found');
+  if (expense.sourceApp !== req.appConnection!.appName) throw notFound('Expense not found');
+  return expense;
+}
+
+router.get('/expenses/:id/messages', requireScope('messages:read'), asyncHandler(async (req, res) => {
+  await loadScopedExpense(req as never);
+  // Ext consumers never see internal notes — see Decision 3 in the design doc.
+  // Sender email IS included: a consumer keys its own users by email, and Midas
+  // user ids mean nothing to it (see toExtMessageDto).
+  const rows = await listThread(req.params.id, {
+    includeInternal: false,
+    includeSenderEmail: true,
+  });
+  res.json({ messages: rows.map((r) => toExtMessageDto(r as never)) });
+}));
+
+const extPostMessageSchema = z.object({
+  body: z.string().trim().min(1).max(2000),
+  requestType: z.enum([
+    'info_request', 'missing_receipt', 'missing_category', 'missing_payment_method', 'general',
+  ]).optional(),
+});
+
+router.post('/expenses/:id/messages', requireScope('messages:write'), asyncHandler(async (req, res) => {
+  const expense = await loadScopedExpense(req as never);
+  const parsed = extPostMessageSchema.parse(req.body);
+
+  // Posting a message must never conjure an account, even when
+  // EXT_AUTO_PROVISION_USERS is on — that is for expense creation only.
+  const actor = await resolveExtUser({
+    email: actorEmail(req as never),
+    username: actorUsername(req as never),
+    displayName: actorName(req as never),
+    autoProvision: false,
+  });
+
+  const senderRole = await db.query.users.findFirst({
+    where: eq(users.id, actor.id),
+    columns: { role: true },
+  });
+  const role = (senderRole?.role ?? 'user') as never;
+
+  if (parsed.requestType) {
+    const { mayRequestInfo } = decideThreadPost({
+      status: expense.status,
+      senderId: actor.id,
+      senderRole: role,
+      ownerId: expense.userId,
+    });
+    if (!mayRequestInfo) {
+      throw createError('Sender may not set requestType', 403, 'FORBIDDEN');
+    }
+  }
+
+  const message = await postToThread({
+    expenseId: req.params.id,
+    senderId: actor.id,
+    senderRole: role,
+    body: parsed.body,
+    requestType: parsed.requestType ?? null,
+  });
+  if (!message) throw notFound('Expense not found');
+
+  res.status(201).json({ message: toExtMessageDto(message as never) });
+}));
 
 // ── Bulk import ──────────────────────────────────────────────────────────────
 
