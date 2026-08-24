@@ -475,6 +475,12 @@ export const ssoLinks = pgTable('sso_links', {
 export const appConnections = pgTable('app_connections', {
   id: uuid('id').primaryKey().defaultRandom(),
   appName: text('app_name').unique().notNull(),
+  /**
+   * The sourceApp whose data this connection owns. app_name identifies the
+   * credential ("trade_show_prod"); several connections can share one
+   * source_app. NULL falls back to app_name.
+   */
+  sourceApp: text('source_app'),
   apiKeyHash: text('api_key_hash').notNull(),
   permissions: jsonb('permissions').$type<string[]>().default([]).notNull(),
   isActive: boolean('is_active').default(true).notNull(),

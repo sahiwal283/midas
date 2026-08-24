@@ -39,6 +39,7 @@ import { duplicateDateWindow, findDuplicateMatches, type ExtWarning } from '../l
 import { ExtImportTargetPort } from '../lib/ext/importTarget';
 import { mapImportExpenseStatus, mapImportReimbursementStatus } from '../lib/ext/maps';
 import { toExtMessageDto } from '../lib/ext/messageDto';
+import { connectionSourceApp } from '../lib/ext/connectionScope';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { resolveExtUser } from '../lib/ext/users';
 import { ocr } from '../lib/ocr';
@@ -796,10 +797,12 @@ router.get(
  * expenses. Note GET /ext/expenses/:id does not scope this way today; message
  * bodies are free-text human conversation and should not inherit that.
  */
-async function loadScopedExpense(req: { params: { id: string }; appConnection?: { appName: string } }) {
+async function loadScopedExpense(
+  req: { params: { id: string }; appConnection?: { appName: string; sourceApp?: string | null } },
+) {
   const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
   if (!expense) throw notFound('Expense not found');
-  if (expense.sourceApp !== req.appConnection!.appName) throw notFound('Expense not found');
+  if (expense.sourceApp !== connectionSourceApp(req.appConnection)) throw notFound('Expense not found');
   return expense;
 }
 
@@ -878,7 +881,7 @@ router.post('/expenses/:id/messages', requireScope('messages:write'), asyncHandl
 router.get('/messages', requireScope('messages:read'), asyncHandler(async (req, res) => {
   const sourceApp = typeof req.query.sourceApp === 'string' ? req.query.sourceApp : undefined;
   if (!sourceApp) throw createError('sourceApp query param is required', 400, 'VALIDATION_ERROR');
-  if (sourceApp !== req.appConnection!.appName) {
+  if (sourceApp !== connectionSourceApp(req.appConnection)) {
     throw createError('sourceApp does not match this connection', 403, 'FORBIDDEN');
   }
 
