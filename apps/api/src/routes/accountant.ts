@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { eq, and, or, inArray, desc, isNotNull, isNull, ilike, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users, closedPeriods, transactions, expenseCategories } from '../db/schema';
+import { expenses, expenseMessages, expenseStatusEnum, auditLogs, users, closedPeriods, transactions, expenseCategories, paymentMethods } from '../db/schema';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
@@ -16,6 +16,7 @@ import { missingEntityCondition, readyForZohoCondition } from '../lib/queueLane'
 import { splitRowsByScope } from '../lib/queueSummaryBuckets';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
+import { planAccountantDetailsEdit } from '../lib/accountantDetailsEdit';
 import { isTradeShowLinkEnabled, listWindowedEvents } from '../lib/tradeShowEvents';
 import { localTodayIso } from '../lib/cashLedger';
 import { notifyUser } from '../lib/notify';
@@ -897,6 +898,66 @@ router.patch('/expenses/:id/reference-number', asyncHandler(async (req, res) => 
     action: 'reference_number.set',
     before: { referenceNumber: expense.referenceNumber },
     after: { referenceNumber },
+  });
+
+  res.json({ expense: updated });
+}));
+
+// ── Correct the fields an accountant can see blocking a Zoho push ────────────
+// Category, company, reference number and reimbursement already have their own
+// endpoints above. This covers the rest: payment method, merchant, amount, date.
+
+const detailsSchema = z.object({
+  merchant: z.string().min(1).optional(),
+  amount: z.coerce.number().positive().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  paymentMethodId: z.string().uuid().optional(),
+});
+
+router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
+  const patch = detailsSchema.parse(req.body);
+  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
+  if (!expense) throw notFound('Expense not found');
+
+  const plan = planAccountantDetailsEdit(expense, patch, await getClosedPeriods());
+  if (!plan.ok) throw createError(plan.refusal.message, plan.refusal.status, plan.refusal.code);
+
+  const { changes } = plan;
+  if (Object.keys(changes).length === 0) {
+    res.json({ expense });
+    return;
+  }
+
+  // Linking a personal card owes the employee money — surface it in the
+  // Reimbursement lane, exactly as the owner's own edit does.
+  let reimbursementPatch: { reimbursementStatus?: 'pending' } = {};
+  if (changes.paymentMethodId) {
+    const pm = await db.query.paymentMethods.findFirst({
+      where: eq(paymentMethods.id, changes.paymentMethodId),
+    });
+    if (!pm) throw createError('Payment method not found', 400, 'PAYMENT_METHOD_NOT_FOUND');
+    if (!pm.isActive) throw createError('Payment method is inactive', 400, 'PAYMENT_METHOD_INACTIVE');
+    if (expense.expenseKind !== 'partner') {
+      const next = nextReimbursementOnCardLink(expense.reimbursementStatus, pm);
+      if (next === 'pending') reimbursementPatch = { reimbursementStatus: 'pending' };
+    }
+  }
+
+  const [updated] = await db.update(expenses)
+    .set({ ...changes, ...reimbursementPatch, updatedAt: new Date() })
+    .where(eq(expenses.id, req.params.id))
+    .returning();
+
+  await syncExpenseToTransaction(updated!);
+
+  const touched = Object.keys(changes) as (keyof typeof changes)[];
+  await auditLog({
+    entityType: 'expense',
+    entityId: expense.id,
+    userId: req.user!.id,
+    action: 'details.corrected',
+    before: Object.fromEntries(touched.map((k) => [k, expense[k]])),
+    after: { ...changes, ...reimbursementPatch },
   });
 
   res.json({ expense: updated });

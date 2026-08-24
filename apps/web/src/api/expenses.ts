@@ -222,6 +222,13 @@ export const accountantApi = {
   updateReferenceNumber: (id: string, referenceNumber: string | null) =>
     client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/reference-number`, { referenceNumber }).then((r) => r.data.expense),
 
+  /** Correct the push-blocking fields accountants could see but not fix. */
+  updateDetails: (
+    id: string,
+    data: { merchant?: string; amount?: number; date?: string; paymentMethodId?: string },
+  ) =>
+    client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/details`, data).then((r) => r.data.expense),
+
   pushToZoho: (id: string) =>
     client.post(`/accountant/expenses/${id}/zoho-push`).then((r) => r.data),
 

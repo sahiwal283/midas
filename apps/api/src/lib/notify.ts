@@ -11,6 +11,15 @@ export interface NotifyInput extends NotificationInput {
   expenseId: string;
 }
 
+export interface NotifyOptions {
+  /**
+   * Whether to also send email. Defaults to true. Conversation messages opt
+   * out — a ten-reply thread would otherwise be ten emails, while approvals
+   * and reimbursements stay worth an inbox interruption.
+   */
+  email?: boolean;
+}
+
 /**
  * Insert an in-app notification for a user, then attempt email delivery
  * fire-and-forget (emailed_at set on success). Never throws — notification
@@ -20,6 +29,7 @@ export async function notifyUser(
   userId: string,
   type: NotificationType,
   input: NotifyInput,
+  opts: NotifyOptions = {},
 ): Promise<void> {
   try {
     const { title, body } = buildNotification(type, input);
@@ -40,6 +50,8 @@ export async function notifyUser(
       url: `/expenses/${input.expenseId}`,
       tag: `expense-${input.expenseId}`,
     });
+
+    if (opts.email === false) return;
 
     // Fire-and-forget email — the caller's response never waits on SMTP.
     void (async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildNotification, formatAmount, type NotificationType } from '../lib/notifyMessages';
+import { buildNotification, formatAmount, truncateExcerpt, type NotificationType } from '../lib/notifyMessages';
 
 describe('formatAmount', () => {
   it('formats numeric strings to two decimals', () => {
@@ -53,5 +53,58 @@ describe('buildNotification', () => {
   it('ignores the note for non-rejection types', () => {
     const { body } = buildNotification('approved', { ...input, note: 'Looks good' });
     expect(body).toBe('Your $42.10 expense at Staples was approved.');
+  });
+});
+
+describe('message notifications', () => {
+  it('names the sender and quotes the message', () => {
+    const { title, body } = buildNotification('message', {
+      merchant: 'Summitt labs',
+      amount: '948.00',
+      senderName: 'Dana',
+      excerpt: 'Which card was this on?',
+    });
+    expect(title).toBe('New message on your expense');
+    expect(body).toContain('Dana');
+    expect(body).toContain('$948.00');
+    expect(body).toContain('Summitt labs');
+    expect(body).toContain('Which card was this on?');
+  });
+
+  it('falls back to a generic sender when the name is missing', () => {
+    const { body } = buildNotification('message', {
+      merchant: 'Summitt labs',
+      amount: '948.00',
+      excerpt: 'hello',
+    });
+    expect(body).toContain('Someone');
+  });
+});
+
+describe('truncateExcerpt', () => {
+  it('leaves a short message untouched', () => {
+    expect(truncateExcerpt('Which card was this on?')).toBe('Which card was this on?');
+  });
+
+  it('collapses newlines and runs of whitespace into single spaces', () => {
+    expect(truncateExcerpt('line one\n\nline  two')).toBe('line one line two');
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(truncateExcerpt('  padded  ')).toBe('padded');
+  });
+
+  it('truncates on a word boundary and appends an ellipsis', () => {
+    const long = 'word '.repeat(60).trim();
+    const out = truncateExcerpt(long);
+    expect(out.length).toBeLessThanOrEqual(121);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out).not.toContain('wor…');
+  });
+
+  it('hard-cuts a single unbroken token that exceeds the limit', () => {
+    const out = truncateExcerpt('x'.repeat(200));
+    expect(out.length).toBe(121);
+    expect(out.endsWith('…')).toBe(true);
   });
 });
