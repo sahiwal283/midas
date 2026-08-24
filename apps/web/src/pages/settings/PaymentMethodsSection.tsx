@@ -523,22 +523,19 @@ export function PaymentMethodsSection() {
                 />
               ))}
             </div>
-            <table className="hidden w-full text-sm md:table">
+            <table className="hidden w-full table-fixed text-sm md:table">
             <thead>
               <tr className="border-b border-ink/10 bg-brand-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-                <th className="px-6 py-3">Label</th>
-                <th className="px-6 py-3">Brand</th>
-                <th className="px-6 py-3">Company</th>
-                <th className="px-6 py-3">Zoho Account</th>
-                <th className="px-6 py-3">Assignment</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3"></th>
+                <th className="w-[34%] px-4 py-3">Card</th>
+                <th className="w-[18%] px-4 py-3">Company</th>
+                <th className="w-[33%] px-4 py-3">Zoho Account</th>
+                <th className="w-[15%] px-4 py-3">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink/5">
               {belonging.length > 0 && (
                 <tr>
-                  <td colSpan={7} className="bg-brand-50/50 px-6 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                  <td colSpan={4} className="bg-brand-50/50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
                     {company}
                   </td>
                 </tr>
@@ -568,7 +565,7 @@ export function PaymentMethodsSection() {
               ))}
               {unassigned.length > 0 && (
                 <tr>
-                  <td colSpan={7} className="bg-brand-50/50 px-6 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                  <td colSpan={4} className="bg-brand-50/50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
                     Unassigned — attach to {company} or leave personal
                   </td>
                 </tr>
@@ -767,20 +764,30 @@ function MethodTableRows(props: MethodViewProps) {
   return (
     <>
       <tr className="hover:bg-ink/[0.03]">
-        <td className="px-6 py-4">
-          <div className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4 text-charcoal/40" />
-            <span className="font-medium text-ink">{pm.label}</span>
-            {pm.lastFour && <span className="text-charcoal/40">···{pm.lastFour}</span>}
-            {pm.requiresReimbursement && (
-              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                Reimbursable
-              </span>
-            )}
+        <td className="px-4 py-4 align-top">
+          <div className="flex items-start gap-2">
+            <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-charcoal/40" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium text-ink">{pm.label}</span>
+                {pm.lastFour && <span className="text-charcoal/40">···{pm.lastFour}</span>}
+                {pm.requiresReimbursement && (
+                  <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                    Reimbursable
+                  </span>
+                )}
+              </div>
+              {/* Brand and assignment ride here rather than in columns of their
+                  own — the same sub-line the mobile card view already shows. */}
+              <p className="mt-0.5 truncate text-xs text-charcoal/70">
+                {pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : 'No brand'}
+                {' · '}
+                {pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}
+              </p>
+            </div>
           </div>
         </td>
-        <td className="px-6 py-4 text-charcoal/70">{pm.brand ? BRAND_LABELS[pm.brand] ?? pm.brand : '—'}</td>
-        <td className="px-6 py-4">
+        <td className="px-4 py-4 align-top">
           <CompanySelect
             value={pm.defaultZohoEntity}
             companies={companies}
@@ -788,7 +795,7 @@ function MethodTableRows(props: MethodViewProps) {
             disabled={deactivatePending}
           />
         </td>
-        <td className="min-w-[16rem] px-6 py-4">
+        <td className="px-4 py-4 align-top">
           <SearchableSelect
             options={accountOptions}
             value={pm.zohoAccountName ?? ''}
@@ -804,16 +811,11 @@ function MethodTableRows(props: MethodViewProps) {
             </p>
           )}
         </td>
-        <td className="px-6 py-4 text-charcoal/70">
-          {pm.isCompanyWide ? 'Company-wide' : `Assigned to ${userName(pm.assignedUserId)}`}
-        </td>
-        <td className="px-6 py-4">
+        <td className="px-4 py-4 align-top">
           <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${pm.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}>
             {pm.isActive ? 'Active' : 'Inactive'}
           </span>
-        </td>
-        <td className="px-6 py-4">
-          <div className="flex items-center gap-3">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
             <button
               type="button"
               onClick={props.onToggleEdit}
@@ -836,7 +838,7 @@ function MethodTableRows(props: MethodViewProps) {
       </tr>
       {editing && (
         <tr className="bg-cream">
-          <td colSpan={7} className="px-6 py-4">
+          <td colSpan={4} className="px-4 py-4">
             <PaymentMethodEditor
               pm={pm}
               users={users}
