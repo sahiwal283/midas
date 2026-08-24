@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.3.0 (2026-08-24)
+
+### Expense message threads on the Ext API
+
+- **Consuming apps can now read and write expense conversations.** The thread
+  system an accountant already uses to ask "what was this dinner for?" was
+  reachable only from the Midas web app, so a submitter working in another
+  product saw their expense flip to *Needs further review* with no stated
+  reason. Three endpoints now expose it over `/ext`: read a thread, post to a
+  thread, and a cross-expense feed for consumers that poll. Two new scopes,
+  `messages:read` and `messages:write`, gate them, and the `trade_show`
+  connection is granted both.
+
+- **One state machine, two doors.** The auto-transition out of `awaiting_info`,
+  the `message.posted` audit entry, and notifying the other party used to live
+  inside the session-auth route. They now sit in `lib/expenseThread.ts`
+  (pure decisions) and `lib/expenseThreadDb.ts` (orchestration), which both the
+  web route and the Ext route call. Duplicating them would have let the two
+  surfaces drift, and a drifted transition strands expenses in `awaiting_info`.
+  The web route's behaviour and response shape are unchanged.
+
+- **`internalNote` never crosses the Ext boundary.** Accountant-only notes are
+  not selected into any Ext response, on any of the three endpoints.
+
+- **Posting a message never provisions an account.** `resolveExtUser` gained an
+  `autoProvision` option; the message path passes `false`. Expense creation,
+  where auto-provisioning is wanted, is unchanged.
+
+- The feed's cursor is a resumable watermark: it returns a resume point whenever
+  it returned rows and `null` only on an empty page, and it compares at
+  millisecond precision so a poller actually converges instead of re-reading its
+  newest row forever.
+
 ## 1.2.1 (2026-08-24)
 
 - **Payment Methods no longer scrolls sideways.** The table carried seven
