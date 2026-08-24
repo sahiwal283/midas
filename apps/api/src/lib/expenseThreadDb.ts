@@ -25,14 +25,25 @@ const SENDER_COLUMNS = { id: true, name: true, role: true } as const;
 /**
  * Thread messages oldest-first. When includeInternal is false the internalNote
  * field is removed from every row — a submitter must never see it.
+ *
+ * includeSenderEmail is an explicit opt-in, off by default. The session-auth
+ * route must never see it (that response is byte-identical to before this
+ * refactor). The Ext route passes true deliberately: Trade Show and Midas
+ * user ids live in different id spaces, so the Ext DTO uses sender.email as
+ * the join key to tell whether a message was written by the viewing user.
  */
 export async function listThread(
   expenseId: string,
-  opts: { includeInternal: boolean },
+  opts: { includeInternal: boolean; includeSenderEmail?: boolean },
 ) {
+  const senderColumns = {
+    id: true, name: true, role: true,
+    email: opts.includeSenderEmail === true,
+  } as const satisfies Record<string, boolean>;
+
   const rows = await db.query.expenseMessages.findMany({
     where: eq(expenseMessages.expenseId, expenseId),
-    with: { sender: { columns: SENDER_COLUMNS } },
+    with: { sender: { columns: senderColumns } },
     orderBy: [asc(expenseMessages.createdAt)],
   });
   return opts.includeInternal
