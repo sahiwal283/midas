@@ -12,6 +12,9 @@
 /** Prefix on `zoho_sync_error` for a record that posted but with different accounts. */
 export const MAPPING_WARNING_PREFIX = 'MAPPING_WARNING';
 
+/** Prefix on `zoho_sync_error` for a record that posted without its receipt. */
+export const RECEIPT_WARNING_PREFIX = 'RECEIPT_WARNING';
+
 export interface PostedAccounts {
   accountId: string | null;
   paidThroughAccountId: string | null;

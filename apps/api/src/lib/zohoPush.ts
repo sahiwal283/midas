@@ -11,7 +11,7 @@ import {
   fetchBooksExpenseAccounts,
   type ZohoPushResult,
 } from './zoho';
-import { auditPostedAccounts } from './zohoAccountAudit';
+import { auditPostedAccounts, RECEIPT_WARNING_PREFIX } from './zohoAccountAudit';
 import { logger } from './logger';
 import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
 import { resolveCategoryEntityAccountId } from './categoryZohoAccounts';
@@ -133,8 +133,12 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
     await syncExpenseToTransaction(updated);
 
     // Best-effort receipt attachment: the Zoho record exists either way, so a
-    // failed attach only logs — the receipt always remains in Midas.
+    // failed attach never fails the push — but it must never be silent either.
+    // A bare catch here hid an entire class of outage: when the uploads mount
+    // changed, every readFile threw and receipts stopped reaching Zoho while
+    // pushes still reported success.
     let receiptAttached = false;
+    let receiptProblem: string | null = null;
     if (result.zohoExpenseId && !result.dryRun) {
       const receipt = await db.query.receipts.findFirst({
         where: eq(receipts.expenseId, expense.id),
@@ -148,10 +152,36 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
             { buffer, filename: receipt.filename, mimeType: receipt.mimeType },
             payload.brand,
           );
-        } catch {
-          // File unreadable — leave receiptAttached false; the audit log records it.
+          if (!receiptAttached) receiptProblem = 'Zoho rejected the receipt upload';
+        } catch (err) {
+          receiptProblem = `receipt file could not be read (${receipt.storagePath})`;
+          logger.error(
+            { err, expenseId: expense.id, storagePath: receipt.storagePath, uploadsDir: env.UPLOADS_DIR },
+            'Receipt unreadable — expense pushed to Zoho without its receipt',
+          );
+        }
+        if (receiptProblem && !receiptAttached) {
+          logger.warn(
+            { expenseId: expense.id, zohoExpenseId: result.zohoExpenseId, reason: receiptProblem },
+            'Zoho expense created without a receipt attachment',
+          );
         }
       }
+    }
+
+    // Surface a missing receipt where the accountant will see it. The expense
+    // stays synced — the Zoho record is real and must never be re-pushed.
+    let finalExpense = updated;
+    if (receiptProblem) {
+      const warning = [
+        audit.warning,
+        `[${RECEIPT_WARNING_PREFIX}] Pushed to Zoho without its receipt — ${receiptProblem}.`,
+      ].filter(Boolean).join(' ').slice(0, 500);
+      const [rewarned] = await db.update(expenses)
+        .set({ zohoSyncError: warning, updatedAt: new Date() })
+        .where(eq(expenses.id, expense.id))
+        .returning();
+      if (rewarned) finalExpense = rewarned;
     }
 
     await auditLog({
@@ -165,9 +195,10 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
         dryRun: result.dryRun ?? false,
         vendorId: payload.vendor_id ?? null,
         receiptAttached,
+        receiptProblem,
       },
     });
-    return { ok: true, expense: updated, zoho: result };
+    return { ok: true, expense: finalExpense, zoho: result };
   } catch (err) {
     const zohoErr = err instanceof ZohoServiceError ? err : null;
     const { category } = classifyZohoError(err);

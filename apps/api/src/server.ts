@@ -30,6 +30,7 @@ import oidcAuthRouter from './routes/oidcAuth';
 import transactionsRouter from './routes/transactions';
 import zohoRouter from './routes/zoho';
 import zohoServiceRouter from './routes/zohoService';
+import { auditProductionConfig, authentikGroupsLookUnconfigured } from './lib/configAudit';
 
 const app = express();
 
@@ -114,6 +115,34 @@ app.listen(env.PORT, env.HOST, () => {
   logger.info(`Midas API listening on http://${env.HOST}:${env.PORT} (${env.NODE_ENV})`);
   logger.info(`OCR mode: ${env.OCR_MODE} | Zoho mode: ${env.ZOHO_MODE} | Storage: ${env.STORAGE_MODE}`);
   logger.info(`Web base (midasUrl): ${env.MIDAS_WEB_BASE_URL || env.CORS_ORIGIN}`);
+  reportConfigGaps();
 });
+
+/**
+ * Features behind an unset env var no-op silently, so a `.env` rollback can
+ * disable half the product without a single failed request. Say so at boot.
+ */
+function reportConfigGaps(): void {
+  const audit = auditProductionConfig(process.env, { production: env.NODE_ENV === 'production' });
+  for (const gap of audit.missing) {
+    logger.error(`CONFIG MISSING — ${gap.feature} is disabled (unset: ${gap.keys.join(', ')})`);
+  }
+
+  const unconfiguredGroups = authentikGroupsLookUnconfigured({
+    AUTHENTIK_GROUP_ADMIN: env.AUTHENTIK_GROUP_ADMIN,
+    AUTHENTIK_GROUP_ACCOUNTANT: env.AUTHENTIK_GROUP_ACCOUNTANT,
+    AUTHENTIK_GROUP_USER: env.AUTHENTIK_GROUP_USER,
+  });
+  for (const key of unconfiguredGroups) {
+    logger.error(
+      `CONFIG SUSPECT — ${key} is still the built-in default; SSO users in your identity `
+      + 'provider\'s real groups will be denied at login',
+    );
+  }
+
+  if (audit.ok && unconfiguredGroups.length === 0) {
+    logger.info('Config audit: all expected production integrations are configured');
+  }
+}
 
 export { app };

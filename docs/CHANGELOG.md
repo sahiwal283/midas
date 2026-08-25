@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.3.2 (2026-08-25)
+
+### Receipts reach Zoho again, and say so when they don't
+
+- **A push that loses its receipt is no longer silent.** Receipt attachment was
+  wrapped in a bare `catch {}` with no logging, so when the uploads mount moved
+  and every `readFile` began throwing, expenses kept reporting a clean push
+  while their receipts never left Midas. The failure now logs at error level
+  with the path and the configured uploads directory, and marks the expense with
+  a `[RECEIPT_WARNING]`. The expense stays `synced` — the Zoho record is real and
+  must never be re-pushed — but the Zoho card shows an amber
+  "Posted without its receipt" note instead of a green tick.
+
+- The underlying cause was operational: 379 receipts lived in the `midas_uploads`
+  Docker volume while the container mounted `/opt/midas/uploads`. Reuniting them
+  restored both Zoho attachment and receipt previews in the web UI, which were
+  broken for every expense older than 19 Aug.
+
+### Missing production config announces itself at boot
+
+- **Silent feature loss is now a loud one.** Web push, the payroll drawer, the
+  trade-show calendar and Telegram each sit behind an adapter that no-ops when
+  its env var is unset — so a `.env` rollback can switch off half the product
+  without a single failed request. `lib/configAudit.ts` checks the expected
+  production keys at startup and logs `CONFIG MISSING — <feature> is disabled`
+  for each gap.
+
+- **Default Authentik group lists are treated as suspect.** If
+  `AUTHENTIK_GROUP_*` still equals the built-in default, every SSO user in a real
+  identity-provider group is denied with "not assigned to a Midas access group".
+  Boot now says so explicitly rather than leaving it to be discovered by a
+  locked-out accountant.
+
 ## 1.3.1 (2026-08-25)
 
 ### Zoho pushes now prove the accounts actually stuck
