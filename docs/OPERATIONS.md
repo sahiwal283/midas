@@ -102,30 +102,30 @@ pct exec 3120 -- docker compose -f /opt/midas/docker-compose.yml restart web
 
 ## Deploying a new version
 
-The API and web run in **dev mode** (`target: dev`) with source directories volume-mounted:
-- `./apps/api/src` → `/app/apps/api/src` (tsx watch — auto-reloads on file change)
-- `./packages` → `/app/packages` (shared types)
-- `./apps/web/src` → `/app/apps/web/src` (Vite dev server — auto-reloads on file change)
+Both API and web run the **prod** target from `docker-compose.prod.yml`: the API serves
+compiled `/app/dist` and web serves a static nginx build. **Neither hot-reloads.** Every
+code change — including a one-line edit to a single file — needs a rebuild of the
+affected container. (Until mid-August 2026 the API did run `target: dev` with tsx watch
+and source bind-mounts; that is no longer true, and pushing a source file alone now
+changes nothing.)
 
 **Database:** The production compose (`docker-compose.yml`) has no `db` service — the API reads `DATABASE_URL` from `.env` which points to CT 3220 (192.168.1.211). The `docker-compose.local.yml` override adds a local Postgres container for laptop dev.
 
-### Source-only changes (no rebuild required)
+### Getting changed source onto the CT
 
-Push the changed file(s) and tsx/Vite will reload automatically within ~2 seconds:
+`/opt/midas` is not a git checkout — ship a tarball of exactly what changed, then rebuild:
 
 ```bash
-# Copy to Proxmox host
-scp apps/api/src/routes/accountant.ts root@192.168.1.190:/tmp/accountant.ts
+# Package only the files this release touches
+COPYFILE_DISABLE=1 tar czf /tmp/midas-X.Y.Z.tar.gz $(git diff --name-only <prev-tag> HEAD | tr '\n' ' ')
 
-# Push into CT
-ssh root@192.168.1.190 "pct push 3120 /tmp/accountant.ts /opt/midas/apps/api/src/routes/accountant.ts"
-
-# Verify API reloaded (tsx watch logs restart)
-ssh root@192.168.1.190 "pct exec 3120 -- docker logs --tail 5 midas-api-1"
-# Look for: "[tsx] change in ./src/... Restarting..."
+scp /tmp/midas-X.Y.Z.tar.gz root@192.168.1.190:/tmp/
+ssh root@192.168.1.190 "pct push 3120 /tmp/midas-X.Y.Z.tar.gz /tmp/midas-X.Y.Z.tar.gz \
+  && pct exec 3120 -- bash -c 'cd /opt/midas && tar xzf /tmp/midas-X.Y.Z.tar.gz'"
 ```
 
-New source files added to `apps/api/src/lib/` or `apps/web/src/` also hot-reload — no Docker rebuild needed.
+Then rebuild the containers (below). A stale `dist` is the usual reason a deployed fix
+appears to do nothing.
 
 > **A file-push deploy never deletes.** `tar xzf` extracts over the existing tree, so a
 > file removed in git still exists on CT 3120 and will break the build (observed
@@ -140,9 +140,17 @@ New source files added to `apps/api/src/lib/` or `apps/web/src/` also hot-reload
 ### Changes requiring rebuild (Dockerfile, package.json, node_modules)
 
 ```bash
-# API (runs as the dev/tsx target — base compose):
-ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d --no-deps --build api'"
+# API — prod file ONLY (target: prod, compiled /app/dist):
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose -f docker-compose.prod.yml up -d --no-deps --build api'"
 ```
+
+> ⚠️ **Do not rebuild the API from the base compose.** `docker-compose.yml`'s `api`
+> service is `target: dev` with `NODE_ENV: development`; building from it silently
+> downgrades production to the dev target. Verify after every API deploy:
+> `curl -s https://midas.booute.duckdns.org/api/v1/meta` → expect
+> `"environment":"production"` and the version you just shipped. (Observed
+> 2026-08-25: this section previously recommended the base file, which was accurate
+> only while the prod image was broken.)
 
 > ⚠️ **Rebuilding the WEB container — read this first.** The base `docker-compose.yml` `web` service is `target: dev` (Vite dev server, which **403-blocks the production host** `midas.booute.duckdns.org`). The production web is the **nginx** (`target: prod`) build defined in `docker-compose.prod.yml`. Rebuild web with the **prod file only** — do NOT use base-only (dev server) and do NOT merge `-f docker-compose.yml -f docker-compose.prod.yml` for web (the two files' `ports` lists merge to a duplicate `5173` mapping → "port already allocated"):
 >
