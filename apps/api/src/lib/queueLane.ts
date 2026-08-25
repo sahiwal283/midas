@@ -14,10 +14,11 @@ export function readyForZohoCondition() {
     or(isNotNull(expenses.categoryId), isNotNull(expenses.zohoExpenseAccountId)),
     sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id})`,
     // An unmapped card fails the push with MISSING_ZOHO_PAID_THROUGH — not ready.
+    // Only a numeric Zoho account id counts; a free-text label is not a mapping.
     sql`exists (
       select 1 from payment_methods pm
       where pm.id = ${expenses.paymentMethodId}
-        and pm.zoho_account_name is not null
+        and pm.zoho_account_name ~ '^[0-9]{10,}$'
     )`,
     sql`exists (
       select 1 from companies c

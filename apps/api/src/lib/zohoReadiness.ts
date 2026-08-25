@@ -1,5 +1,10 @@
 import { env } from '../config/env';
-import { buildZohoServicePayload, type ZohoServicePayload, type PayloadExpense } from './zohoPayload';
+import {
+  buildZohoServicePayload,
+  resolvePaidThroughAccountId,
+  type ZohoServicePayload,
+  type PayloadExpense,
+} from './zohoPayload';
 import { resolveBrandFromEntity } from './zohoBrand';
 
 export interface ZohoReadinessCheck {
@@ -57,7 +62,9 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   const hasExpenseAccount = !!(expense.categoryId || expense.zohoExpenseAccountId);
   const hasPaymentMethod = !!expense.paymentMethodId;
   // Push refuses unmapped cards (MISSING_ZOHO_PAID_THROUGH) — surface it here.
-  const hasPaidThrough = !!expense.paymentMethod?.zohoAccountName;
+  // Must match the payload rule exactly: a free-text label is not a mapping.
+  const paidThroughAccountId = resolvePaidThroughAccountId(expense.paymentMethod?.zohoAccountName);
+  const hasPaidThrough = !!paidThroughAccountId;
   const hasZohoEntity = !!expense.zohoEntity;
   const alreadySynced = !!expense.zohoExpenseId;
   const hasSubmitter = !!expense.userId;
@@ -89,7 +96,14 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   if (!hasSubmitter) missing.push('submitter (user)');
   if (!hasExpenseAccount) missing.push('expense account (Zoho COA or category)');
   if (!hasPaymentMethod) missing.push('payment method');
-  if (!hasPaidThrough) missing.push('Zoho paid-through mapping on the payment method (Settings → Payment Methods)');
+  if (!hasPaidThrough) {
+    // A label in zoho_account_name looks mapped in the UI but cannot be sent to Zoho.
+    missing.push(
+      expense.paymentMethod?.zohoAccountName
+        ? `payment method is mapped to "${expense.paymentMethod.zohoAccountName}", which is not a Zoho account id — re-pick the account (Settings → Payment Methods)`
+        : 'Zoho paid-through mapping on the payment method (Settings → Payment Methods)',
+    );
+  }
   if (!hasZohoEntity) missing.push('accounting entity (zohoEntity)');
   if (!hasReceipt) missing.push('receipt attachment');
   if (hasOpenRequests) missing.push('unresolved accountant requests');
@@ -100,8 +114,8 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   if (expense.reimbursementStatus === 'pending') {
     warnings.push('reimbursement is pending — coordinate with payroll');
   }
-  if (expense.paymentMethod?.zohoAccountName) {
-    warnings.push(`payment method maps to Zoho account: ${expense.paymentMethod.zohoAccountName}`);
+  if (paidThroughAccountId) {
+    warnings.push(`payment method maps to Zoho account: ${paidThroughAccountId}`);
   }
 
   const ready = missing.length === 0 && !alreadySynced;

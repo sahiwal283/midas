@@ -25,6 +25,9 @@ interface ZohoSyncCardExpense {
 
 export type ZohoRecordKind = 'expense' | 'purchase_order';
 
+/** Matches MAPPING_WARNING_PREFIX on the API side (lib/zohoAccountAudit.ts). */
+export const MAPPING_WARNING_CATEGORY = 'MAPPING_WARNING';
+
 /** Split "[MAPPING_ERROR] message…" into badge + reason text. */
 export function parseSyncError(raw: string): { category: string | null; reason: string } {
   const match = /^\[([A-Z_]+)\]\s*(.*)$/s.exec(raw);
@@ -73,6 +76,12 @@ export function ZohoSyncCard({
   const syncing = !synced && !failed && (
     sync.integrationStatus === 'syncing' || sync.integrationStatus === 'queued'
   );
+  // A synced record can still carry a warning: Zoho accepted the push but stored
+  // different accounts than Midas sent (integration-service brand override).
+  const syncedWarning = synced && sync.zohoSyncError ? parseSyncError(sync.zohoSyncError) : null;
+  const mappingWarning = syncedWarning?.category === MAPPING_WARNING_CATEGORY
+    ? syncedWarning.reason
+    : null;
 
   return (
     <div className="rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
@@ -93,6 +102,15 @@ export function ZohoSyncCard({
             <p className="pl-6 text-xs text-charcoal/50">
               {idLabel}: <span className="font-mono text-ink">{sync.zohoRecordId}</span>
             </p>
+          )}
+          {mappingWarning && (
+            <div className="ml-6 mt-1 rounded-lg border border-amber-300/60 bg-amber-50 p-2">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                Posted with different accounts
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-amber-900/80">{mappingWarning}</p>
+            </div>
           )}
         </div>
       ) : failed ? (

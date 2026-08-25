@@ -61,6 +61,27 @@ describe('computeFlags — Zoho readiness', () => {
   it('produces exactly [ready_for_zoho] when all fields are present and approved', () => {
     expect(computeFlags(approved)).toEqual(['ready_for_zoho']);
   });
+
+  it('is ready_for_zoho when the card maps to a Zoho account id', () => {
+    const flags = computeFlags({
+      ...approved,
+      paymentMethod: { zohoAccountName: '4849689000010206091' },
+    });
+    expect(flags).toContain('ready_for_zoho');
+  });
+
+  it('is NOT ready_for_zoho when the card maps to a label, which the push rejects', () => {
+    const flags = computeFlags({
+      ...approved,
+      paymentMethod: { zohoAccountName: 'Employee Reimbursements' },
+    });
+    expect(flags).not.toContain('ready_for_zoho');
+  });
+
+  it('is NOT ready_for_zoho when the card has no Zoho mapping', () => {
+    const flags = computeFlags({ ...approved, paymentMethod: { zohoAccountName: null } });
+    expect(flags).not.toContain('ready_for_zoho');
+  });
 });
 
 describe('computeFlags — zoho_synced', () => {

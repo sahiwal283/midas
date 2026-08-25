@@ -1,4 +1,4 @@
-import { normalizeReferenceNumber } from '@midas/shared';
+import { normalizeReferenceNumber, resolveZohoAccountId } from '@midas/shared';
 import { env } from '../config/env';
 import { resolveBrandFromEntity } from './zohoBrand';
 
@@ -72,13 +72,13 @@ export function buildIdempotencyKey(expenseId: string): string {
   return `midas-expense-${expenseId}`;
 }
 
-/** Prefer numeric Zoho account ids stored in zoho_account_name; ignore free-text labels. */
+/**
+ * Prefer numeric Zoho account ids stored in zoho_account_name; ignore free-text labels.
+ * Shared with the readiness checks and the web UI so "mapped" means the same thing
+ * everywhere — a label passes no check that an id would fail.
+ */
 export function resolvePaidThroughAccountId(zohoAccountName: string | null | undefined): string | null {
-  if (!zohoAccountName) return null;
-  const trimmed = zohoAccountName.trim();
-  // Zoho Books account ids are long numeric strings.
-  if (/^\d{10,}$/.test(trimmed)) return trimmed;
-  return null;
+  return resolveZohoAccountId(zohoAccountName);
 }
 
 export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePayload {

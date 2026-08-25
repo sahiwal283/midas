@@ -26,7 +26,8 @@ const base = {
   reimbursementStatus: 'not_requested',
   userId: 'user-001',
   category: { name: 'Meals' },
-  paymentMethod: { label: 'Corporate AMEX', zohoAccountName: 'AMEX-1234' },
+  // Only a Zoho account id counts as mapped — the push sends this verbatim.
+  paymentMethod: { label: 'Corporate AMEX', zohoAccountName: '5254962000000129043' },
   receipts: [{ id: 'r-001' }],
   messages: [],
 };
@@ -147,18 +148,63 @@ describe('evaluateZohoReadiness — missing fields', () => {
   });
 });
 
+describe('evaluateZohoReadiness — paid-through must be an account id', () => {
+  // Readiness once passed on any non-empty zoho_account_name while the push
+  // required a numeric id, so a labelled card showed "all checks passed" and
+  // then failed with MISSING_ZOHO_PAID_THROUGH.
+  const labelled = {
+    ...base,
+    paymentMethod: { label: 'Corporate AMEX', zohoAccountName: 'Employee Reimbursements' },
+  };
+
+  it('is not ready when the card maps to a label instead of an id', () => {
+    const result = evaluateZohoReadiness(labelled);
+    expect(result.ready).toBe(false);
+  });
+
+  it('fails the paid-through check shown to accountants', () => {
+    const check = evaluateZohoReadiness(labelled).checks
+      .find((c) => c.label === 'Payment method mapped to Zoho account');
+    expect(check?.pass).toBe(false);
+  });
+
+  it('explains that the stored value is not an account id', () => {
+    const result = evaluateZohoReadiness(labelled);
+    expect(result.missing.some((m) => m.includes('Employee Reimbursements'))).toBe(true);
+    expect(result.missing.some((m) => m.includes('not a Zoho account id'))).toBe(true);
+  });
+
+  it('sends no paid_through_account_id for a labelled card', () => {
+    expect(evaluateZohoReadiness(labelled).servicePayload.paid_through_account_id).toBeNull();
+  });
+
+  it('does not warn that a labelled card maps to a Zoho account', () => {
+    const result = evaluateZohoReadiness(labelled);
+    expect(result.warnings.some((w) => w.includes('maps to Zoho account'))).toBe(false);
+  });
+
+  it('is ready once the card maps to a real account id', () => {
+    const result = evaluateZohoReadiness({
+      ...base,
+      paymentMethod: { label: 'Corporate AMEX', zohoAccountName: '4849689000010206091' },
+    });
+    expect(result.ready).toBe(true);
+    expect(result.servicePayload.paid_through_account_id).toBe('4849689000010206091');
+  });
+});
+
 describe('evaluateZohoReadiness — warnings', () => {
   it('warns when reimbursement is pending', () => {
     const result = evaluateZohoReadiness({ ...base, reimbursementStatus: 'pending' });
     expect(result.warnings.some((w) => w.includes('reimbursement is pending'))).toBe(true);
   });
 
-  it('warns when payment method has zohoAccountName', () => {
+  it('warns with the Zoho account id the payment method maps to', () => {
     const result = evaluateZohoReadiness({
       ...base,
-      paymentMethod: { label: 'Corporate AMEX', zohoAccountName: 'AMEX-1234' },
+      paymentMethod: { label: 'Corporate AMEX', zohoAccountName: '4849689000010206091' },
     });
-    expect(result.warnings.some((w) => w.includes('AMEX-1234'))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('4849689000010206091'))).toBe(true);
   });
 
   it('no zoho-mode warning for live mode', () => {

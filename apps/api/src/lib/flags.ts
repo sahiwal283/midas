@@ -1,3 +1,5 @@
+import { isZohoAccountId } from '@midas/shared';
+
 export interface FlagsInput {
   sourceApp: string | null;
   categoryId: string | null;
@@ -62,7 +64,9 @@ export function computeFlags(row: FlagsInput): Flag[] {
     !row.zohoExpenseId &&
     hasExpenseAccount &&
     !!row.paymentMethodId &&
-    (row.paymentMethod === undefined || !!row.paymentMethod?.zohoAccountName) &&
+    // A label in zoho_account_name is not a usable paid-through mapping — the push
+    // would fail MISSING_ZOHO_PAID_THROUGH, so it must not read as ready here.
+    (row.paymentMethod === undefined || isZohoAccountId(row.paymentMethod?.zohoAccountName)) &&
     (row.receipts?.length ?? 0) > 0;
   if (zohoReady) flags.push('ready_for_zoho');
 

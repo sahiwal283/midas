@@ -8,8 +8,11 @@ import { auditLog } from './audit';
 import { isPartnerExpense } from './expenseKind';
 import {
   zoho, ZohoServiceError, resolveBooksVendorId, attachReceiptToBooksExpense,
+  fetchBooksExpenseAccounts,
   type ZohoPushResult,
 } from './zoho';
+import { auditPostedAccounts } from './zohoAccountAudit';
+import { logger } from './logger';
 import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
 import { resolveCategoryEntityAccountId } from './categoryZohoAccounts';
 import { classifyZohoError } from './zohoErrors';
@@ -92,13 +95,36 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
   try {
     const result = await pushWithRetry(payload);
 
+    // The integration service can silently rewrite account ids per brand, which books
+    // the expense against accounts nobody chose in Midas. Read the record back and
+    // record a warning when it does — the push itself still succeeded.
+    const audit = auditPostedAccounts(
+      { accountId: payload.account_id, paidThroughAccountId: payload.paid_through_account_id },
+      result.zohoExpenseId && !result.dryRun
+        ? await fetchBooksExpenseAccounts(result.zohoExpenseId, payload.brand)
+        : null,
+    );
+    if (audit.mismatched) {
+      logger.warn(
+        { expenseId: expense.id, brand: payload.brand, mismatches: audit.mismatches },
+        'Zoho stored different accounts than Midas sent',
+      );
+      await auditLog({
+        entityType: 'expense',
+        entityId: expense.id,
+        userId: actorUserId,
+        action: 'zoho.account_mismatch',
+        metadata: { brand: payload.brand, mismatches: audit.mismatches },
+      });
+    }
+
     const [updated] = await db.update(expenses)
       .set({
         status: 'approved',
         integrationStatus: 'synced',
         zohoExpenseId: result.zohoExpenseId,
         zohoSyncedAt: result.syncedAt,
-        zohoSyncError: null,
+        zohoSyncError: audit.warning,
         updatedAt: new Date(),
       })
       .where(eq(expenses.id, expense.id))

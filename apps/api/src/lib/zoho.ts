@@ -4,6 +4,7 @@ import { matchVendorByName } from './vendorMatch';
 import type { ZohoServicePayload } from './zohoPayload';
 import type { ZohoPoServicePayload } from './zohoPoPayload';
 import { toZohoBooksPoCreateBody } from './zohoPoPayload';
+import type { PostedAccounts } from './zohoAccountAudit';
 
 /** Thin legacy shape still accepted by mock/tests; service push prefers ZohoServicePayload. */
 export interface ZohoPushPayload {
@@ -227,6 +228,48 @@ export async function resolveBooksVendorId(merchant: string, brand: string): Pro
     return created.vendorId;
   } catch (err) {
     logger.warn({ err, merchant, brand }, 'Zoho vendor resolution failed — pushing without vendor');
+    return null;
+  }
+}
+
+/**
+ * Read back the accounts Zoho actually stored on a Books expense, so the push
+ * can verify they match what Midas sent (see zohoAccountAudit). Best-effort:
+ * any failure returns null, which the audit treats as "cannot tell".
+ */
+export async function fetchBooksExpenseAccounts(
+  zohoExpenseId: string,
+  brand: string,
+): Promise<PostedAccounts | null> {
+  const baseUrl = env.ZOHO_SERVICE_BASE_URL;
+  if (env.ZOHO_MODE !== 'service' || env.ZOHO_DRY_RUN) return null;
+  if (!baseUrl || !env.ZOHO_SERVICE_TOKEN) return null;
+
+  try {
+    const res = await fetchWithTimeout(
+      `${baseUrl}/zoho/expenses/get_books/${encodeURIComponent(zohoExpenseId)}`,
+      { method: 'GET', headers: serviceHeaders({}, brand) },
+      15000,
+    );
+    if (!res.ok) {
+      logger.warn({ zohoExpenseId, brand, status: res.status }, 'Zoho expense readback failed');
+      return null;
+    }
+    const data = await res.json() as {
+      expense?: Record<string, unknown>;
+      data?: { expense?: Record<string, unknown> } & Record<string, unknown>;
+    } & Record<string, unknown>;
+    const record = data.data?.expense ?? data.expense ?? data.data ?? data;
+    const read = (key: string): string | null => {
+      const value = (record as Record<string, unknown>)[key];
+      return typeof value === 'string' && value.trim() ? value.trim() : null;
+    };
+    return {
+      accountId: read('account_id'),
+      paidThroughAccountId: read('paid_through_account_id'),
+    };
+  } catch (err) {
+    logger.warn({ err, zohoExpenseId, brand }, 'Zoho expense readback failed');
     return null;
   }
 }

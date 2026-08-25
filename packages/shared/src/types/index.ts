@@ -17,6 +17,11 @@ export {
   normalizeReferenceNumber,
   pickReferenceNumber,
 } from './referenceNumber';
+export {
+  ZOHO_ACCOUNT_ID_MIN_DIGITS,
+  resolveZohoAccountId,
+  isZohoAccountId,
+} from './zohoAccountId';
 
 // ── Roles ────────────────────────────────────────────────────────────────────
 

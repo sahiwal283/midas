@@ -10,6 +10,7 @@ import { MessageBubble } from '../components/MessageBubble';
 import { MessageComposer } from '../components/MessageComposer';
 import { receiptContentUrl } from '../components/ReceiptPreview';
 import { useAuth } from '../contexts/AuthContext';
+import { isZohoAccountId } from '@midas/shared';
 import type { Expense, ExpenseMessage, Receipt } from '../types';
 
 const REQUEST_TYPE_OPTIONS = [
@@ -137,7 +138,8 @@ function ZohoReadinessCard({
   const hasCategory = !!(expense.categoryId || expense.zohoExpenseAccountId);
   const hasPayment = !!expense.paymentMethodId;
   // Push refuses cards without a Zoho paid-through mapping — mirror that here.
-  const hasPaidThrough = !!expense.paymentMethod?.zohoAccountName;
+  // A free-text label in zohoAccountName is not an account id, so it is not mapped.
+  const hasPaidThrough = isZohoAccountId(expense.paymentMethod?.zohoAccountName);
   const hasCompany = !!expense.zohoEntity;
   const ready = hasReceipt && hasCategory && hasPayment && hasPaidThrough && hasCompany && expense.status === 'approved';
   const failed: string[] = [];

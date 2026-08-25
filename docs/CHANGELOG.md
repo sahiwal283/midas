@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.3.1 (2026-08-25)
+
+### Zoho pushes now prove the accounts actually stuck
+
+- **Midas notices when Zoho stores different accounts than it sent.** Every
+  Boomin Brands expense was failing with `ZOHO_ERROR: Please enter valid paid
+  through account` even though the card was mapped correctly in Settings. The
+  cause sat outside this repo: the integration service overwrites `account_id`
+  and `paid_through_account_id` from a per-brand config, and the Boomin entry
+  held a Haute Brands account id. Midas had no way to see that — it sent the
+  right value and was told it was wrong. After a live push it now reads the
+  Books record back and compares both account ids against what it sent.
+
+- **A mismatch is a warning, not a failure.** The Zoho record genuinely exists,
+  so the expense stays `synced` and must never be re-pushed. Instead
+  `zoho_sync_error` carries a `[MAPPING_WARNING]` string, an
+  `zoho.account_mismatch` audit row is written, and the Zoho card renders an
+  amber "Posted with different accounts" note inside the success state. The
+  comparison treats a missing value on either side as "cannot tell", so a
+  failed readback can never raise a false alarm.
+
+- **This class of bug was previously invisible when it succeeded.** Where the
+  overridden ids happen to be valid for the org, the push works and books the
+  expense against accounts nobody chose. That is exactly what had been
+  happening to Nirvana Kulture expenses.
+
+### "Mapped to a Zoho account" means the same thing everywhere
+
+- **A label is no longer mistaken for an account id.** Readiness passed on any
+  non-empty `zoho_account_name` while the payload required a 10+ digit id, so a
+  card mapped to text like `Employee Reimbursements` showed a green "All push
+  checks passed" and then failed the push with `MISSING_ZOHO_PAID_THROUGH`.
+  `resolveZohoAccountId` / `isZohoAccountId` now live in `@midas/shared` and
+  back all four places that had drifted: the readiness checks, the queue flag,
+  the accountant queue's SQL lane filter, and the review screen's push gate.
+
+- **The blocker names the offending value.** Instead of reporting the card as
+  unmapped, readiness now says which stored string is not a Zoho account id, so
+  the fix in Settings → Payment Methods is obvious.
+
 ## 1.3.0 (2026-08-24)
 
 ### Expense message threads on the Ext API
