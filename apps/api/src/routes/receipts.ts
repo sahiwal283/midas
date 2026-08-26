@@ -23,15 +23,19 @@ router.use(authenticate);
 /**
  * Load the owning record and authorize the caller against it.
  *
- * Ownership rules are unchanged per owner: an expense's own submitter, or an
- * accountant/admin. Purchase orders follow the transaction's `userId` the same
- * way. Returning the row lets callers reuse it without a second query.
+ * Read access (list, content) is the expense's own submitter or an
+ * accountant/admin; `partner` accounts do not get a blanket pass anymore, a
+ * narrowing from the pre-polymorphic-owner code that is intentional. Write
+ * actions (upload, delete) pass `requireSubmitter: true` and are restricted
+ * to the submitter themselves. Purchase orders follow the transaction's
+ * `userId` under the identical rule — see the type check below for why that
+ * branch cannot stop at ownership alone.
  */
 async function loadOwnerFor(
   owner: ReceiptOwnerRef,
   user: { id: string; role: UserRole },
   { requireSubmitter }: { requireSubmitter: boolean },
-) {
+): Promise<void> {
   if (owner.kind === 'expense') {
     const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, owner.id) });
     if (!expense) throw notFound('Expense not found');
@@ -39,7 +43,7 @@ async function loadOwnerFor(
     if (requireSubmitter ? !isOwner : !(isOwner || roleAllowed(user.role, ['accountant', 'admin']))) {
       throw forbidden();
     }
-    return { kind: 'expense' as const, userId: expense.userId };
+    return;
   }
 
   const tx = await db.query.transactions.findFirst({ where: eq(transactions.id, owner.id) });
@@ -48,7 +52,16 @@ async function loadOwnerFor(
   if (requireSubmitter ? !isOwner : !(isOwner || roleAllowed(user.role, ['accountant', 'admin']))) {
     throw forbidden();
   }
-  return { kind: 'transaction' as const, userId: tx.userId };
+  // Every expense is mirrored into `transactions` under its own id, same
+  // uuid (syncExpenseTransaction.ts), so an expense id is also a *valid*
+  // transactionId that would pass the ownership check above. Without this
+  // guard, POST /transactions/:expenseId/receipts would attach a receipt to
+  // that mirror row via transaction_id — satisfying the one-owner CHECK,
+  // but leaving it invisible to every expense-side reader (expense detail,
+  // zohoPush, GET /expenses/:expenseId/receipts).
+  if (tx.type !== 'purchase_order') {
+    throw createError('Receipts only attach to purchase orders', 400, 'WRONG_TYPE');
+  }
 }
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'image/heic', 'image/heif']);
@@ -152,7 +165,9 @@ router.get('/:receiptId/content', asyncHandler(async (req, res) => {
 // Delete a receipt
 router.delete('/:receiptId', asyncHandler(async (req, res) => {
   const owner = resolveReceiptOwner(req.params);
-  await loadOwnerFor(owner, req.user!, { requireSubmitter: false });
+  // Destructive and irreversible (storage.delete) — restricted to the
+  // submitter, matching the pre-polymorphic-owner behavior for expenses.
+  await loadOwnerFor(owner, req.user!, { requireSubmitter: true });
 
   const ownerFilter = owner.kind === 'expense'
     ? eq(receipts.expenseId, owner.id)
