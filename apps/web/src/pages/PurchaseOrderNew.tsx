@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../api/client';
+import { transactionReceiptApi } from '../api/expenses';
+import { compressReceiptImage } from '../lib/receiptCompress';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { VendorCombobox } from '../components/VendorCombobox';
 import type { Transaction } from '@midas/shared';
@@ -66,6 +68,9 @@ export function PurchaseOrderNew() {
   const [taxTotal, setTaxTotal] = useState('0');
   const [lines, setLines] = useState<LineDraft[]>([blankLine(1)]);
   const [error, setError] = useState<string | null>(null);
+  // Held until the PO exists: a receipt needs a transaction id, so it can only
+  // be uploaded after the draft saves. Picking it here keeps that invisible.
+  const [receipt, setReceipt] = useState<File | null>(null);
 
   const items = itemsQ.data ?? [];
   const vendors = vendorsQ.data ?? [];
@@ -120,9 +125,23 @@ export function PurchaseOrderNew() {
         taxTotal: Number(taxTotal) || 0,
         lineItems,
       });
-      return data.transaction;
+      if (!receipt) return { tx: data.transaction, receiptError: null };
+
+      // The purchase order now exists, so a failed upload must not fail the
+      // save — losing a filled-in PO to a network blip is far worse than
+      // landing on it with the receipt still missing. Carry the reason to the
+      // detail page instead, where the Upload button is waiting.
+      try {
+        await transactionReceiptApi.upload(data.transaction.id, await compressReceiptImage(receipt));
+        return { tx: data.transaction, receiptError: null };
+      } catch (err) {
+        const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+          ?.response?.data?.error?.message;
+        return { tx: data.transaction, receiptError: msg || 'The receipt could not be uploaded.' };
+      }
     },
-    onSuccess: (tx) => navigate(`/transactions/${tx.id}`),
+    onSuccess: ({ tx, receiptError }) =>
+      navigate(`/transactions/${tx.id}`, { state: receiptError ? { receiptUploadFailed: receiptError } : undefined }),
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
       setError(msg || 'Failed to create purchase order');
@@ -189,6 +208,20 @@ export function PurchaseOrderNew() {
               <option key={c.name} value={c.name}>{c.name}</option>
             ))}
           </select>
+        </label>
+        <label className="block text-sm sm:col-span-2">
+          <span className="text-charcoal/80">Receipt</span>
+          <input
+            type="file"
+            accept="image/*,.pdf,.heic,.heif"
+            className="mt-1 w-full rounded border border-brand-200 px-3 py-3 text-sm file:mr-3 file:rounded file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:text-brand-700 lg:py-2"
+            onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
+          />
+          <span className="mt-1 block text-xs text-charcoal/50">
+            {receipt
+              ? `${receipt.name} — uploads when you save.`
+              : 'Attached when you save. You can also add or replace it afterwards.'}
+          </span>
         </label>
       </div>
 

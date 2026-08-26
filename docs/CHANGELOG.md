@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.6.2 (2026-08-26)
+
+### Attach a purchase order's receipt while creating it
+
+- **The New Purchase Order form has a Receipt field.** 1.6.0 put receipt upload
+  on the purchase order's detail page, because a receipt row needs a
+  transaction id and the PO has to exist first. That constraint is real, but it
+  was solved by moving the upload to the next screen without telling anyone —
+  so the form where you would naturally attach a receipt had nowhere to do it.
+  The file is now picked here, held, and uploaded the moment the draft saves.
+- **A failed upload never costs you the purchase order.** If the PO saves but
+  the receipt does not upload, you still land on the purchase order — it is
+  real — with the reason shown beside the Upload button that can retry it.
+  Failing the whole save over a network blip would throw away a form you had
+  just filled in.
+- Phone photos are compressed before upload, the same as every other receipt
+  in the app.
+
 ## 1.6.1 (2026-08-26)
 
 ### A database blip could turn a successful Zoho push into a duplicate record

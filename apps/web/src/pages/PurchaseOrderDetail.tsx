@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, ChangeEvent } from 'react';
 import { Paperclip, Upload } from 'lucide-react';
@@ -22,7 +22,13 @@ export function PurchaseOrderDetail() {
   const { user } = useAuth();
   const isPrivileged = roleAllowed(user?.role, ['accountant', 'admin']);
   const [pushError, setPushError] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // The create form uploads the receipt once the PO exists. If that upload
+  // failed it still sends the user here — the purchase order is real — and
+  // carries the reason so it lands in this page's banner, beside the Upload
+  // button they need.
+  const carriedUploadError = (useLocation().state as { receiptUploadFailed?: string } | null)
+    ?.receiptUploadFailed ?? null;
+  const [uploadError, setUploadError] = useState<string | null>(carriedUploadError);
 
   const q = useQuery({
     queryKey: ['transaction', id],
