@@ -35,9 +35,18 @@
 - **The PO number input is gone.** It never reached Zoho: the value was
   collected and stored, then dropped before the Books request body was built,
   so Zoho assigned its own number regardless and Midas never learned it. The
-  column stays in the schema, reserved for the number Zoho assigns.
+  column stays in the schema, reserved for the number Zoho assigns, and the
+  API no longer accepts a client-supplied one on create or update.
 
-Two limits are worth being honest about:
+- **Listing another user's receipts is narrower.**
+  `GET /expenses/:id/receipts` is now the submitter plus accountants and
+  admins. Its old check was `role !== 'user'`, which also admitted `partner`
+  and `developer` accounts; they no longer see other users' expense receipts.
+  This is an intentional tightening, not a side effect — no Midas UI offered
+  those roles that view, and the file-content route was already restricted to
+  accountants and admins.
+
+Three limits are worth being honest about:
 
 - **Zoho's assigned PO number still doesn't show anywhere in Midas.** The
   integration service returns only `purchaseorder_id` on create and has no
@@ -47,7 +56,16 @@ Two limits are worth being honest about:
 - **A purchase order without a receipt still pushes.** A receipt is a business
   requirement, not an enforced gate — turning it into a hard block would strand
   every purchase order already in flight without one. A receipt-less PO pushes
-  and is flagged, the same as before this release.
+  and is then flagged "Posted without its receipt" on the purchase order, so an
+  accountant sees it. The flag never offers a retry: the Books purchase order
+  is real, and re-pushing would duplicate it.
+- **A receipt uploaded after the push does not reach Zoho.** The attach happens
+  once, during the push. Upload it afterwards — approve, push, then add the
+  receipt — and Midas shows a receipt the Books purchase order does not have,
+  with no way to correct it from the UI: there is no re-attach action, and
+  upload is restricted to the submitter, so an accountant who notices cannot
+  fix it either. Attach the receipt before approval. A re-attach action is a
+  follow-up.
 
 ## 1.5.0 (2026-08-26)
 
