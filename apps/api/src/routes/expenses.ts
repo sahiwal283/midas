@@ -25,7 +25,12 @@ import { isDailyAutoPushCandidate, incompleteSubmissionMessage } from '../lib/pe
 import { maybeAutoPushPending } from '../lib/pendingCompletionDb';
 import { notifyUser } from '../lib/notify';
 import { normalizeReferenceNumber } from '@midas/shared';
-import { resolveEventPatch, eventOwnershipRefusal } from '../lib/eventSelection';
+import {
+  resolveEventPatch,
+  eventOwnershipRefusal,
+  EVENTS_UNAVAILABLE_REFUSAL,
+  type EventTaggedRow,
+} from '../lib/eventSelection';
 import { findSelectableEvent, isTradeShowLinkEnabled } from '../lib/tradeShowEvents';
 import { localTodayIso } from '../lib/cashLedger';
 
@@ -150,13 +155,24 @@ router.get('/:id', asyncHandler(async (req, res) => {
   res.json({ expense: safeExpense });
 }));
 
-/** Resolve a request's eventId against Argo, or refuse if the link is down. */
-async function eventPatch(eventId: string | null | undefined) {
-  if (eventId === undefined || eventId === null) return resolveEventPatch(eventId, async () => null);
-  if (!isTradeShowLinkEnabled()) {
-    throw createError('Event tagging is unavailable — the trade show link is not configured', 503, 'EVENTS_UNAVAILABLE');
+/**
+ * Resolve a request's eventId against Argo, or refuse if the link is down.
+ *
+ * `current` is the row being patched (null on create): a clear only writes
+ * when that row actually carries an event, so `eventId: null` can never wipe
+ * the source columns another app wrote — see lib/eventSelection.
+ */
+async function eventPatch(
+  eventId: string | null | undefined,
+  current: EventTaggedRow | null,
+) {
+  if (eventId === undefined || eventId === null) {
+    return resolveEventPatch(eventId, async () => null, current);
   }
-  return resolveEventPatch(eventId, (id) => findSelectableEvent(id, localTodayIso()));
+  if (!isTradeShowLinkEnabled()) {
+    throw createError(EVENTS_UNAVAILABLE_REFUSAL.message, EVENTS_UNAVAILABLE_REFUSAL.status, EVENTS_UNAVAILABLE_REFUSAL.code);
+  }
+  return resolveEventPatch(eventId, (id) => findSelectableEvent(id, localTodayIso()), current);
 }
 
 // Create draft expense
@@ -190,7 +206,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
   zohoEntity = await assertActiveCompany(zohoEntity);
 
-  const event = await eventPatch(body.eventId);
+  // No row yet, so there is nothing to clear: eventId null/absent writes nothing.
+  const event = await eventPatch(body.eventId, null);
 
   const [expense] = await db.insert(expenses).values({
     userId: req.user!.id,
@@ -238,9 +255,12 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   // A non-null sourceRefId means an external app owns this row's identity:
   // (sourceApp, sourceRefId) is the pair that app re-imports/dedupes against.
   // Changing the event here would corrupt that pair, so event edits are
-  // refused on any row Midas didn't create itself. POST / always leaves
-  // sourceRefId null, so only this update path needs the guard. Shared with
-  // the accountant details-edit planner so the two paths can't drift apart.
+  // refused on any row carrying an external ref id. Rows another app created
+  // *without* a ref id (a browser-extension capture with no page URL) are not
+  // refused here — instead the resolver below writes nothing unless there is
+  // an actual event to change, so their source columns survive. POST / always
+  // leaves sourceRefId null, so only this update path needs the guard. Shared
+  // with the accountant details-edit planner so the two can't drift apart.
   if (body.eventId !== undefined) {
     const refusal = eventOwnershipRefusal(expense.sourceApp, expense.sourceRefId);
     if (refusal) throw createError(refusal.message, refusal.status, refusal.code);
@@ -283,7 +303,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     if (next === 'pending') reimbursementPatch = { reimbursementStatus: 'pending' };
   }
 
-  const event = await eventPatch(body.eventId);
+  const event = await eventPatch(body.eventId, expense);
 
   const [updated] = await db.update(expenses)
     .set({
@@ -342,6 +362,19 @@ router.post('/:id/clone', asyncHandler(async (req, res) => {
     zohoExpenseAccountId: source.zohoExpenseAccountId,
     zohoExpenseAccountName: source.zohoExpenseAccountName,
     expenseKind: source.expenseKind,
+    // Carry the provenance, not the identity. Dropping sourceApp would turn a
+    // corrected event expense into a daily one: out of Event Review, out of
+    // the Reports event breakdown, and auto-push-eligible again — event spend
+    // must always go through an accountant (spec decision 3).
+    //
+    // sourceRefId deliberately stays null. It is the owning app's re-import
+    // key, unique per (source_app, source_ref_id): copying it would either
+    // collide with the row being corrected or silently redirect that app's
+    // dedupe at the clone. A corrected expense is a new Midas-owned row.
+    sourceApp: source.sourceApp,
+    sourceType: source.sourceType,
+    sourceLabel: source.sourceLabel,
+    sourceContext: source.sourceContext,
     status: 'draft',
     reimbursementStatus: 'not_requested',
   }).returning();

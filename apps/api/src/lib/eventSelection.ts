@@ -89,6 +89,58 @@ export const CLEARED_EVENT_SOURCE_FIELDS: EventSourceFields = {
   sourceContext: {},
 };
 
+/** Refusal shape for a request that needs Argo while the link is off. */
+export const EVENTS_UNAVAILABLE_REFUSAL = {
+  code: 'EVENTS_UNAVAILABLE',
+  message: 'Event tagging is unavailable — the trade show link is not configured',
+  status: 503,
+} as const;
+
+/** The `source_*` columns an event change reads before deciding what to write. */
+export interface EventTaggedRow {
+  sourceApp: string | null;
+  sourceContext: Record<string, unknown> | null;
+}
+
+/**
+ * Whether this row currently carries an event tag at all.
+ *
+ * `sourceApp` is the signal, not `sourceContext.eventId`: the four columns are
+ * written and cleared together, and a row tagged by an older path might carry
+ * the app without the context. Rows owned by another app (`browser_extension`,
+ * `milo`, …) have no event, so there is nothing here to clear.
+ */
+export function hasEventTag(row: EventTaggedRow): boolean {
+  return row.sourceApp === 'trade_show';
+}
+
+/** The event currently attached to a row, or null when it carries none. */
+export function currentEventId(row: EventTaggedRow): string | null {
+  if (!hasEventTag(row)) return null;
+  // sourceContext is an open Record, so index it through an explicit cast —
+  // `unknown` would not compare against a string id.
+  return (row.sourceContext?.eventId as string | undefined) ?? null;
+}
+
+/**
+ * Columns to write to move `row` to event `next` (or to no event), or
+ * `undefined` when nothing needs writing.
+ *
+ * The `undefined` cases matter for more than saved writes. Clearing the event
+ * on a row that never had one would null `source_app`, `source_type` and
+ * `source_label` and reset `source_context` — destroying the provenance of a
+ * row another app created (a browser-extension capture with no page URL has
+ * `sourceApp` set and `sourceRefId` null, so it passes the ownership guard).
+ * A clear only writes when there is an event to clear.
+ */
+export function eventChangeFor(
+  row: EventTaggedRow,
+  next: { id: string; name: string } | null,
+): EventSourceFields | undefined {
+  if (next === null) return hasEventTag(row) ? CLEARED_EVENT_SOURCE_FIELDS : undefined;
+  return currentEventId(row) === next.id ? undefined : eventSourceFields(next);
+}
+
 /** Shape of a refusal to change an expense's event. Always 409. */
 export interface EventOwnershipRefusal {
   code: 'EVENT_NOT_EDITABLE';
@@ -132,19 +184,26 @@ export function eventOwnershipRefusal(
 export type EventLookup = (id: string) => Promise<{ id: string; name: string } | null>;
 
 /**
- * Turn a request's `eventId` into columns to write.
+ * Turn a request's `eventId` into columns to write, given the row it applies
+ * to (`null` on create, where there is no row yet).
  *
  * - `undefined` (key absent)  -> undefined, leave the expense as it is
- * - `null`                    -> clear the event, back to a daily expense
- * - an id                     -> that event's source fields
+ * - `null`                    -> clear the event, if the row actually has one
+ * - an id                     -> that event's source fields, if it isn't already set
  * - an unknown id             -> 400, never a silently untagged expense
+ *
+ * `current` is required rather than optional on purpose: every caller has to
+ * say what it is patching, so no call site can accidentally clear the source
+ * columns of a row that carries another app's provenance.
  */
 export async function resolveEventPatch(
   eventId: string | null | undefined,
   lookup: EventLookup,
+  current: EventTaggedRow | null,
 ): Promise<EventSourceFields | undefined> {
   if (eventId === undefined) return undefined;
-  if (eventId === null) return CLEARED_EVENT_SOURCE_FIELDS;
+  const row: EventTaggedRow = current ?? { sourceApp: null, sourceContext: null };
+  if (eventId === null) return eventChangeFor(row, null);
 
   const event = await lookup(eventId);
   if (!event) {
@@ -153,5 +212,5 @@ export async function resolveEventPatch(
     err.code = 'UNKNOWN_EVENT';
     throw err;
   }
-  return eventSourceFields(event);
+  return eventChangeFor(row, event);
 }

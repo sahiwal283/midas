@@ -27,7 +27,16 @@ export function isTradeShowLinkEnabled(): boolean {
 function tradeShowPool(): Pool {
   const url = process.env.TRADESHOW_DATABASE_URL;
   if (!url) throw new Error('TRADESHOW_DATABASE_URL is not set');
-  cached ??= new Pool({ connectionString: url, max: 2, idleTimeoutMillis: 30_000 });
+  // connectionTimeoutMillis is not optional here: this pool now sits on the
+  // expense create/update path, so a host that is unreachable-but-not-refusing
+  // would otherwise hang the user's submit until TCP gives up, and two such
+  // requests would saturate max: 2 for the dashboard card as well.
+  cached ??= new Pool({
+    connectionString: url,
+    max: 2,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+  });
   return cached;
 }
 
@@ -122,15 +131,45 @@ export async function listSelectableEvents(today: string): Promise<SelectableEve
   );
 }
 
+/** One row of the picker's SELECT — `pg` hands DATE columns back as Date. */
+interface EventRow {
+  id: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  start_date: Date | string;
+  end_date: Date | string;
+}
+
+/**
+ * Postgres invalid_text_representation (22P02).
+ *
+ * Argo's `events.id` is a uuid column, so comparing it against a string that
+ * isn't a uuid is a database error, not an empty result. Midas deliberately
+ * does not validate the id's shape — Argo owns its key format — so this is
+ * where an unparseable id becomes "no such event".
+ */
+export function isMalformedIdError(err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === '22P02';
+}
+
 /** One event by id, or null. Used to resolve a client's chosen eventId. */
 export async function findSelectableEvent(
   id: string,
   today: string,
 ): Promise<SelectableEvent | null> {
-  const { rows } = await tradeShowPool().query(
-    `SELECT id, name, city, state, start_date, end_date FROM events WHERE id = $1`,
-    [id],
-  );
+  let rows: EventRow[];
+  try {
+    ({ rows } = await tradeShowPool().query<EventRow>(
+      `SELECT id, name, city, state, start_date, end_date FROM events WHERE id = $1`,
+      [id],
+    ));
+  } catch (err) {
+    // A malformed id is an unknown event (400 UNKNOWN_EVENT upstream), never a
+    // 500. Every other failure — link down, permissions — still propagates.
+    if (isMalformedIdError(err)) return null;
+    throw err;
+  }
   if (rows.length === 0) return null;
   const r = rows[0];
   return orderSelectableEvents(

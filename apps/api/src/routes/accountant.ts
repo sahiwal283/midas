@@ -18,6 +18,7 @@ import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { planAccountantDetailsEdit } from '../lib/accountantDetailsEdit';
 import { isTradeShowLinkEnabled, listWindowedEvents, findSelectableEvent } from '../lib/tradeShowEvents';
+import { EVENTS_UNAVAILABLE_REFUSAL } from '../lib/eventSelection';
 import { localTodayIso } from '../lib/cashLedger';
 import { notifyUser } from '../lib/notify';
 import { syncExpenseToTransaction } from '../lib/syncExpenseTransaction';
@@ -956,6 +957,11 @@ router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
   if (patch.eventId === null) {
     event = null;
   } else if (patch.eventId !== undefined) {
+    // Same refusal as POST/PATCH /expenses: an unconfigured link degrades to a
+    // 503 with a message, never a pool that throws its way into a 500.
+    if (!isTradeShowLinkEnabled()) {
+      throw createError(EVENTS_UNAVAILABLE_REFUSAL.message, EVENTS_UNAVAILABLE_REFUSAL.status, EVENTS_UNAVAILABLE_REFUSAL.code);
+    }
     const found = await findSelectableEvent(patch.eventId, localTodayIso());
     if (!found) throw createError(`Unknown event: ${patch.eventId}`, 400, 'UNKNOWN_EVENT');
     event = { id: found.id, name: found.name };

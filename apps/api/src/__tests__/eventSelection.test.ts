@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { selectionCutoff, orderSelectableEvents, eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS, resolveEventPatch, eventOwnershipRefusal } from '../lib/eventSelection';
+import {
+  selectionCutoff,
+  orderSelectableEvents,
+  eventSourceFields,
+  CLEARED_EVENT_SOURCE_FIELDS,
+  resolveEventPatch,
+  eventOwnershipRefusal,
+  eventChangeFor,
+  currentEventId,
+  hasEventTag,
+} from '../lib/eventSelection';
 
 describe('selectionCutoff', () => {
   it('is one month and one day past the end date', () => {
@@ -66,20 +76,92 @@ describe('eventSourceFields', () => {
   });
 });
 
+describe('hasEventTag / currentEventId', () => {
+  const tagged = { sourceApp: 'trade_show', sourceContext: { eventId: 'evt-1', eventName: 'Champs' } };
+
+  it('reads the event off a tagged row', () => {
+    expect(hasEventTag(tagged)).toBe(true);
+    expect(currentEventId(tagged)).toBe('evt-1');
+  });
+
+  it('sees no event on an untagged row', () => {
+    expect(hasEventTag({ sourceApp: null, sourceContext: {} })).toBe(false);
+    expect(currentEventId({ sourceApp: null, sourceContext: {} })).toBeNull();
+  });
+
+  it('sees no event on a row another app created', () => {
+    // A browser-extension capture with no page URL: sourceApp set, no event.
+    const capture = { sourceApp: 'browser_extension', sourceContext: {} };
+    expect(hasEventTag(capture)).toBe(false);
+    expect(currentEventId(capture)).toBeNull();
+  });
+
+  it('still reports a tag when the context lost its eventId', () => {
+    expect(hasEventTag({ sourceApp: 'trade_show', sourceContext: {} })).toBe(true);
+    expect(currentEventId({ sourceApp: 'trade_show', sourceContext: {} })).toBeNull();
+  });
+});
+
+describe('eventChangeFor', () => {
+  const event = { id: 'evt-1', name: 'Champs Spring LV 2026' };
+  const daily = { sourceApp: null, sourceContext: {} };
+  const tagged = { sourceApp: 'trade_show', sourceContext: { eventId: 'evt-1', eventName: 'Champs Spring LV 2026' } };
+
+  it('writes the source fields when attaching an event', () => {
+    expect(eventChangeFor(daily, event)).toEqual(eventSourceFields(event));
+  });
+
+  it('writes nothing when the row already has that event', () => {
+    expect(eventChangeFor(tagged, event)).toBeUndefined();
+  });
+
+  it('writes the new event when re-tagging', () => {
+    const next = { id: 'evt-2', name: 'Champs Chicago 2026' };
+    expect(eventChangeFor(tagged, next)).toEqual(eventSourceFields(next));
+  });
+
+  it('clears a row that actually has an event', () => {
+    expect(eventChangeFor(tagged, null)).toEqual(CLEARED_EVENT_SOURCE_FIELDS);
+  });
+
+  it('writes nothing when clearing a row that has no event', () => {
+    expect(eventChangeFor(daily, null)).toBeUndefined();
+  });
+
+  it('does not wipe browser-extension provenance on a clear', () => {
+    // pageUrl is optional on the extension's submit, so a capture can have
+    // sourceApp set with sourceRefId null — which passes the ownership guard.
+    // Clearing "the event" of such a row must not null its source columns.
+    const capture = { sourceApp: 'browser_extension', sourceContext: {} };
+    expect(eventChangeFor(capture, null)).toBeUndefined();
+  });
+});
+
 describe('resolveEventPatch', () => {
   const lookup = async (id: string) =>
     id === 'evt-1' ? { id: 'evt-1', name: 'Champs Spring LV 2026' } : null;
+  const tagged = { sourceApp: 'trade_show', sourceContext: { eventId: 'evt-9', eventName: 'Old Show' } };
 
   it('leaves the expense alone when eventId is absent', async () => {
-    expect(await resolveEventPatch(undefined, lookup)).toBeUndefined();
+    expect(await resolveEventPatch(undefined, lookup, tagged)).toBeUndefined();
   });
 
-  it('clears the event when eventId is null', async () => {
-    expect(await resolveEventPatch(null, lookup)).toEqual(CLEARED_EVENT_SOURCE_FIELDS);
+  it('clears the event when eventId is null and the row has one', async () => {
+    expect(await resolveEventPatch(null, lookup, tagged)).toEqual(CLEARED_EVENT_SOURCE_FIELDS);
+  });
+
+  it('writes nothing when eventId is null and the row has no event', async () => {
+    const capture = { sourceApp: 'browser_extension', sourceContext: {} };
+    expect(await resolveEventPatch(null, lookup, capture)).toBeUndefined();
+    expect(await resolveEventPatch(null, lookup, { sourceApp: null, sourceContext: {} })).toBeUndefined();
+  });
+
+  it('writes nothing when eventId is null on a create (no row yet)', async () => {
+    expect(await resolveEventPatch(null, lookup, null)).toBeUndefined();
   });
 
   it('resolves a known event to its source fields', async () => {
-    expect(await resolveEventPatch('evt-1', lookup)).toEqual({
+    expect(await resolveEventPatch('evt-1', lookup, null)).toEqual({
       sourceApp: 'trade_show',
       sourceType: 'trade_show_event',
       sourceLabel: 'Champs Spring LV 2026',
@@ -88,7 +170,16 @@ describe('resolveEventPatch', () => {
   });
 
   it('throws UNKNOWN_EVENT rather than silently leaving the expense untagged', async () => {
-    await expect(resolveEventPatch('nope', lookup)).rejects.toMatchObject({
+    await expect(resolveEventPatch('nope', lookup, null)).rejects.toMatchObject({
+      code: 'UNKNOWN_EVENT',
+      statusCode: 400,
+    });
+  });
+
+  it('throws UNKNOWN_EVENT for an id the adapter cannot parse', async () => {
+    // findSelectableEvent maps Postgres 22P02 to null, so a non-uuid id is an
+    // unknown event (400), not an uncaught database error (500).
+    await expect(resolveEventPatch('not-a-uuid', async () => null, null)).rejects.toMatchObject({
       code: 'UNKNOWN_EVENT',
       statusCode: 400,
     });

@@ -11,7 +11,7 @@
 
 import { isInClosedPeriods, periodOf, closedPeriodMessage } from './closedPeriods';
 import { editRefusalMessage } from './expenseEdit';
-import { eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS, eventOwnershipRefusal } from './eventSelection';
+import { eventChangeFor, eventOwnershipRefusal } from './eventSelection';
 
 /** The expense fields this patch reads. `amount` is the numeric column's string. */
 export interface DetailsEditTarget {
@@ -115,13 +115,11 @@ export function planAccountantDetailsEdit(
     changes.paymentMethodId = patch.paymentMethodId;
   }
   if (patch.event !== undefined) {
-    // sourceContext is an open Record, so index it through an explicit cast —
-    // `unknown` would not compare against a string id.
-    const currentEventId = (expense.sourceContext?.eventId as string | undefined) ?? null;
-    const nextEventId = patch.event?.id ?? null;
-    if (currentEventId !== nextEventId) {
-      Object.assign(changes, patch.event ? eventSourceFields(patch.event) : CLEARED_EVENT_SOURCE_FIELDS);
-    }
+    // Shared with the owner's own PATCH path, so a no-op event edit writes
+    // nothing on either — clearing an event a row never had would wipe the
+    // source columns another app wrote there.
+    const change = eventChangeFor(expense, patch.event);
+    if (change) Object.assign(changes, change);
   }
 
   return { ok: true, changes };

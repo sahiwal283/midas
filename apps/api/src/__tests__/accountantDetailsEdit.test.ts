@@ -146,17 +146,35 @@ describe('planAccountantDetailsEdit — event re-tag', () => {
     });
   });
 
+  // A tagged row always carries sourceApp alongside the context — the four
+  // source columns are written and cleared together.
+  const taggedWith = (sourceContext: Record<string, unknown>) => ({
+    ...midasOwned, sourceApp: 'trade_show', sourceContext,
+  });
+
   it('clears the event back to daily', () => {
-    const tagged = { ...midasOwned, sourceContext: { eventId: 'evt-1' } };
-    const plan = planAccountantDetailsEdit(tagged, { event: null }, []);
+    const plan = planAccountantDetailsEdit(taggedWith({ eventId: 'evt-1' }), { event: null }, []);
     expect(plan).toEqual({
       ok: true,
       changes: { sourceApp: null, sourceType: null, sourceLabel: null, sourceContext: {} },
     });
   });
 
+  it('writes nothing when clearing an expense that has no event', () => {
+    const plan = planAccountantDetailsEdit(midasOwned, { event: null }, []);
+    expect(plan).toEqual({ ok: true, changes: {} });
+  });
+
+  it('does not wipe the source columns of a ref-less browser-extension capture', () => {
+    // pageUrl is optional on the extension's submit, so sourceApp can be set
+    // with sourceRefId null — which passes the ownership guard above. Clearing
+    // "the event" of such a row must leave its provenance alone.
+    const capture = { ...midasOwned, sourceApp: 'browser_extension' };
+    expect(planAccountantDetailsEdit(capture, { event: null }, [])).toEqual({ ok: true, changes: {} });
+  });
+
   it('is a no-op when the same event is re-selected', () => {
-    const tagged = { ...midasOwned, sourceContext: { eventId: 'evt-1', eventName: 'Champs Spring LV 2026' } };
+    const tagged = taggedWith({ eventId: 'evt-1', eventName: 'Champs Spring LV 2026' });
     const plan = planAccountantDetailsEdit(
       tagged,
       { event: { id: 'evt-1', name: 'Champs Spring LV 2026' } },
