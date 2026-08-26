@@ -310,6 +310,42 @@ export async function attachReceiptToBooksExpense(
   }
 }
 
+/**
+ * Attach a receipt file to an existing Zoho Books purchase order. Best-effort:
+ * the PO already exists in Zoho, so a failed attachment logs and returns false
+ * instead of failing the push.
+ */
+export async function attachReceiptToBooksPurchaseOrder(
+  zohoPurchaseOrderId: string,
+  file: { buffer: Buffer; filename: string; mimeType: string },
+  brand: string,
+): Promise<boolean> {
+  if (env.ZOHO_MODE !== 'service' || env.ZOHO_DRY_RUN) return false;
+  const baseUrl = env.ZOHO_SERVICE_BASE_URL;
+  if (!baseUrl || !env.ZOHO_SERVICE_TOKEN) return false;
+
+  try {
+    const form = new FormData();
+    // Same field name as the expense attach: Zoho Books expects `receipt`, and
+    // the integration service forwards multipart field names verbatim.
+    form.append('receipt', new Blob([new Uint8Array(file.buffer)], { type: file.mimeType }), file.filename);
+    const res = await fetchWithTimeout(
+      `${baseUrl}/zoho/purchaseorders/attach_receipt/${encodeURIComponent(zohoPurchaseOrderId)}`,
+      // No explicit Content-Type: fetch sets the multipart boundary itself.
+      { method: 'POST', headers: serviceHeaders({}, brand), body: form },
+      30000,
+    );
+    if (!res.ok) {
+      logger.warn({ zohoPurchaseOrderId, brand, status: res.status }, 'Zoho PO receipt attach failed');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn({ err, zohoPurchaseOrderId, brand }, 'Zoho PO receipt attach failed');
+    return false;
+  }
+}
+
 /** Wire shape for create_books — only fields the integration service / Zoho Books accept. */
 export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown> {
   const p = payload as ZohoServicePayload & ZohoPushPayload;

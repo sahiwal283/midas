@@ -1,11 +1,17 @@
-import { eq } from 'drizzle-orm';
+import path from 'path';
+import fs from 'fs/promises';
+import { asc, eq } from 'drizzle-orm';
 import { db } from '../db/index';
-import { purchaseOrders, transactionLineItems, transactions } from '../db/schema';
+import { purchaseOrders, receipts, transactionLineItems, transactions } from '../db/schema';
+import { env } from '../config/env';
 import { auditLog } from './audit';
-import { zoho, ZohoServiceError, type ZohoPoPushResult } from './zoho';
+import { zoho, ZohoServiceError, attachReceiptToBooksPurchaseOrder, type ZohoPoPushResult } from './zoho';
 import { buildZohoPoServicePayload, type PayloadPurchaseOrder } from './zohoPoPayload';
+import { poReceiptWarning } from './zohoPoReceipt';
+import { resolveBrandFromEntity } from './zohoBrand';
 import { classifyZohoError } from './zohoErrors';
 import { isCompanyZohoEnabled } from './companies';
+import { logger } from './logger';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -78,11 +84,14 @@ export async function pushPurchaseOrderToZoho(
     };
   }
 
+  const receiptCount = await db.$count(receipts, eq(receipts.transactionId, tx.id));
+
   const payloadInput: PayloadPurchaseOrder = {
     id: tx.id,
     vendorName: tx.vendorName,
     zohoVendorId: tx.purchaseOrder?.zohoVendorId ?? null,
     poNumber: tx.purchaseOrder?.poNumber ?? null,
+    receiptCount,
     transactionDate: tx.transactionDate,
     currency: tx.currency,
     taxTotal: tx.taxTotal,
@@ -129,16 +138,57 @@ export async function pushPurchaseOrderToZoho(
       .where(eq(transactions.id, tx.id))
       .returning();
 
+    // Best-effort receipt attachment: the Books PO exists either way, so a
+    // failed attach never fails the push — but it must never be silent either.
+    let receiptProblem: string | null = null;
+    const receipt = await db.query.receipts.findFirst({
+      where: eq(receipts.transactionId, tx.id),
+      orderBy: [asc(receipts.uploadedAt)],
+    });
+    if (receipt) {
+      try {
+        const buffer = await fs.readFile(path.join(env.UPLOADS_DIR, receipt.storagePath));
+        const attached = await attachReceiptToBooksPurchaseOrder(
+          result.zohoPurchaseOrderId,
+          { buffer, filename: receipt.filename, mimeType: receipt.mimeType },
+          resolveBrandFromEntity(tx.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND,
+        );
+        if (!attached) receiptProblem = 'Zoho rejected the receipt upload';
+      } catch (err) {
+        receiptProblem = `receipt file could not be read (${receipt.storagePath})`;
+        logger.error(
+          { err, transactionId: tx.id, storagePath: receipt.storagePath, uploadsDir: env.UPLOADS_DIR },
+          'Receipt unreadable — purchase order pushed to Zoho without its receipt',
+        );
+      }
+    }
+
+    // Surface a missing receipt where the accountant will see it. The row
+    // stays synced — the Books PO is real and must never be re-pushed.
+    let finalTransaction = updated;
+    if (receiptProblem) {
+      const [rewarned] = await db.update(transactions)
+        .set({ zohoSyncError: poReceiptWarning(receiptProblem), updatedAt: new Date() })
+        .where(eq(transactions.id, tx.id))
+        .returning();
+      if (rewarned) finalTransaction = rewarned;
+    }
+
     await auditLog({
       entityType: 'transaction',
       entityId: tx.id,
       userId: actorUserId,
       action: 'zoho.po.pushed',
       after: result,
-      metadata: { idempotencyKey: payload.idempotencyKey, dryRun: result.dryRun ?? false },
+      metadata: {
+        idempotencyKey: payload.idempotencyKey,
+        dryRun: result.dryRun ?? false,
+        receiptAttached: !!receipt && !receiptProblem,
+        receiptProblem,
+      },
     });
 
-    return { ok: true, transaction: updated, zoho: result };
+    return { ok: true, transaction: finalTransaction, zoho: result };
   } catch (err) {
     const zohoErr = err instanceof ZohoServiceError ? err : null;
     const { category } = classifyZohoError(err);
