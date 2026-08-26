@@ -11,6 +11,7 @@
 
 import { isInClosedPeriods, periodOf, closedPeriodMessage } from './closedPeriods';
 import { editRefusalMessage } from './expenseEdit';
+import { eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS } from './eventSelection';
 
 /** The expense fields this patch reads. `amount` is the numeric column's string. */
 export interface DetailsEditTarget {
@@ -19,6 +20,9 @@ export interface DetailsEditTarget {
   date: string;
   paymentMethodId: string | null;
   zohoExpenseId: string | null;
+  /** Non-null means Argo created this row and owns its source identity. */
+  sourceRefId: string | null;
+  sourceContext: Record<string, unknown> | null;
 }
 
 /** Any subset — omitted keys are left alone. */
@@ -27,6 +31,8 @@ export interface DetailsEditPatch {
   amount?: number;
   date?: string;
   paymentMethodId?: string;
+  /** Attach an event, or null to clear it. Absent leaves it alone. */
+  event?: { id: string; name: string } | null;
 }
 
 /** Column values to write. `amount` is stringified for the numeric column. */
@@ -35,10 +41,14 @@ export interface DetailsEditChanges {
   amount?: string;
   date?: string;
   paymentMethodId?: string;
+  sourceApp?: string | null;
+  sourceType?: string | null;
+  sourceLabel?: string | null;
+  sourceContext?: Record<string, unknown>;
 }
 
 export interface DetailsEditRefusal {
-  code: 'NOT_EDITABLE' | 'PERIOD_CLOSED';
+  code: 'NOT_EDITABLE' | 'PERIOD_CLOSED' | 'EVENT_NOT_EDITABLE';
   message: string;
   status: number;
 }
@@ -81,6 +91,20 @@ export function planAccountantDetailsEdit(
     };
   }
 
+  // An Argo-created row's (source_app, source_ref_id) pair is the key Argo
+  // re-imports against. Re-tagging it here would break that pair, so the event
+  // on those rows is Argo's to change, not ours.
+  if (patch.event !== undefined && expense.sourceRefId) {
+    return {
+      ok: false,
+      refusal: {
+        code: 'EVENT_NOT_EDITABLE',
+        message: 'This expense came from the trade show app — change its event there.',
+        status: 409,
+      },
+    };
+  }
+
   const changes: DetailsEditChanges = {};
 
   if (patch.merchant !== undefined) {
@@ -96,6 +120,15 @@ export function planAccountantDetailsEdit(
   }
   if (patch.paymentMethodId !== undefined && patch.paymentMethodId !== expense.paymentMethodId) {
     changes.paymentMethodId = patch.paymentMethodId;
+  }
+  if (patch.event !== undefined) {
+    // sourceContext is an open Record, so index it through an explicit cast —
+    // `unknown` would not compare against a string id.
+    const currentEventId = (expense.sourceContext?.eventId as string | undefined) ?? null;
+    const nextEventId = patch.event?.id ?? null;
+    if (currentEventId !== nextEventId) {
+      Object.assign(changes, patch.event ? eventSourceFields(patch.event) : CLEARED_EVENT_SOURCE_FIELDS);
+    }
   }
 
   return { ok: true, changes };

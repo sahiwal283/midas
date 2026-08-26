@@ -7,6 +7,8 @@ const base: DetailsEditTarget = {
   date: '2026-05-05',
   paymentMethodId: null,
   zohoExpenseId: null,
+  sourceRefId: null,
+  sourceContext: {},
 };
 
 describe('planAccountantDetailsEdit', () => {
@@ -116,5 +118,65 @@ describe('planAccountantDetailsEdit', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.changes).toEqual({});
+  });
+});
+
+describe('planAccountantDetailsEdit — event re-tag', () => {
+  const midasOwned = {
+    merchant: 'SPEEDEE MART', amount: '10.46', date: '2026-08-25',
+    paymentMethodId: null, zohoExpenseId: null,
+    sourceRefId: null, sourceContext: {},
+  };
+
+  it('attaches an event to a Midas-owned expense', () => {
+    const plan = planAccountantDetailsEdit(
+      midasOwned,
+      { event: { id: 'evt-1', name: 'Champs Spring LV 2026' } },
+      [],
+    );
+    expect(plan).toEqual({
+      ok: true,
+      changes: {
+        sourceApp: 'trade_show',
+        sourceType: 'trade_show_event',
+        sourceLabel: 'Champs Spring LV 2026',
+        sourceContext: { eventId: 'evt-1', eventName: 'Champs Spring LV 2026' },
+      },
+    });
+  });
+
+  it('clears the event back to daily', () => {
+    const tagged = { ...midasOwned, sourceContext: { eventId: 'evt-1' } };
+    const plan = planAccountantDetailsEdit(tagged, { event: null }, []);
+    expect(plan).toEqual({
+      ok: true,
+      changes: { sourceApp: null, sourceType: null, sourceLabel: null, sourceContext: {} },
+    });
+  });
+
+  it('is a no-op when the same event is re-selected', () => {
+    const tagged = { ...midasOwned, sourceContext: { eventId: 'evt-1', eventName: 'Champs Spring LV 2026' } };
+    const plan = planAccountantDetailsEdit(
+      tagged,
+      { event: { id: 'evt-1', name: 'Champs Spring LV 2026' } },
+      [],
+    );
+    expect(plan).toEqual({ ok: true, changes: {} });
+  });
+
+  it('refuses to re-tag an Argo-created row, whose (source_app, source_ref_id) is Argo\'s idempotency key', () => {
+    const argoOwned = { ...midasOwned, sourceRefId: 'ts-4471' };
+    const plan = planAccountantDetailsEdit(argoOwned, { event: null }, []);
+    expect(plan).toMatchObject({ ok: false, refusal: { code: 'EVENT_NOT_EDITABLE', status: 409 } });
+  });
+
+  it('still refuses every edit once pushed to Zoho', () => {
+    const pushed = { ...midasOwned, zohoExpenseId: 'zoho-1' };
+    const plan = planAccountantDetailsEdit(
+      pushed,
+      { event: { id: 'evt-1', name: 'Champs Spring LV 2026' } },
+      [],
+    );
+    expect(plan).toMatchObject({ ok: false, refusal: { code: 'NOT_EDITABLE', status: 409 } });
   });
 });

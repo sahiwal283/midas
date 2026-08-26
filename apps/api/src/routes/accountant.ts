@@ -17,7 +17,7 @@ import { splitRowsByScope } from '../lib/queueSummaryBuckets';
 import { computeFlags } from '../lib/flags';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { planAccountantDetailsEdit } from '../lib/accountantDetailsEdit';
-import { isTradeShowLinkEnabled, listWindowedEvents } from '../lib/tradeShowEvents';
+import { isTradeShowLinkEnabled, listWindowedEvents, findSelectableEvent } from '../lib/tradeShowEvents';
 import { localTodayIso } from '../lib/cashLedger';
 import { notifyUser } from '../lib/notify';
 import { syncExpenseToTransaction } from '../lib/syncExpenseTransaction';
@@ -941,6 +941,8 @@ const detailsSchema = z.object({
   amount: z.coerce.number().positive().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   paymentMethodId: z.string().uuid().optional(),
+  /** Argo event id; null clears the event. */
+  eventId: z.string().min(1).nullable().optional(),
 });
 
 router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
@@ -948,7 +950,21 @@ router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
   const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
   if (!expense) throw notFound('Expense not found');
 
-  const plan = planAccountantDetailsEdit(expense, patch, await getClosedPeriods());
+  // The name is read from Argo, never taken from the request — see the spec's
+  // "server resolves the event name" decision.
+  let event: { id: string; name: string } | null | undefined;
+  if (patch.eventId === null) {
+    event = null;
+  } else if (patch.eventId !== undefined) {
+    const found = await findSelectableEvent(patch.eventId, localTodayIso());
+    if (!found) throw createError(`Unknown event: ${patch.eventId}`, 400, 'UNKNOWN_EVENT');
+    event = { id: found.id, name: found.name };
+  }
+
+  // eventId isn't part of DetailsEditPatch — the planner takes the resolved
+  // { id, name } shape instead — so drop it rather than spread it through.
+  const { eventId: _eventId, ...rest } = patch;
+  const plan = planAccountantDetailsEdit(expense, { ...rest, event }, await getClosedPeriods());
   if (!plan.ok) throw createError(plan.refusal.message, plan.refusal.status, plan.refusal.code);
 
   const { changes } = plan;
