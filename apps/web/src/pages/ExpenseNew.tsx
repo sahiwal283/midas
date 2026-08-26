@@ -464,7 +464,7 @@ export function ExpenseNew() {
               </span>
               <span>
                 <span className="block font-semibold text-ink">Purchase order</span>
-                <span className="block text-sm text-charcoal/55">Vendor order with line items — no receipt to scan</span>
+                <span className="block text-sm text-charcoal/55">Vendor order with line items — attach the receipt too</span>
               </span>
             </Link>
           </div>

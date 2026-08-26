@@ -1,8 +1,11 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, ChangeEvent } from 'react';
+import { Paperclip, Upload } from 'lucide-react';
 import api from '../api/client';
+import { transactionReceiptApi } from '../api/expenses';
 import { SearchableSelect } from '../components/SearchableSelect';
+import { ReceiptPreview } from '../components/ReceiptPreview';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { useAuth } from '../contexts/AuthContext';
 import type { Transaction } from '@midas/shared';
@@ -63,6 +66,23 @@ export function PurchaseOrderDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['transaction', id] }),
   });
 
+  const receiptsQ = useQuery({
+    queryKey: ['transaction-receipts', id],
+    queryFn: () => transactionReceiptApi.list(id!),
+    enabled: !!id && !!q.data && (q.data.userId === user?.id || isPrivileged),
+  });
+
+  const uploadReceipt = useMutation({
+    mutationFn: (file: File) => transactionReceiptApi.upload(id!, file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['transaction-receipts', id] }),
+  });
+
+  function handleReceiptFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) uploadReceipt.mutate(file);
+    e.target.value = '';
+  }
+
   const pushZoho = useMutation({
     mutationFn: async () =>
       (await api.post<{ transaction: Transaction }>(`/accountant/purchase-orders/${id}/zoho-push`)).data.transaction,
@@ -80,6 +100,7 @@ export function PurchaseOrderDetail() {
   if (q.isError || !q.data) return <p className="p-6 text-sm text-danger">Transaction not found</p>;
 
   const tx = q.data;
+  const isOwner = tx.userId === user?.id;
   const lines = [...(tx.lineItems ?? [])].sort((a, b) => a.lineNumber - b.lineNumber);
   const editable = tx.status === 'draft' || tx.status === 'awaiting_info'
     || (isPrivileged && tx.status === 'approved' && tx.integrationStatus !== 'synced' && !tx.zohoRecordId);
@@ -293,6 +314,60 @@ export function PurchaseOrderDetail() {
       <div className="mb-8 space-y-1 text-sm text-ink">
         <div>Tax: ${Number(tx.taxTotal).toFixed(2)}</div>
         <div className="font-semibold">Total: ${Number(tx.total).toFixed(2)}</div>
+      </div>
+
+      {/* Receipts */}
+      <div className="mb-8 rounded-xl border border-ink/10 bg-white p-5 shadow-panel">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-charcoal/80">Receipts</h2>
+          {isOwner && (
+            <label className={`flex min-h-11 items-center gap-1.5 rounded-lg border border-ink/15 px-3 py-1.5 text-xs font-medium text-charcoal/80 lg:min-h-0 ${
+              uploadReceipt.isPending ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-ink/[0.03]'
+            }`}>
+              <Upload className="h-3.5 w-3.5" />
+              {uploadReceipt.isPending ? 'Uploading…' : 'Upload'}
+              <input
+                type="file"
+                accept="image/*,.pdf,.heic,.heif"
+                className="hidden"
+                disabled={uploadReceipt.isPending}
+                onChange={handleReceiptFile}
+              />
+            </label>
+          )}
+        </div>
+        {receiptsQ.data && receiptsQ.data.length > 0 ? (
+          <div className="space-y-2">
+            {receiptsQ.data.map((r) => (
+              <div key={r.id} className="space-y-2 rounded-lg border border-ink/5 bg-cream px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="h-4 w-4 shrink-0 text-charcoal/40" />
+                  <span className="flex-1 truncate text-sm text-charcoal/80">{r.filename}</span>
+                  <span className={`text-xs font-medium ${
+                    r.ocrStatus === 'done' ? 'text-success' :
+                    r.ocrStatus === 'failed' ? 'text-danger' :
+                    r.ocrStatus === 'processing' ? 'text-brand-400' :
+                    'text-charcoal/40'
+                  }`}>
+                    OCR: {r.ocrStatus}
+                  </span>
+                </div>
+                {/* expenseId here is really the transaction id — ReceiptPreview's
+                    prop is vestigial (receiptContentUrl ignores it and always
+                    hits /files/receipts/:receiptId), so passing a PO's
+                    transaction id works even though the prop name reads oddly. */}
+                <ReceiptPreview expenseId={tx.id} receipt={r} />
+                {r.ocrStatus === 'done' && r.ocrText && (
+                  <p className="whitespace-pre-wrap break-words pl-6 text-xs text-charcoal/60">{r.ocrText}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-charcoal/40">
+            No receipts attached.{isOwner && ' Use the Upload button above to add one.'}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3">

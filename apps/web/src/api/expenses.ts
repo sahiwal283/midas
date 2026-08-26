@@ -143,6 +143,21 @@ export const expenseApi = {
     client.get<{ readiness: ZohoReadinessResult }>(`/expenses/${expenseId}/zoho-readiness`).then((r) => r.data.readiness),
 };
 
+export const transactionReceiptApi = {
+  list: (transactionId: string) =>
+    client.get<{ receipts: Receipt[] }>(`/transactions/${transactionId}/receipts`)
+      .then((r) => r.data.receipts),
+
+  upload: (transactionId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return client.post<{ receipt: Receipt; ocrMode: string }>(
+      `/transactions/${transactionId}/receipts`,
+      form,
+    ).then((r) => r.data);
+  },
+};
+
 export interface ScopeCounts {
   counts: Record<string, number>;
   readyForZohoAmount: number;
