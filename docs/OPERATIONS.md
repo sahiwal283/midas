@@ -163,11 +163,33 @@ ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compos
 
 ### Schema changes
 
-Only needed if `apps/api/src/db/schema.ts` changed. The API container runs `db:push --force` on startup automatically, so a container restart is sufficient:
+Only needed if `apps/api/src/db/schema.ts` changed and a migration was generated
+(`apps/api/drizzle/NNNN_*.sql`).
+
+**A container restart does not apply it.** The prod target's `CMD` is
+`["sh", "-c", "node dist/server.js"]` (`apps/api/Dockerfile:63`) — it starts the
+compiled server and nothing else; there is no push, no migration. The
+`db:migrate:sql && db:seed` startup sequence some of this doc's older wording
+assumed belongs to the **dev** target only (`apps/api/Dockerfile:19`), which is
+never what runs on CT 3120. In production, migrations are applied by exactly one
+thing: the one-shot `migrator` service (`docker-compose.prod.yml:11-18`, `command:
+npm run db:migrate:sql && npm run db:seed`).
+
+**Ordering matters.** The migrator builds `target: build`, which bakes
+`apps/api/drizzle/` into its image at build time, from whatever is on disk in
+`/opt/midas` at the moment it builds. If the migrator runs before the release
+tarball is extracted, the new migration file simply is not there yet to be
+baked in — the runner finds nothing new, applies nothing, and exits 0,
+reporting success while the schema is unchanged. Always: extract the tarball →
+rebuild api + web (see above) → *then* run the migrator.
 
 ```bash
-ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose restart api'"
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose -f docker-compose.prod.yml run --rm migrator'"
 ```
+
+Restarting the API container is neither necessary nor sufficient for a schema
+change — it just restarts the already-compiled server against whatever schema
+the DB currently has.
 
 ---
 

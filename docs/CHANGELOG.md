@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.6.0 (2026-08-26)
+
+### A purchase order can carry a receipt
+
+- **One receipts table now serves both expenses and purchase orders.**
+  `receipts.transaction_id` is a new nullable column alongside the now-nullable
+  `expense_id`, with a `CHECK` constraint enforcing that exactly one of the two
+  is set. The same table, the same OCR pipeline, and the same uploads directory
+  handle both — there is no second receipts implementation to keep in sync.
+  Migration `0030_receipt_polymorphic_owner.sql` is additive and was verified
+  against a copy of the production dump before merge: all 379 existing rows
+  kept their `expense_id`, and a deliberately-invalid insert naming both an
+  expense and a purchase order was rejected by the constraint.
+
+- **Upload and read it from the purchase order page.** A receipt uploads from
+  the purchase order detail page and is OCR'd by the same pipeline expenses
+  use. The extracted text is shown for a human to read, not auto-filled into
+  line items — a receipt's extraction shape (merchant, amount, date) does not
+  map onto a PO's line items, so this release stops short of guessing.
+
+- **Pushing a purchase order now attaches its receipt to the Zoho Books
+  record**, through an endpoint the integration service's contract already
+  defined. A failed attach never fails the push and never marks the PO for
+  retry: the Books purchase order already exists by that point, and retrying
+  would create a duplicate. Instead the row is marked with a receipt warning
+  and the failure is logged, the same pattern expenses already use.
+
+- **The Add Transaction screen stops describing a Midas gap as a business
+  rule.** The purchase order option used to read "no receipt to scan" — that
+  was true only because Midas had nowhere to put one; it now reflects that a
+  receipt is supported.
+
+- **The PO number input is gone.** It never reached Zoho: the value was
+  collected and stored, then dropped before the Books request body was built,
+  so Zoho assigned its own number regardless and Midas never learned it. The
+  column stays in the schema, reserved for the number Zoho assigns.
+
+Two limits are worth being honest about:
+
+- **Zoho's assigned PO number still doesn't show anywhere in Midas.** The
+  integration service returns only `purchaseorder_id` on create and has no
+  endpoint to read a purchase order back, so there is nowhere for Midas to get
+  the number from. Closing this is a change in the Zoho integration service,
+  not in Midas.
+- **A purchase order without a receipt still pushes.** A receipt is a business
+  requirement, not an enforced gate — turning it into a hard block would strand
+  every purchase order already in flight without one. A receipt-less PO pushes
+  and is flagged, the same as before this release.
+
 ## 1.5.0 (2026-08-26)
 
 ### An expense can now be tagged with an Argo event, end to end
