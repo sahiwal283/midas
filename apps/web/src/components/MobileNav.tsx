@@ -91,9 +91,15 @@ export function MobileNav() {
         </div>
 
         <div className="flex w-16 shrink-0 justify-center">
-          {/* A label wrapping the file input opens the native camera directly,
-              inside the tap gesture — navigating first and clicking the input
-              programmatically gets blocked by mobile browsers. */}
+          {/* The label must wrap the input so the picker opens inside the tap
+              gesture — navigating first and clicking the input programmatically
+              gets blocked by mobile browsers.
+
+              No `capture` attribute on purpose: with plain accept="image/*" the
+              OS offers its own sheet (Photo Library / Take Photo / Choose File)
+              instead of jumping straight to the camera, so a receipt already
+              sitting in the camera roll can be picked. Adding `capture` back
+              would silently remove that choice. */}
           <label
             aria-label="Scan a receipt"
             className="-mt-5 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-gold-400 text-brand-800 shadow-lg ring-4 ring-brand-800 transition-colors active:bg-gold-500"
@@ -102,7 +108,6 @@ export function MobileNav() {
             <input
               type="file"
               accept="image/*"
-              capture="environment"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
