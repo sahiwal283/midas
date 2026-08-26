@@ -1,5 +1,56 @@
 # Changelog
 
+## 1.5.0 (2026-08-26)
+
+### An expense can now be tagged with an Argo event, end to end
+
+- **The New Expense form gets an event picker.** Available to every role, it
+  mirrors Argo's own picker: selectable events list first, with older ones
+  behind a "show past events" toggle. An event stays selectable until one
+  month and one day past its end date — the same window Argo uses — so a
+  trade show that just wrapped is still reachable while genuinely stale ones
+  are not. There is deliberately no "create event" button here; Midas reads
+  Argo's events through a SELECT-only database role and has no way to write
+  one back.
+
+- **`GET /api/v1/events` serves the picker.** It reads over the existing
+  read-only Postgres link to Argo. When that link is unconfigured or
+  unreachable it returns `{ events: [], available: false }` rather than an
+  error, so the picker just hides itself instead of breaking the New Expense
+  form.
+
+- **The client never names the event it picked.** Only an event id crosses
+  the wire; the server resolves the name from Argo's row itself. Reports and
+  the Event Review filter both group on `source_label`, and a client-supplied
+  name would have let the same event fragment into two labels.
+
+- **Accountants can re-tag an event from the "Correct details" editor** —
+  attach one, swap it for another, or clear it after submission. Clearing
+  moves the expense from Event Review back to Daily Review; attaching one
+  does the opposite. Event expenses still require accountant approval and
+  stay out of the daily auto-push, unchanged from before this release.
+
+- **Two cases now refuse the retag, both `409`.** An expense already pushed
+  to Zoho cannot be re-tagged — the existing `NOT_EDITABLE` rule, which the
+  event field now inherits along with every other field. And an expense
+  owned by an external app cannot be re-tagged at all (`EVENT_NOT_EDITABLE`):
+  its `(source_app, source_ref_id)` pair is the key that app re-imports
+  against, and changing the event out from under it would break that
+  matching. This second refusal applies on both the accountant's editor and
+  the expense owner's own edit path, with wording naming whichever app
+  actually owns the row.
+
+### The mobile camera button now offers the photo library too
+
+- **A receipt already in the camera roll had no way in.** The bottom-bar FAB
+  carried `capture="environment"`, so tapping it jumped straight into the OS
+  camera. Dropping that attribute hands the choice to the OS instead — iOS
+  shows Photo Library / Take Photo / Choose File. Note honestly: the
+  camera-roll thumbnail some native apps draw *inside* the camera view itself
+  is not reachable from a web app; that surface belongs to the OS.
+
+No schema change in this release.
+
 ## 1.4.1 (2026-08-26)
 
 ### The review table fits on screen again
