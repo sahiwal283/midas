@@ -7,7 +7,7 @@ import { env } from '../config/env';
 import { auditLog } from './audit';
 import { zoho, ZohoServiceError, attachReceiptToBooksPurchaseOrder, type ZohoPoPushResult } from './zoho';
 import { buildZohoPoServicePayload, type PayloadPurchaseOrder } from './zohoPoPayload';
-import { poReceiptWarning } from './zohoPoReceipt';
+import { poReceiptWarning, shouldAttemptPoReceiptAttach } from './zohoPoReceipt';
 import { resolveBrandFromEntity } from './zohoBrand';
 import { classifyZohoError } from './zohoErrors';
 import { isCompanyZohoEnabled } from './companies';
@@ -139,38 +139,60 @@ export async function pushPurchaseOrderToZoho(
 
     // Best-effort receipt attachment: the Books PO exists either way, so a
     // failed attach never fails the push — but it must never be silent either.
+    // The whole thing (lookup, file read, attach call, warning write) runs
+    // inside one try/catch so nothing here can reach the outer catch below —
+    // that catch marks integrationStatus 'failed', which the top of this
+    // function treats as re-pushable, and a re-push would duplicate a PO that
+    // already exists in Zoho. A DB blip during the receipt lookup or the
+    // warning write must be swallowed here, the same as a Zoho-side failure.
+    let receiptAttached = false;
     let receiptProblem: string | null = null;
-    const receipt = await db.query.receipts.findFirst({
-      where: eq(receipts.transactionId, tx.id),
-      orderBy: [asc(receipts.uploadedAt)],
-    });
-    if (receipt) {
+    let finalTransaction = updated;
+    // Skip entirely on a dry run: ZOHO_DRY_RUN defaults to true, and the attach
+    // client always returns false under dry run — without this guard every
+    // dry-run push with a receipt would be stamped "Zoho rejected the receipt
+    // upload" for an attach that was never attempted.
+    if (shouldAttemptPoReceiptAttach(result.zohoPurchaseOrderId, result.dryRun)) {
       try {
-        const buffer = await fs.readFile(path.join(env.UPLOADS_DIR, receipt.storagePath));
-        const attached = await attachReceiptToBooksPurchaseOrder(
-          result.zohoPurchaseOrderId,
-          { buffer, filename: receipt.filename, mimeType: receipt.mimeType },
-          resolveBrandFromEntity(tx.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND,
-        );
-        if (!attached) receiptProblem = 'Zoho rejected the receipt upload';
+        const receipt = await db.query.receipts.findFirst({
+          where: eq(receipts.transactionId, tx.id),
+          orderBy: [asc(receipts.uploadedAt)],
+        });
+        if (receipt) {
+          try {
+            const buffer = await fs.readFile(path.join(env.UPLOADS_DIR, receipt.storagePath));
+            receiptAttached = await attachReceiptToBooksPurchaseOrder(
+              result.zohoPurchaseOrderId,
+              { buffer, filename: receipt.filename, mimeType: receipt.mimeType },
+              resolveBrandFromEntity(tx.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND,
+            );
+            if (!receiptAttached) receiptProblem = 'Zoho rejected the receipt upload';
+          } catch (err) {
+            receiptProblem = `receipt file could not be read (${receipt.storagePath})`;
+            logger.error(
+              { err, transactionId: tx.id, storagePath: receipt.storagePath, uploadsDir: env.UPLOADS_DIR },
+              'Receipt unreadable — purchase order pushed to Zoho without its receipt',
+            );
+          }
+          // Surface a missing receipt where the accountant will see it. The
+          // row stays synced — the Books PO is real and must never be re-pushed.
+          if (receiptProblem) {
+            const [rewarned] = await db.update(transactions)
+              .set({ zohoSyncError: poReceiptWarning(receiptProblem), updatedAt: new Date() })
+              .where(eq(transactions.id, tx.id))
+              .returning();
+            if (rewarned) finalTransaction = rewarned;
+          }
+        }
       } catch (err) {
-        receiptProblem = `receipt file could not be read (${receipt.storagePath})`;
+        // Receipt lookup or the warning write itself failed (e.g. a DB blip),
+        // not the attach call. The Books PO already exists — log and move on
+        // rather than let this escape to the outer catch.
         logger.error(
-          { err, transactionId: tx.id, storagePath: receipt.storagePath, uploadsDir: env.UPLOADS_DIR },
-          'Receipt unreadable — purchase order pushed to Zoho without its receipt',
+          { err, transactionId: tx.id, zohoPurchaseOrderId: result.zohoPurchaseOrderId },
+          'Receipt bookkeeping failed after a successful Zoho PO push',
         );
       }
-    }
-
-    // Surface a missing receipt where the accountant will see it. The row
-    // stays synced — the Books PO is real and must never be re-pushed.
-    let finalTransaction = updated;
-    if (receiptProblem) {
-      const [rewarned] = await db.update(transactions)
-        .set({ zohoSyncError: poReceiptWarning(receiptProblem), updatedAt: new Date() })
-        .where(eq(transactions.id, tx.id))
-        .returning();
-      if (rewarned) finalTransaction = rewarned;
     }
 
     await auditLog({
@@ -182,7 +204,7 @@ export async function pushPurchaseOrderToZoho(
       metadata: {
         idempotencyKey: payload.idempotencyKey,
         dryRun: result.dryRun ?? false,
-        receiptAttached: !!receipt && !receiptProblem,
+        receiptAttached,
         receiptProblem,
       },
     });
