@@ -84,6 +84,7 @@ app.use('/api/v1/auth', oidcAuthRouter);
 app.use('/api/v1/expenses', expensesRouter);
 app.use('/api/v1/transactions', transactionsRouter);
 app.use('/api/v1/expenses/:expenseId/receipts', receiptsRouter);
+app.use('/api/v1/transactions/:transactionId/receipts', receiptsRouter);
 app.use('/api/v1/expenses/:expenseId/messages', messagesRouter);
 app.use('/api/v1/captures', capturesRouter);
 app.use('/api/v1/files', filesRouter); // authenticated receipt/capture streaming (no public /uploads)

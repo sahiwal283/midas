@@ -1,6 +1,6 @@
 import {
   pgTable, pgEnum, uuid, text, timestamp, boolean,
-  numeric, date, jsonb, integer, char, index, uniqueIndex, bigint,
+  numeric, date, jsonb, integer, char, index, uniqueIndex, bigint, check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
@@ -358,7 +358,11 @@ export const transactionLineItems = pgTable('transaction_line_items', {
 
 export const receipts = pgTable('receipts', {
   id: uuid('id').primaryKey().defaultRandom(),
-  expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }).notNull(),
+  // Exactly one owner. A receipt belongs to an expense OR to a purchase-order
+  // transaction — purchase orders have no expense row to hang from, and a
+  // second receipts table would mean duplicating the OCR pipeline forever.
+  expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+  transactionId: uuid('transaction_id').references(() => transactions.id, { onDelete: 'cascade' }),
   filename: text('filename').notNull(),
   mimeType: text('mime_type').notNull(),
   sizeBytes: integer('size_bytes').notNull(),
@@ -383,6 +387,13 @@ export const receipts = pgTable('receipts', {
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 }, (t) => [
   index('receipts_expense_id_idx').on(t.expenseId),
+  index('receipts_transaction_id_idx').on(t.transactionId),
+  // Ambiguity is the failure mode of a polymorphic owner: neither set, or both
+  // set, must be impossible at the database level rather than by convention.
+  check(
+    'receipts_one_owner',
+    sql`(${t.expenseId} IS NOT NULL) <> (${t.transactionId} IS NOT NULL)`,
+  ),
 ]);
 
 // ── In-app Expense Conversation ───────────────────────────────────────────────
@@ -583,6 +594,7 @@ export const expensesRelations = relations(expenses, ({ one, many }) => ({
 
 export const receiptsRelations = relations(receipts, ({ one }) => ({
   expense: one(expenses, { fields: [receipts.expenseId], references: [expenses.id] }),
+  transaction: one(transactions, { fields: [receipts.transactionId], references: [transactions.id] }),
 }));
 
 export const expenseMessagesRelations = relations(expenseMessages, ({ one }) => ({

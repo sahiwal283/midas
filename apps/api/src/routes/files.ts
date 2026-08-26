@@ -44,11 +44,17 @@ async function streamFile(res: Response, storagePath: string, mimeType: string, 
 router.get('/receipts/:receiptId', asyncHandler(async (req, res) => {
   const receipt = await db.query.receipts.findFirst({
     where: eq(receipts.id, req.params.receiptId),
-    with: { expense: { columns: { userId: true } } },
+    with: {
+      expense: { columns: { userId: true } },
+      transaction: { columns: { userId: true } },
+    },
   });
   if (!receipt) throw notFound('Receipt not found');
 
-  const isOwner = receipt.expense.userId === req.user!.id;
+  // A receipt hangs from an expense or a purchase-order transaction; whichever
+  // it is, the submitter and any accountant/admin may read the file.
+  const submitterId = receipt.expense?.userId ?? receipt.transaction?.userId ?? null;
+  const isOwner = submitterId !== null && submitterId === req.user!.id;
   if (!isOwner && !roleAllowed(req.user!.role, ['accountant', 'admin'])) throw forbidden();
 
   await streamFile(res, receipt.storagePath, receipt.mimeType, receipt.filename);

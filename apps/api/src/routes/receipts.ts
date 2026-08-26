@@ -4,7 +4,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/index';
-import { receipts, expenses } from '../db/schema';
+import { receipts, expenses, transactions } from '../db/schema';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { storage } from '../lib/storage';
@@ -14,9 +14,42 @@ import { toJpegIfHeic } from '../lib/receiptImage';
 import { auditLog } from '../lib/audit';
 import { env } from '../config/env';
 import { roleAllowed } from '../lib/roles';
+import { resolveReceiptOwner, receiptOwnerValues, type ReceiptOwnerRef } from '../lib/receiptOwner';
+import type { UserRole } from '@midas/shared';
 
 const router = Router({ mergeParams: true });
 router.use(authenticate);
+
+/**
+ * Load the owning record and authorize the caller against it.
+ *
+ * Ownership rules are unchanged per owner: an expense's own submitter, or an
+ * accountant/admin. Purchase orders follow the transaction's `userId` the same
+ * way. Returning the row lets callers reuse it without a second query.
+ */
+async function loadOwnerFor(
+  owner: ReceiptOwnerRef,
+  user: { id: string; role: UserRole },
+  { requireSubmitter }: { requireSubmitter: boolean },
+) {
+  if (owner.kind === 'expense') {
+    const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, owner.id) });
+    if (!expense) throw notFound('Expense not found');
+    const isOwner = expense.userId === user.id;
+    if (requireSubmitter ? !isOwner : !(isOwner || roleAllowed(user.role, ['accountant', 'admin']))) {
+      throw forbidden();
+    }
+    return { kind: 'expense' as const, userId: expense.userId };
+  }
+
+  const tx = await db.query.transactions.findFirst({ where: eq(transactions.id, owner.id) });
+  if (!tx) throw notFound('Transaction not found');
+  const isOwner = tx.userId === user.id;
+  if (requireSubmitter ? !isOwner : !(isOwner || roleAllowed(user.role, ['accountant', 'admin']))) {
+    throw forbidden();
+  }
+  return { kind: 'transaction' as const, userId: tx.userId };
+}
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'image/heic', 'image/heif']);
 const ALLOWED_EXT = new Set(['pdf', 'heic', 'heif']);
@@ -33,15 +66,16 @@ const upload = multer({
   },
 });
 
-// List receipts for an expense
+// List receipts for an expense or purchase-order transaction
 router.get('/', asyncHandler(async (req, res) => {
-  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.expenseId) });
-  if (!expense) throw notFound('Expense not found');
-  const isOwner = expense.userId === req.user!.id;
-  const isPrivileged = req.user!.role !== 'user';
-  if (!isOwner && !isPrivileged) throw forbidden();
+  const owner = resolveReceiptOwner(req.params);
+  await loadOwnerFor(owner, req.user!, { requireSubmitter: false });
 
-  const rows = await db.query.receipts.findMany({ where: eq(receipts.expenseId, req.params.expenseId) });
+  const ownerFilter = owner.kind === 'expense'
+    ? eq(receipts.expenseId, owner.id)
+    : eq(receipts.transactionId, owner.id);
+
+  const rows = await db.query.receipts.findMany({ where: ownerFilter });
   res.json({ receipts: rows });
 }));
 
@@ -49,19 +83,17 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) throw createError('No file uploaded', 400, 'NO_FILE');
 
-  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.expenseId) });
-  if (!expense) throw notFound('Expense not found');
-  if (expense.userId !== req.user!.id) throw forbidden();
+  const owner = resolveReceiptOwner(req.params);
+  await loadOwnerFor(owner, req.user!, { requireSubmitter: true });
 
   const runAsync = req.query.async === '1' || req.query.async === 'true';
 
   // iPhone HEIC/HEIF photos become JPEG so OCR and browsers can read them.
   const file = await toJpegIfHeic(req.file.buffer, req.file.mimetype, req.file.originalname);
-
   const stored = await storage.save(file.buffer, file.filename, file.mimeType);
 
   const [receipt] = await db.insert(receipts).values({
-    expenseId: req.params.expenseId,
+    ...receiptOwnerValues(owner),
     filename: file.filename,
     mimeType: file.mimeType,
     sizeBytes: file.buffer.length,
@@ -69,34 +101,44 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
     ocrStatus: 'pending',
   }).returning();
 
-  await auditLog({ entityType: 'receipt', entityId: receipt.id, userId: req.user!.id, action: 'uploaded', after: { expenseId: receipt.expenseId } });
+  await auditLog({
+    entityType: 'receipt',
+    entityId: receipt.id,
+    userId: req.user!.id,
+    action: 'uploaded',
+    after: { expenseId: receipt.expenseId, transactionId: receipt.transactionId },
+  });
+
+  // A receipt was often the last missing piece of a pending daily expense —
+  // completing it auto-approves and pushes without accountant review. That
+  // rule is expense-only; a purchase order always goes through its own review.
+  const autoPush = owner.kind === 'expense'
+    ? () => maybeAutoPushPending(owner.id, req.user!.id)
+    : async () => undefined;
 
   if (runAsync) {
     // Escape hatch only — see docs/SYNC_AND_OFFLINE.md
-    void runReceiptOcr(receipt.id, stored.storagePath).then(() =>
-      maybeAutoPushPending(req.params.expenseId, req.user!.id),
-    );
+    void runReceiptOcr(receipt.id, stored.storagePath).then(autoPush);
     res.status(201).json({ receipt, ocrMode: 'async' });
     return;
   }
 
   const withOcr = await runReceiptOcr(receipt.id, stored.storagePath);
-  // A receipt was often the last missing piece of a pending daily expense —
-  // completing it auto-approves and pushes without accountant review.
-  const completion = await maybeAutoPushPending(req.params.expenseId, req.user!.id);
+  const completion = await autoPush();
   res.status(201).json({ receipt: withOcr, ocrMode: 'sync', autoPushed: completion?.autoPushed });
 }));
 
 // Stream receipt file inline (session cookie auth — used by UI preview)
 router.get('/:receiptId/content', asyncHandler(async (req, res) => {
-  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.expenseId) });
-  if (!expense) throw notFound('Expense not found');
-  const isOwner = expense.userId === req.user!.id;
-  const isPrivileged = roleAllowed(req.user!.role, ['accountant', 'admin']);
-  if (!isOwner && !isPrivileged) throw forbidden();
+  const owner = resolveReceiptOwner(req.params);
+  await loadOwnerFor(owner, req.user!, { requireSubmitter: false });
+
+  const ownerFilter = owner.kind === 'expense'
+    ? eq(receipts.expenseId, owner.id)
+    : eq(receipts.transactionId, owner.id);
 
   const receipt = await db.query.receipts.findFirst({
-    where: and(eq(receipts.id, req.params.receiptId), eq(receipts.expenseId, req.params.expenseId)),
+    where: and(eq(receipts.id, req.params.receiptId), ownerFilter),
   });
   if (!receipt) throw notFound('Receipt not found');
 
@@ -109,11 +151,17 @@ router.get('/:receiptId/content', asyncHandler(async (req, res) => {
 
 // Delete a receipt
 router.delete('/:receiptId', asyncHandler(async (req, res) => {
-  const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, req.params.receiptId) });
-  if (!receipt) throw notFound('Receipt not found');
+  const owner = resolveReceiptOwner(req.params);
+  await loadOwnerFor(owner, req.user!, { requireSubmitter: false });
 
-  const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, receipt.expenseId) });
-  if (!expense || expense.userId !== req.user!.id) throw forbidden();
+  const ownerFilter = owner.kind === 'expense'
+    ? eq(receipts.expenseId, owner.id)
+    : eq(receipts.transactionId, owner.id);
+
+  const receipt = await db.query.receipts.findFirst({
+    where: and(eq(receipts.id, req.params.receiptId), ownerFilter),
+  });
+  if (!receipt) throw notFound('Receipt not found');
 
   await storage.delete(receipt.storagePath);
   await db.delete(receipts).where(eq(receipts.id, receipt.id));
