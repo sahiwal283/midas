@@ -957,7 +957,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink/10 bg-brand-50/80 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-                <th className="w-10 px-4 py-2.5">
+                <th className="w-10 px-3 py-2.5">
                   <input
                     type="checkbox"
                     checked={allOnPageSelected}
@@ -966,14 +966,15 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
                     aria-label="Select all"
                   />
                 </th>
-                <th className="px-4 py-2.5">Merchant / Employee</th>
-                {scope === 'event' && <th className="px-4 py-2.5">Event</th>}
-                <th className="px-4 py-2.5">Date</th>
-                <th className="px-4 py-2.5 text-right">Amount</th>
-                <th className="px-4 py-2.5">Status</th>
-                <th className="px-4 py-2.5">Receipt</th>
-                <th className="px-4 py-2.5">Flags</th>
-                <th className="px-4 py-2.5">Actions</th>
+                <th className="px-3 py-2.5">Merchant / Employee</th>
+                {scope === 'event' && <th className="px-3 py-2.5">Event</th>}
+                <th className="px-3 py-2.5">Date</th>
+                <th className="px-3 py-2.5 text-right">Amount</th>
+                {/* Flags live in this cell too — a separate Flags column pushed
+                    the table past the viewport and is empty on most rows. */}
+                <th className="px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5">Receipt</th>
+                <th className="px-3 py-2.5">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink/5">
@@ -1455,7 +1456,7 @@ function ExpenseRow({
   return (
     <>
       <tr className={selected ? 'bg-brand-50/50' : 'hover:bg-ink/[0.03]'}>
-        <td className="w-10 px-4 py-2.5">
+        <td className="w-10 px-3 py-2.5">
           <input
             type="checkbox"
             checked={selected}
@@ -1464,7 +1465,7 @@ function ExpenseRow({
             aria-label={`Select ${expense.merchant}`}
           />
         </td>
-        <td className="px-4 py-2.5">
+        <td className="px-3 py-2.5">
           <Link to={`/accountant/${expense.id}`} className="font-medium text-ink hover:text-brand-700">
             {expense.merchant}
           </Link>
@@ -1484,21 +1485,21 @@ function ExpenseRow({
           </div>
         </td>
         {showEvent && (
-          <td className="px-4 py-2.5">
+          <td className="min-w-32 max-w-56 px-3 py-2.5">
             {expense.sourceLabel ? (
-              <span className="line-clamp-2 max-w-44 text-charcoal/80" title={expense.sourceLabel}>
-                {expense.sourceLabel}
-              </span>
+              // Wraps rather than truncating — an event name the accountant
+              // cannot finish reading defeats the point of the column.
+              <span className="break-words text-charcoal/80">{expense.sourceLabel}</span>
             ) : (
               <span className="text-muted">—</span>
             )}
           </td>
         )}
-        <td className="whitespace-nowrap px-4 py-2.5 text-charcoal/70 tabular-nums">{expense.date}</td>
-        <td className="px-4 py-2.5 text-right font-medium tabular-nums text-ink">
+        <td className="whitespace-nowrap px-3 py-2.5 text-charcoal/70 tabular-nums">{expense.date}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-right font-medium tabular-nums text-ink">
           {expense.currency} {Number(expense.amount).toFixed(2)}
         </td>
-        <td className="px-4 py-2.5">
+        <td className="px-3 py-2.5">
           <div className="flex flex-col items-start gap-1">
             <StatusBadge status={expense.status} variant="accountant" />
             <ZohoPushBadge
@@ -1507,22 +1508,22 @@ function ExpenseRow({
             />
             {isZohoFailed && <ZohoErrorCategoryChip error={expense.zohoSyncError} />}
             {needsReimb && <ReimbursementBadge status={expense.reimbursementStatus} />}
+            {(flags.length > 0 || (expense.receipts?.length ?? 0) > 0) && (
+              <div className="flex flex-wrap items-center gap-1">
+                {flags.map((f) => <FlagBadge key={f} flag={f} />)}
+                <OcrQueueBadge receipts={expense.receipts ?? []} />
+              </div>
+            )}
           </div>
         </td>
-        <td className="px-4 py-2.5">
+        <td className="px-3 py-2.5">
           <ReceiptDetailsButton
             expenseId={expense.id}
             receipts={expense.receipts}
             onOpen={onOpenReceipt}
           />
         </td>
-        <td className="px-4 py-2.5">
-          <div className="flex flex-wrap items-center gap-1">
-            {flags.map((f) => <FlagBadge key={f} flag={f} />)}
-            <OcrQueueBadge receipts={expense.receipts ?? []} />
-          </div>
-        </td>
-        <td className="px-4 py-2.5">
+        <td className="px-3 py-2.5">
           <RowActions
             canReview={canReview}
             isAwaiting={isAwaiting}
@@ -1541,7 +1542,7 @@ function ExpenseRow({
 
       {showAskForm && (
         <tr className="bg-brand-50">
-          <td colSpan={showEvent ? 9 : 8} className="px-4 py-3">
+          <td colSpan={showEvent ? 8 : 7} className="px-3 py-3">
             <AskForm
               onSubmit={(note, requestType, internalNote) => {
                 onReview('request_info', note, requestType, internalNote);
@@ -1708,8 +1709,10 @@ function RowActions({
           <ActionBtn color="red" size={touch ? 'touch' : 'xs'} onClick={onReject} disabled={isActing}>
             Reject
           </ActionBtn>
+          {/* "Ask" on desktop — matches the review screen's action and keeps
+              the row inside the viewport; the mobile card has room to wrap. */}
           <ActionBtn color="blue" size={touch ? 'touch' : 'xs'} onClick={onAsk} disabled={isActing}>
-            Needs review
+            {touch ? 'Needs review' : 'Ask'}
           </ActionBtn>
         </>
       )}

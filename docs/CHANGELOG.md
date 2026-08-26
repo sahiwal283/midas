@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.1 (2026-08-26)
+
+### The review table fits on screen again
+
+- **No more sideways scrolling.** Nine columns did not fit the content area, so
+  Actions was pushed off the right edge and the table scrolled horizontally. The
+  **Flags** column now renders inside the Status cell — the two carry the same
+  kind of information, and Flags was empty on most rows — and cell padding drops
+  from `px-4` to `px-3`. The desktop "Needs review" button reads **Ask**, the
+  same word the review screen uses; the mobile card keeps the longer label.
+
+- **Event names show in full.** The Event cell was capped at `max-w-44` with a
+  two-line clamp, which cut "Champs Summer Classic" down to "Champs Summer…".
+  It now wraps to as many lines as the name needs, within a 128–224px column.
+
 ## 1.4.0 (2026-08-26)
 
 ### Event Review says which event an expense belongs to
