@@ -416,6 +416,11 @@ export function AccountantReview() {
           <div className="rounded-xl border border-ink/10 bg-white p-5 text-sm">
             <h2 className="mb-3 font-semibold text-charcoal/80">Expense Details</h2>
             <dl className="space-y-2 text-charcoal/70">
+              {/* Event expenses carry their event name in sourceLabel — the
+                  first thing an accountant needs to place the spend. */}
+              {!isDailyExpense(expense.sourceApp) && (
+                <DetailRow label="Event" value={expense.sourceLabel ?? '—'} />
+              )}
               <DetailRow label="Merchant" value={expense.merchant} />
               <DetailRow label="Amount" value={`${expense.currency} ${Number(expense.amount).toFixed(2)}`} />
               <DetailRow label="Date" value={expense.date} />

@@ -238,6 +238,13 @@ export const accountantApi = {
   queueSummary: () =>
     client.get<QueueSummary>('/accountant/queue/summary').then((r) => r.data),
 
+  /** Distinct events in the review queue — powers the Event filter dropdown. */
+  queueEvents: (params?: { scope?: 'event' | 'daily' }) =>
+    client.get<{ events: Array<{ name: string; count: number; lastDate: string }> }>(
+      '/accountant/queue/events',
+      { params },
+    ).then((r) => r.data.events),
+
   upcomingEvents: () =>
     client.get<{ events: UpcomingEvent[]; available: boolean }>('/accountant/upcoming-events').then((r) => r.data),
 

@@ -110,6 +110,7 @@ router.get('/queue', asyncHandler(async (req, res) => {
   }
   if (f.company) conds.push(eq(expenses.zohoEntity, f.company));
   if (f.sourceApp) conds.push(eq(expenses.sourceApp, f.sourceApp));
+  if (f.event) conds.push(eq(expenses.sourceLabel, f.event));
   if (f.zohoStatus === 'synced') conds.push(eq(expenses.integrationStatus, 'synced'));
   if (f.zohoStatus === 'not_synced') conds.push(sql`${expenses.integrationStatus} <> 'synced'`);
   if (f.zohoStatus === 'sync_failed') conds.push(eq(expenses.integrationStatus, 'failed'));
@@ -196,6 +197,34 @@ router.post('/purchase-orders/:id/zoho-push', asyncHandler(async (req, res) => {
   res.status(502).json({
     error: { code: outcome.code, message: outcome.message, requestId: outcome.requestId },
   });
+}));
+
+/**
+ * Distinct events present in the review queue, for the Event filter dropdown.
+ * Derived from the whole queue rather than the current page — a dropdown built
+ * from one page of 50 rows would silently hide most events.
+ */
+router.get('/queue/events', asyncHandler(async (req, res) => {
+  const scope = requireQueueScope(req.query.scope);
+  const conds = [
+    inArray(expenses.status, QUEUE_STATUSES),
+    eq(expenses.expenseKind, 'business'),
+    isNotNull(expenses.sourceLabel),
+  ];
+  if (scope) conds.push(scopeCondition(scope));
+
+  const rows = await db
+    .select({
+      name: expenses.sourceLabel,
+      count: sql<number>`count(*)::int`,
+      lastDate: sql<string>`max(${expenses.date})`,
+    })
+    .from(expenses)
+    .where(and(...conds))
+    .groupBy(expenses.sourceLabel)
+    .orderBy(desc(sql`max(${expenses.date})`));
+
+  res.json({ events: rows });
 }));
 
 router.get('/queue/summary', asyncHandler(async (_req, res) => {

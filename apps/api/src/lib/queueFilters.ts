@@ -16,6 +16,8 @@ export interface QueueFilters {
   zohoStatus?: 'synced' | 'not_synced' | 'sync_failed';
   company?: string;
   sourceApp?: string;
+  /** Trade-show event name — matched against expenses.source_label. */
+  event?: string;
   ocrNeedsReview?: boolean;
   missingReceipt?: boolean;
   missingCategory?: boolean;
@@ -56,6 +58,7 @@ export function parseQueueFilters(q: Record<string, string | undefined>): QueueF
   if (q.zohoStatus === 'synced' || q.zohoStatus === 'not_synced' || q.zohoStatus === 'sync_failed') f.zohoStatus = q.zohoStatus;
   if (q.company) f.company = q.company;
   if (q.sourceApp) f.sourceApp = q.sourceApp;
+  if (q.event?.trim()) f.event = q.event.trim();
   if (q.transactionType === 'expense' || q.transactionType === 'purchase_order') {
     f.transactionType = q.transactionType;
   }

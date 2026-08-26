@@ -9,7 +9,7 @@ import { ZohoErrorCategoryChip } from '../components/ZohoSyncCard';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
 import { CategoryPicker } from '../components/CategoryPicker';
-import { ExpenseBrowser } from '../components/ExpenseBrowser';
+import { ExpenseBrowser, ExpenseTypeChip } from '../components/ExpenseBrowser';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense } from '../types';
@@ -108,6 +108,7 @@ interface QueueFilters {
   reimbursementStatus: string;
   zohoStatus: string;
   sourceApp: string;
+  event: string;
   ocrNeedsReview: boolean;
   missingReceipt: boolean;
   missingCategory: boolean;
@@ -127,6 +128,7 @@ const EMPTY_FILTERS: QueueFilters = {
   reimbursementStatus: '',
   zohoStatus: '',
   sourceApp: '',
+  event: '',
   ocrNeedsReview: false,
   missingReceipt: false,
   missingCategory: false,
@@ -147,6 +149,7 @@ function filtersToParams(f: QueueFilters): Record<string, string> {
   if (f.reimbursementStatus) params.reimbursementStatus = f.reimbursementStatus;
   if (f.zohoStatus) params.zohoStatus = f.zohoStatus;
   if (f.sourceApp) params.sourceApp = f.sourceApp;
+  if (f.event) params.event = f.event;
   if (f.ocrNeedsReview) params.ocrNeedsReview = 'true';
   if (f.missingReceipt) params.missingReceipt = 'true';
   if (f.missingCategory) params.missingCategory = 'true';
@@ -296,6 +299,15 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     staleTime: 60_000,
   });
 
+  // Events across the whole queue, not just this page of rows — only the event
+  // page has them, so the daily page never pays for the request.
+  const { data: queueEvents = [] } = useQuery({
+    queryKey: ['accountant-queue-events', scope],
+    queryFn: () => accountantApi.queueEvents({ scope }),
+    enabled: scope === 'event',
+    staleTime: 60_000,
+  });
+
   // One removable chip per applied filter — keeps applied state visible while
   // the panel itself stays collapsed.
   const activeChips = useMemo(() => {
@@ -315,6 +327,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     }
     if (filters.zohoStatus) add('zohoStatus', `Zoho: ${filters.zohoStatus.replace(/_/g, ' ')}`);
     if (filters.sourceApp) add('sourceApp', humanizeSourceApp(filters.sourceApp));
+    if (filters.event) add('event', filters.event);
     if (filters.ocrNeedsReview) add('ocrNeedsReview', 'OCR needs review', false);
     if (filters.missingReceipt) add('missingReceipt', 'Missing receipt', false);
     if (filters.missingCategory) add('missingCategory', 'Missing category', false);
@@ -509,6 +522,16 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
     for (const e of queue) if (e.sourceApp) set.add(e.sourceApp);
     return [...set].sort();
   }, [queue, scope]);
+
+  // Event names come from the server so the list covers the whole queue, not
+  // just the current page. A selected event that has since left the queue is
+  // kept in the list — otherwise the select would render blank while still
+  // filtering.
+  const eventOptions = useMemo(() => {
+    const names = queueEvents.map((e) => e.name);
+    if (filters.event && !names.includes(filters.event)) names.unshift(filters.event);
+    return names;
+  }, [queueEvents, filters.event]);
 
   function clearFilters() {
     setFilters(EMPTY_FILTERS);
@@ -740,6 +763,14 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
             <option value="not_synced">Not synced</option>
             <option value="sync_failed">Sync failed</option>
           </select>
+          {scope === 'event' && eventOptions.length > 0 && (
+            <select value={filters.event} onChange={(e) => setFilter('event', e.target.value)} className={filterSelectClass}>
+              <option value="">All events</option>
+              {eventOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          )}
           {sourceAppOptions.length > 1 && (
             <select value={filters.sourceApp} onChange={(e) => setFilter('sourceApp', e.target.value)} className={filterSelectClass}>
               <option value="">Source: any</option>
@@ -904,6 +935,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
                 expense={expense}
                 selected={selected.has(expense.id)}
                 hideReadyFlag={activeLane === 'ready_for_zoho'}
+                showEvent={scope === 'event'}
                 onToggleSelect={() => toggleRow(expense.id)}
                 onOpenReceipt={setQuickViewId}
                 onReview={(action, note, requestType, internalNote) =>
@@ -935,6 +967,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
                   />
                 </th>
                 <th className="px-4 py-2.5">Merchant / Employee</th>
+                {scope === 'event' && <th className="px-4 py-2.5">Event</th>}
                 <th className="px-4 py-2.5">Date</th>
                 <th className="px-4 py-2.5 text-right">Amount</th>
                 <th className="px-4 py-2.5">Status</th>
@@ -950,6 +983,7 @@ export function AccountantQueue({ scope }: { scope: 'event' | 'daily' }) {
                   expense={expense}
                   selected={selected.has(expense.id)}
                   hideReadyFlag={activeLane === 'ready_for_zoho'}
+                  showEvent={scope === 'event'}
                   onToggleSelect={() => toggleRow(expense.id)}
                   onOpenReceipt={setQuickViewId}
                   onReview={(action, note, requestType, internalNote) =>
@@ -1308,6 +1342,8 @@ interface ExpenseRowProps {
   expense: Expense;
   selected: boolean;
   hideReadyFlag?: boolean;
+  /** Event Review only — the daily page has no events to show. */
+  showEvent?: boolean;
   onToggleSelect: () => void;
   onOpenReceipt: (expenseId: string) => void;
   onReview: (action: 'approve' | 'reject' | 'request_info', note?: string, requestType?: string, internalNote?: string) => void;
@@ -1402,6 +1438,7 @@ function ExpenseRow({
   expense,
   selected,
   hideReadyFlag,
+  showEvent,
   onToggleSelect,
   onOpenReceipt,
   onReview,
@@ -1446,6 +1483,17 @@ function ExpenseRow({
             )}
           </div>
         </td>
+        {showEvent && (
+          <td className="px-4 py-2.5">
+            {expense.sourceLabel ? (
+              <span className="line-clamp-2 max-w-44 text-charcoal/80" title={expense.sourceLabel}>
+                {expense.sourceLabel}
+              </span>
+            ) : (
+              <span className="text-muted">—</span>
+            )}
+          </td>
+        )}
         <td className="whitespace-nowrap px-4 py-2.5 text-charcoal/70 tabular-nums">{expense.date}</td>
         <td className="px-4 py-2.5 text-right font-medium tabular-nums text-ink">
           {expense.currency} {Number(expense.amount).toFixed(2)}
@@ -1493,7 +1541,7 @@ function ExpenseRow({
 
       {showAskForm && (
         <tr className="bg-brand-50">
-          <td colSpan={8} className="px-4 py-3">
+          <td colSpan={showEvent ? 9 : 8} className="px-4 py-3">
             <AskForm
               onSubmit={(note, requestType, internalNote) => {
                 onReview('request_info', note, requestType, internalNote);
@@ -1514,6 +1562,7 @@ function ExpenseCard({
   expense,
   selected,
   hideReadyFlag,
+  showEvent,
   onToggleSelect,
   onOpenReceipt,
   onReview,
@@ -1547,6 +1596,11 @@ function ExpenseCard({
               {expense.currency} {Number(expense.amount).toFixed(2)}
             </p>
           </div>
+          {showEvent && (
+            <div className="mt-1 flex">
+              <ExpenseTypeChip expense={expense} />
+            </div>
+          )}
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted">{expense.date}</span>
             <span className="text-xs text-charcoal/40">· {expense.user?.name ?? '—'}</span>

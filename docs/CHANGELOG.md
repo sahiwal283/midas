@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.0 (2026-08-26)
+
+### Event Review says which event an expense belongs to
+
+- **The queue now carries the event.** Trade-show expenses arrive with their
+  event name in `source_label`, but Event Review never showed it — an accountant
+  scanning 86 pending rows could not tell a Las Vegas booth expense from an
+  Austin one without opening the source app. The desktop table gains an **Event**
+  column and the mobile card gains the same event chip the All tab already used.
+  Daily Review is unaffected: the column only renders in event scope, so the
+  daily page never grows a permanently empty column.
+
+- **Filter the queue by event.** `GET /accountant/queue` accepts an `event`
+  parameter matched against `source_label`, surfaced as an "All events" dropdown
+  beside the existing Source and Company filters. Its options come from the new
+  `GET /accountant/queue/events`, which aggregates the *whole* queue rather than
+  the current page — a dropdown built from one page of 50 rows would have hidden
+  most events.
+
+- **The review screen leads with the event.** The Expense Details panel now opens
+  with an Event row for anything that came from a connected app. The value was
+  already on the wire; it was buried in the collapsed technical section as
+  "Source label", where nobody reviewing an expense would look for it.
+
+No schema change — this release reads columns that already existed.
+
 ## 1.3.2 (2026-08-25)
 
 ### Receipts reach Zoho again, and say so when they don't

@@ -34,6 +34,12 @@ describe('parseQueueFilters', () => {
     });
   });
 
+  it('parses the event filter, trimming and dropping blanks', () => {
+    expect(parseQueueFilters({ event: '  Champs Spring LV 2026 ' }))
+      .toEqual({ event: 'Champs Spring LV 2026' });
+    expect(parseQueueFilters({ event: '   ' })).toEqual({});
+  });
+
   it('accepts the two valid scopes', () => {
     expect(parseQueueFilters({ scope: 'event' })).toEqual({ scope: 'event' });
     expect(parseQueueFilters({ scope: 'daily' })).toEqual({ scope: 'daily' });
