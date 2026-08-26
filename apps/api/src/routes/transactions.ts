@@ -11,6 +11,7 @@ import {
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler, createError, forbidden, notFound } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { storage } from '../lib/storage';
 import { partitionPoBulkApprove } from '../lib/bulkPoReview';
 import { canCancelOrDeleteTransaction } from '../lib/expenseDelete';
 import { upsertVendorByName } from '../lib/syncExpenseTransaction';
@@ -284,8 +285,10 @@ router.post('/purchase-orders', asyncHandler(async (req, res) => {
   res.status(201).json({ transaction: full });
 }));
 
+// `poNumber` is deliberately absent: it is no longer user input. Zoho assigns
+// the number and Midas records what it assigned — that write belongs in
+// zohoPoPush, next to the zohoRecordId write, not on a client-facing route.
 const updatePoSchema = createPoSchema.partial().extend({
-  poNumber: z.string().optional().nullable(),
   lineItems: z.array(lineItemSchema).optional(),
 });
 
@@ -352,12 +355,13 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     .where(eq(transactions.id, existing.id))
     .returning();
 
-  // po_number is no longer user input: Zoho assigns the number and Midas
-  // records what it assigned. See docs/superpowers/specs/2026-08-26-po-receipts-design.md.
-  if (body.poNumber !== undefined || body.zohoVendorId !== undefined || body.deliveryDate !== undefined || body.notes !== undefined) {
+  // po_number is not writable here — it is not user input any more. Zoho
+  // assigns it, so whoever wires up the write-back should do it in
+  // lib/zohoPoPush.ts alongside the existing zohoRecordId write, not through
+  // this route. See docs/superpowers/specs/2026-08-26-po-receipts-design.md.
+  if (body.zohoVendorId !== undefined || body.deliveryDate !== undefined || body.notes !== undefined) {
     await db.update(purchaseOrders)
       .set({
-        poNumber: body.poNumber !== undefined && ownerEditable ? body.poNumber : existing.purchaseOrder?.poNumber,
         zohoVendorId: body.zohoVendorId !== undefined ? body.zohoVendorId : existing.purchaseOrder?.zohoVendorId,
         deliveryDate: body.deliveryDate !== undefined && ownerEditable ? body.deliveryDate : existing.purchaseOrder?.deliveryDate,
         notes: body.notes !== undefined && ownerEditable ? body.notes : existing.purchaseOrder?.notes,
@@ -490,6 +494,17 @@ router.post('/:id/cancel', asyncHandler(async (req, res) => {
   if (!decision.ok) throw createError(decision.message, decision.status, decision.code);
 
   if (decision.mode === 'hard_delete') {
+    // Delete the stored files before the rows go: the FK cascades receipt rows
+    // away, and once they are gone nothing points at the files in UPLOADS_DIR
+    // and they are orphaned forever. Mirrors the expense path
+    // (routes/expenses.ts). Only reachable since a transaction could own a
+    // receipt at all (1.6.0).
+    const ownedReceipts = await db.query.receipts.findMany({
+      where: eq(receipts.transactionId, existing.id),
+    });
+    for (const r of ownedReceipts) {
+      await storage.delete(r.storagePath);
+    }
     await db.delete(transactions).where(eq(transactions.id, existing.id));
     await auditLog({
       entityType: 'transaction',
@@ -627,11 +642,13 @@ router.post('/:id/ocr-line-items', asyncHandler(async (req, res) => {
     .where(eq(transactions.id, existing.id))
     .returning();
 
-  // Touch receipts so callers know OCR confirmation happened
+  // Touch receipts so callers know OCR confirmation happened. This route is
+  // guarded to type === 'purchase_order', and a PO's receipts hang off
+  // transaction_id — filtering on expense_id here matched nothing at all.
   await db.update(receipts)
     .set({ ocrNeedsReview: false })
     .where(and(
-      eq(receipts.expenseId, existing.id),
+      eq(receipts.transactionId, existing.id),
       eq(receipts.ocrNeedsReview, true),
     ));
 

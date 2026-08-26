@@ -4,6 +4,7 @@ import { useState, ChangeEvent } from 'react';
 import { Paperclip, Upload } from 'lucide-react';
 import api from '../api/client';
 import { transactionReceiptApi } from '../api/expenses';
+import { compressReceiptImage } from '../lib/receiptCompress';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { ReceiptPreview } from '../components/ReceiptPreview';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
@@ -21,6 +22,7 @@ export function PurchaseOrderDetail() {
   const { user } = useAuth();
   const isPrivileged = roleAllowed(user?.role, ['accountant', 'admin']);
   const [pushError, setPushError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const q = useQuery({
     queryKey: ['transaction', id],
@@ -73,8 +75,21 @@ export function PurchaseOrderDetail() {
   });
 
   const uploadReceipt = useMutation({
-    mutationFn: (file: File) => transactionReceiptApi.upload(id!, file),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['transaction-receipts', id] }),
+    // Shrink multi-MB camera photos before they hit the network — a phone
+    // JPEG routinely exceeds the API's 10 MB cap. Same call both expense
+    // upload sites make (ExpenseNew, ExpenseDetail).
+    mutationFn: async (file: File) => transactionReceiptApi.upload(id!, await compressReceiptImage(file)),
+    onSuccess: () => {
+      setUploadError(null);
+      void qc.invalidateQueries({ queryKey: ['transaction-receipts', id] });
+    },
+    onError: (err: unknown) => {
+      // Without this the button just flips back to "Upload" and the list still
+      // reads "No receipts attached" — a silent loss the user cannot see.
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      setUploadError(msg || 'Receipt upload failed. Please try again.');
+    },
   });
 
   function handleReceiptFile(e: ChangeEvent<HTMLInputElement>) {
@@ -336,6 +351,14 @@ export function PurchaseOrderDetail() {
             </label>
           )}
         </div>
+        {uploadError && (
+          <p
+            role="alert"
+            className="mb-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger"
+          >
+            {uploadError}
+          </p>
+        )}
         {receiptsQ.data && receiptsQ.data.length > 0 ? (
           <div className="space-y-2">
             {receiptsQ.data.map((r) => (
