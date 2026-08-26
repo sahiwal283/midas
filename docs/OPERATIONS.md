@@ -175,17 +175,50 @@ never what runs on CT 3120. In production, migrations are applied by exactly one
 thing: the one-shot `migrator` service (`docker-compose.prod.yml:11-18`, `command:
 npm run db:migrate:sql && npm run db:seed`).
 
-**Ordering matters.** The migrator builds `target: build`, which bakes
-`apps/api/drizzle/` into its image at build time, from whatever is on disk in
-`/opt/midas` at the moment it builds. If the migrator runs before the release
-tarball is extracted, the new migration file simply is not there yet to be
-baked in — the runner finds nothing new, applies nothing, and exits 0,
-reporting success while the schema is unchanged. Always: extract the tarball →
-rebuild api + web (see above) → *then* run the migrator.
+**The migrator image must be rebuilt every time.** The migrator builds
+`target: build`, which bakes `apps/api/drizzle/` into its image at build time,
+from whatever is on disk in `/opt/midas` at the moment it builds. `docker
+compose run` builds a service image **only when none exists** — and CT 3120
+already has a migrator image, left over from 0027–0029. A bare `run --rm
+migrator` therefore re-runs an image built from an *older* `/opt/midas`: the
+new `.sql` file is not in it, the runner finds nothing new, prints
+`skip 0029 (already applied)` and `SQL migrations complete`, and exits **0**.
+Success is reported and the schema is unchanged. Always pass `--build` (or run
+`docker compose -f docker-compose.prod.yml build migrator` first):
 
 ```bash
-ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose -f docker-compose.prod.yml run --rm migrator'"
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose -f docker-compose.prod.yml run --rm --build migrator'"
 ```
+
+Confirm from the output that the new migration was actually applied — look for
+`applying 00NN_...` / `applied 00NN_...`, not just the trailing
+`SQL migrations complete`, which prints either way.
+
+**Order: extract → migrate → rebuild api + web.**
+
+An additive migration (new nullable column, new table, new index; nothing
+renamed, dropped or made `NOT NULL`) leaves the *old* code working against the
+migrated schema — the running API simply never selects the new column. So
+migrate while the old API is still up, then swap in the new one. Done in this
+order there is no window at all in which new code meets an old schema.
+
+The reverse order — rebuild api first, then migrate — opens exactly that
+window, and it is not a graceful one. Drizzle emits explicit column lists, so
+a new API that expects a column the DB does not have fails every query touching
+that table with `column "…" does not exist`. For 1.6.0 that would have meant
+every receipt read and write, site-wide, from the moment the API came up.
+
+1. Extract the release tarball (above).
+2. Run the migrator with `--build` (above), and read its output.
+3. Rebuild api, then web (above).
+
+**A non-additive migration needs a different plan**, because neither order is
+safe: a `DROP COLUMN`, a rename, a type change or a new `NOT NULL` breaks the
+*old* code the moment it lands, so migrate-first breaks production before the
+new API arrives, and rebuild-first breaks it before the migration does. Those
+need an expand/contract split across two releases (release N adds the new shape
+and writes both; release N+1 drops the old one), or an accepted maintenance
+window with the API stopped. Decide which before shipping, not during.
 
 Restarting the API container is neither necessary nor sufficient for a schema
 change — it just restarts the already-compiled server against whatever schema
@@ -197,10 +230,14 @@ the DB currently has.
 
 ```bash
 # Preferred (Phase 1+): idempotent SQL runner — baselines pre-0014 if expenses exist
-pct exec 3120 -- docker compose -f /opt/midas/docker-compose.prod.yml run --rm migrator
+# --build is NOT optional: without it, compose reuses the existing migrator image,
+# which has the OLD drizzle/ baked in, and exits 0 having applied nothing.
+pct exec 3120 -- docker compose -f /opt/midas/docker-compose.prod.yml run --rm --build migrator
 
 # The migrator runs: db:migrate:sql && db:seed
 # Do NOT use db:push --force for transaction/PO schema changes.
+# Run it BEFORE rebuilding api/web when the migration is additive — see
+# "Schema changes" under "Deploying a new version".
 ```
 
 ---
@@ -620,7 +657,9 @@ pct exec 3120 -- docker exec midas-api-1 sh -c 'pg_isready -h 192.168.1.211 -U m
 
 The migrator uses `--force` to skip the interactive prompt. If it still fails:
 ```bash
-pct exec 3120 -- docker compose -f /opt/midas/docker-compose.yml run --rm migrator
+# The migrator service is defined in docker-compose.prod.yml only (the base
+# file has none), and --build is required so it picks up the current drizzle/.
+pct exec 3120 -- docker compose -f /opt/midas/docker-compose.prod.yml run --rm --build migrator
 # Check output for specific SQL error
 ```
 

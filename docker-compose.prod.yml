@@ -1,13 +1,13 @@
 # Production override for Proxmox deployment.
 # External DB is in midas-db-prod (192.168.1.211).
-# Run migrations first: docker compose -f docker-compose.prod.yml run --rm migrator
+# Run migrations first: docker compose -f docker-compose.prod.yml run --rm --build migrator
 # Then start: docker compose -f docker-compose.prod.yml up -d api web
 
 services:
 
   # One-shot migration runner — uses build stage (has drizzle-kit).
   # Run once on first deploy and after schema changes:
-  #   docker compose -f docker-compose.prod.yml run --rm migrator
+  #   docker compose -f docker-compose.prod.yml run --rm --build migrator
   migrator:
     build:
       context: .

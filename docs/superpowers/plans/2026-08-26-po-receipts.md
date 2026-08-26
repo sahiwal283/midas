@@ -777,9 +777,10 @@ git commit -m "chore: bump version to 1.6.0"
 Deployment requires the repo owner's explicit consent and has an ordering constraint that must not be improvised. Report the release as ready, and hand over this sequence for a human to authorize:
 
 1. Confirm the `purchaseorders.attach_receipt` capability is granted in the Zoho integration service's Postgres. Without it every attach 403s and every PO gets a receipt warning.
-2. Ship the tarball and rebuild api + web from `docker-compose.prod.yml` only.
-3. **Run the migrator** — `docker compose -f docker-compose.prod.yml run --rm migrator` — after the rebuild, before announcing the release.
-4. Verify `/api/v1/meta` reports 1.6.0, then confirm `receipts` has `transaction_id` and the `receipts_one_owner` constraint on CT 3220.
+2. Ship the tarball (do **not** rebuild api/web yet).
+3. **Run the migrator first** — `docker compose -f docker-compose.prod.yml run --rm --build migrator`. `--build` is mandatory: CT 3120 already has a migrator image from 0027–0029, and `run` without it reuses that image (old `drizzle/` baked in), prints `SQL migrations complete` and exits 0 having applied nothing. Confirm `applying 0030_receipt_polymorphic_owner` appears in the output. 0030 is additive, so the currently-running 1.5.x API keeps working against the migrated schema — which is why the migration goes first, ahead of the rebuild, rather than after it.
+4. **Then** rebuild api + web from `docker-compose.prod.yml` only.
+5. Verify `/api/v1/meta` reports 1.6.0, then confirm `receipts` has `transaction_id` and the `receipts_one_owner` constraint on CT 3220.
 
 Do not tag; the whole-branch review still follows and a tag placed now could point at a commit that review amends.
 

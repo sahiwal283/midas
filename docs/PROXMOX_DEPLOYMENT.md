@@ -55,7 +55,7 @@ ssh root@192.168.1.210
 cd /opt/midas
 
 # 1. Run migrations + seed
-docker compose -f docker-compose.prod.yml run --rm migrator
+docker compose -f docker-compose.prod.yml run --rm --build migrator
 
 # 2. Start services
 docker compose -f docker-compose.prod.yml up -d api web
@@ -82,7 +82,7 @@ tar czf - --exclude=node_modules --exclude=.git --exclude=.env \
 cd /opt/midas
 docker compose -f docker-compose.prod.yml build
 # If schema changed:
-docker compose -f docker-compose.prod.yml run --rm migrator
+docker compose -f docker-compose.prod.yml run --rm --build migrator
 docker compose -f docker-compose.prod.yml up -d api web
 ```
 
