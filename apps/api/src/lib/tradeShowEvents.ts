@@ -16,6 +16,7 @@ import {
   isInEventWindow,
   type EventPhase,
 } from './eventWindow';
+import { orderSelectableEvents, type SelectableEvent } from './eventSelection';
 
 let cached: Pool | null = null;
 
@@ -92,4 +93,55 @@ export async function listWindowedEvents(today: string): Promise<WindowedEvent[]
       phase: state.phase,
       days: state.days,
     }));
+}
+
+/**
+ * Every event Midas will let a user tag an expense with, ordered selectable
+ * first. Unlike listWindowedEvents this is not date-windowed in SQL: an
+ * accountant reconciling last quarter's spend still needs older shows, and the
+ * table is small enough (hundreds of rows) that filtering in TypeScript keeps
+ * the cutoff rule in one tested place.
+ */
+export async function listSelectableEvents(today: string): Promise<SelectableEvent[]> {
+  const { rows } = await tradeShowPool().query(
+    `SELECT id, name, city, state, start_date, end_date
+     FROM events
+     ORDER BY start_date DESC`,
+  );
+
+  return orderSelectableEvents(
+    rows.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      city: r.city,
+      state: r.state,
+      startDate: dateStr(r.start_date)!,
+      endDate: dateStr(r.end_date)!,
+    })),
+    today,
+  );
+}
+
+/** One event by id, or null. Used to resolve a client's chosen eventId. */
+export async function findSelectableEvent(
+  id: string,
+  today: string,
+): Promise<SelectableEvent | null> {
+  const { rows } = await tradeShowPool().query(
+    `SELECT id, name, city, state, start_date, end_date FROM events WHERE id = $1`,
+    [id],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return orderSelectableEvents(
+    [{
+      id: String(r.id),
+      name: r.name,
+      city: r.city,
+      state: r.state,
+      startDate: dateStr(r.start_date)!,
+      endDate: dateStr(r.end_date)!,
+    }],
+    today,
+  )[0];
 }
