@@ -235,6 +235,20 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     body = { ...body, referenceNumber: normalizeReferenceNumber(body.referenceNumber) };
   }
 
+  // A non-null sourceRefId means an external app (Argo, or the browser
+  // extension's captured page) owns this row's identity: (sourceApp,
+  // sourceRefId) is the pair that app re-imports/dedupes against. Changing
+  // the event here would flip sourceApp to 'trade_show' while leaving that
+  // unrelated ref in place, corrupting the pair — so event edits are refused
+  // on any row Midas didn't create itself. POST / always leaves sourceRefId
+  // null, so only this update path needs the guard.
+  if (body.eventId !== undefined && expense.sourceRefId) {
+    const message = expense.sourceApp === 'trade_show'
+      ? 'This expense came from the trade show app — change its event there.'
+      : 'This expense was captured by the browser extension and its event cannot be changed here.';
+    throw createError(message, 409, 'EVENT_NOT_EDITABLE');
+  }
+
   // Closed accounting periods lock the expense's current month — and reject
   // moving an expense into a closed month.
   const closedPeriods = await getClosedPeriods();
