@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle } from 'lucide-react';
 import { accountantApi, expenseApi } from '../api/expenses';
 import { VendorCombobox } from './VendorCombobox';
-import { EventPicker } from './EventPicker';
+import { EventPicker, useEventPickerAvailable } from './EventPicker';
 import type { Expense } from '../types';
 
 function apiError(err: unknown): { code?: string; message?: string } {
@@ -24,6 +24,9 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
   const [error, setError] = useState('');
   const [form, setForm] = useState({ merchant: '', amount: '', date: '', paymentMethodId: '', eventId: '' });
   const locked = Boolean(expense.zohoExpenseId);
+  // The picker hides itself when the trade show link is off; its label has to
+  // go with it, or the form shows an "Event" heading over nothing.
+  const eventsAvailable = useEventPickerAvailable();
 
   const { data: paymentMethods = [] } = useQuery({
     queryKey: ['payment-methods'],
@@ -106,7 +109,9 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
         </p>
       ) : !editing ? (
         <p className="mt-2 text-xs text-charcoal/40">
-          Fix the merchant, amount, date or payment method without sending it back to the submitter.
+          Fix the merchant, amount, date
+          {eventsAvailable ? ', payment method or event' : ' or payment method'}
+          {' '}without sending it back to the submitter.
         </p>
       ) : (
         <form onSubmit={handleSave} className="mt-3 space-y-3">
@@ -157,14 +162,16 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
               ))}
             </select>
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-charcoal/60">Event</label>
-            <EventPicker
-              value={form.eventId}
-              onChange={(id) => setForm((f) => ({ ...f, eventId: id }))}
-              className={inputCls}
-            />
-          </div>
+          {eventsAvailable && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-charcoal/60">Event</label>
+              <EventPicker
+                value={form.eventId}
+                onChange={(id) => setForm((f) => ({ ...f, eventId: id }))}
+                className={inputCls}
+              />
+            </div>
+          )}
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-danger">
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />

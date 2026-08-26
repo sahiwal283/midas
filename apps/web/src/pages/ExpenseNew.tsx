@@ -5,7 +5,7 @@ import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, Ch
 import { expenseApi, type DuplicateMatch } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { CategoryPicker } from '../components/CategoryPicker';
-import { EventPicker } from '../components/EventPicker';
+import { EventPicker, useEventPickerAvailable } from '../components/EventPicker';
 import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
 import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
@@ -47,6 +47,9 @@ export function ExpenseNew() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [duplicate, setDuplicate] = useState<DuplicateMatch | null>(null);
+  // The picker renders nothing when the trade show link is off, so the Event
+  // field must not render its label either.
+  const eventsAvailable = useEventPickerAvailable();
   const [result, setResult] = useState<{
     autoPushed: boolean;
     pending: boolean;
@@ -323,10 +326,15 @@ export function ExpenseNew() {
     } catch (err: any) {
       const code = err?.response?.data?.error?.code;
       const message = err?.response?.data?.error?.message;
+      // Codes whose server message says something the user can act on — a
+      // closed month, an event deleted in Argo since the picker loaded
+      // (UNKNOWN_EVENT), a trade show link that is down (EVENTS_UNAVAILABLE).
+      // Anything else stays the generic fallback.
+      const serverExplains = ['PERIOD_CLOSED', 'UNKNOWN_EVENT', 'EVENTS_UNAVAILABLE'];
       setError(
         code === 'INCOMPLETE_DRAFT'
           ? 'Merchant and amount are required before submitting.'
-          : code === 'PERIOD_CLOSED' && message
+          : serverExplains.includes(code) && message
             ? message
             : 'Could not submit the expense. Please check the fields and try again.',
       );
@@ -620,13 +628,15 @@ export function ExpenseNew() {
             )}
           </Field>
 
-          <Field label="Event">
-            <EventPicker
-              value={form.eventId}
-              onChange={(id) => set('eventId', id)}
-              className={inputCls}
-            />
-          </Field>
+          {eventsAvailable && (
+            <Field label="Event">
+              <EventPicker
+                value={form.eventId}
+                onChange={(id) => set('eventId', id)}
+                className={inputCls}
+              />
+            </Field>
+          )}
 
           {(user?.role === 'partner' || user?.role === 'developer') && (
             <Field label="Expense type">

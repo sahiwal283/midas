@@ -3,6 +3,29 @@ import { useQuery } from '@tanstack/react-query';
 import { Clock } from 'lucide-react';
 import { expenseApi } from '../api/expenses';
 
+function useEventsQuery() {
+  return useQuery({
+    queryKey: ['events'],
+    queryFn: () => expenseApi.events(),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Whether the picker will render anything — false while the list is still
+ * loading, and false when the trade show link is unavailable.
+ *
+ * Call sites need this because the picker cannot hide its own surroundings:
+ * a form that wrapped a hidden picker in a labelled field would leave a stray
+ * "Event" heading over blank space, which is every environment without
+ * TRADESHOW_DATABASE_URL. Shares one query key with EventPicker, so the two
+ * never disagree and the list is still fetched once.
+ */
+export function useEventPickerAvailable(): boolean {
+  const { data } = useEventsQuery();
+  return data?.available === true;
+}
+
 /**
  * Trade-show event selector, mirroring Argo's own picker: selectable events
  * first, older ones behind a "show past events" toggle.
@@ -26,11 +49,7 @@ export function EventPicker({
 }) {
   const [showPast, setShowPast] = useState(false);
 
-  const { data } = useQuery({
-    queryKey: ['events'],
-    queryFn: () => expenseApi.events(),
-    staleTime: 60_000,
-  });
+  const { data } = useEventsQuery();
 
   if (!data?.available) return null;
 
