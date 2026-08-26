@@ -15,7 +15,14 @@ services:
       target: build
     env_file: .env
     restart: "no"
-    command: sh -c "npm run db:migrate:sql && npm run db:seed"
+    # Calls the entrypoints directly rather than `npm run db:migrate:sql` /
+    # `db:seed`. Those scripts pass `tsx --env-file=../../.env`, which is right
+    # for a laptop but wrong here: `env_file:` above injects the variables into
+    # the process, it does not put a file at /app/.env — so the npm path dies
+    # with `node: ../../.env: not found` before touching the database. That is
+    # why migrations were being applied by hand via psql. WORKDIR is already
+    # /app/apps/api, so these paths are relative to it.
+    command: sh -c "npx tsx src/db/runSqlMigrations.ts && npx tsx src/db/seed.ts"
 
   api:
     build:

@@ -172,8 +172,17 @@ compiled server and nothing else; there is no push, no migration. The
 `db:migrate:sql && db:seed` startup sequence some of this doc's older wording
 assumed belongs to the **dev** target only (`apps/api/Dockerfile:19`), which is
 never what runs on CT 3120. In production, migrations are applied by exactly one
-thing: the one-shot `migrator` service (`docker-compose.prod.yml:11-18`, `command:
-npm run db:migrate:sql && npm run db:seed`).
+thing: the one-shot `migrator` service (`docker-compose.prod.yml`), whose command
+runs `src/db/runSqlMigrations.ts` and then `src/db/seed.ts`.
+
+> **Why it calls the scripts directly.** Until 2026-08-26 that command was
+> `npm run db:migrate:sql && npm run db:seed`, and it had never once worked:
+> both scripts pass `tsx --env-file=../../.env`, which is correct on a laptop
+> but wrong in the container. `env_file:` injects the variables into the
+> process; it does not create `/app/.env`. So the service died with
+> `node: ../../.env: not found` before reaching the database, which is why
+> earlier migrations were applied by hand with `psql`. Leave the npm scripts
+> alone — local development needs the flag.
 
 **The migrator image must be rebuilt every time.** The migrator builds
 `target: build`, which bakes `apps/api/drizzle/` into its image at build time,

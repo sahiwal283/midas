@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.6.1 (2026-08-26)
+
+### A database blip could turn a successful Zoho push into a duplicate record
+
+- **The expense push now contains its own bookkeeping.** Everything that runs
+  after Zoho confirms the record — the transaction mirror write, the receipt
+  lookup, the receipt-warning write and the audit insert — sat inside the outer
+  `try`. A database blip in any of them landed in the outer `catch`, which sets
+  `integration_status = 'failed'` on an expense whose `zoho_expense_id` was
+  already real. A failed expense is re-pushable, so the next retry would have
+  created a second expense in Zoho Books from a push that had actually
+  succeeded. That bookkeeping is now wrapped: a failure there is logged loudly
+  and the push still reports the success it was.
+- The same containment was added around the purchase-order push's audit write,
+  which was its last remaining route to the same outcome. The rest of that path
+  was fixed in 1.6.0.
+
+### The production migrator can actually run now
+
+- **It had never worked.** The `migrator` service ran `npm run db:migrate:sql`,
+  which is `tsx --env-file=../../.env …`. Compose's `env_file:` injects those
+  variables into the process but creates no file, and the image has no
+  `/app/.env` — so the service died with `node: ../../.env: not found` before
+  reaching the database. That is why migrations had been applied by hand with
+  `psql`. It now calls the migration runner and the seed directly; the npm
+  scripts keep their flag, which local development needs.
+- `docs/OPERATIONS.md` records why, so the next person does not rediscover it
+  during a deploy.
+
 ## 1.6.0 (2026-08-26)
 
 ### A purchase order can carry a receipt

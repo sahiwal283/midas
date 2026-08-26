@@ -211,19 +211,29 @@ export async function pushPurchaseOrderToZoho(
       }
     }
 
-    await auditLog({
-      entityType: 'transaction',
-      entityId: tx.id,
-      userId: actorUserId,
-      action: 'zoho.po.pushed',
-      after: result,
-      metadata: {
-        idempotencyKey: payload.idempotencyKey,
-        dryRun: result.dryRun ?? false,
-        receiptAttached,
-        receiptProblem,
-      },
-    });
+    try {
+      await auditLog({
+        entityType: 'transaction',
+        entityId: tx.id,
+        userId: actorUserId,
+        action: 'zoho.po.pushed',
+        after: result,
+        metadata: {
+          idempotencyKey: payload.idempotencyKey,
+          dryRun: result.dryRun ?? false,
+          receiptAttached,
+          receiptProblem,
+        },
+      });
+    } catch (err) {
+      // auditLog is an unguarded insert, so it is the last way a database blip
+      // could reach the outer catch and mark this PO 'failed' — which invites a
+      // re-push of a purchase order Zoho already has.
+      logger.error(
+        { err, transactionId: tx.id, zohoPurchaseOrderId: result.zohoPurchaseOrderId },
+        'Audit write failed after a successful Zoho PO push',
+      );
+    }
 
     return { ok: true, transaction: finalTransaction, zoho: result };
   } catch (err) {
