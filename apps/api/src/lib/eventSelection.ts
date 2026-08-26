@@ -89,6 +89,45 @@ export const CLEARED_EVENT_SOURCE_FIELDS: EventSourceFields = {
   sourceContext: {},
 };
 
+/** Shape of a refusal to change an expense's event. Always 409. */
+export interface EventOwnershipRefusal {
+  code: 'EVENT_NOT_EDITABLE';
+  message: string;
+  status: 409;
+}
+
+/**
+ * Whether an external app owns this row's event, and if so, why editing it
+ * here is refused.
+ *
+ * A non-null `sourceRefId` pairs with `sourceApp` as that app's re-import /
+ * dedupe key (enforced by the `(source_app, source_ref_id)` unique index).
+ * Writing a new event here from Midas's side would touch that pair without
+ * the owning app's knowledge, so any row Midas didn't create itself keeps
+ * its event fixed from Midas's perspective — it can only be changed by the
+ * app that owns it.
+ *
+ * Returns null when Midas owns the row (`sourceRefId` is null) and the event
+ * is safe to edit here.
+ */
+export function eventOwnershipRefusal(
+  sourceApp: string | null,
+  sourceRefId: string | null,
+): EventOwnershipRefusal | null {
+  if (!sourceRefId) return null;
+
+  let message: string;
+  if (sourceApp === 'trade_show') {
+    message = 'This expense came from the trade show app — change its event there.';
+  } else if (sourceApp === 'browser_extension') {
+    message = 'This expense was captured by the browser extension and its event cannot be changed here.';
+  } else {
+    message = `This expense was created by an external app (${sourceApp ?? 'unknown'}) and its event cannot be changed here.`;
+  }
+
+  return { code: 'EVENT_NOT_EDITABLE', message, status: 409 };
+}
+
 /** Looks an event id up; returns null when it does not exist. */
 export type EventLookup = (id: string) => Promise<{ id: string; name: string } | null>;
 

@@ -11,7 +11,7 @@
 
 import { isInClosedPeriods, periodOf, closedPeriodMessage } from './closedPeriods';
 import { editRefusalMessage } from './expenseEdit';
-import { eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS } from './eventSelection';
+import { eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS, eventOwnershipRefusal } from './eventSelection';
 
 /** The expense fields this patch reads. `amount` is the numeric column's string. */
 export interface DetailsEditTarget {
@@ -20,7 +20,9 @@ export interface DetailsEditTarget {
   date: string;
   paymentMethodId: string | null;
   zohoExpenseId: string | null;
-  /** Non-null means Argo created this row and owns its source identity. */
+  /** Which app created this row — read alongside sourceRefId for the refusal message. */
+  sourceApp: string | null;
+  /** Non-null means an external app created this row and owns its source identity. */
   sourceRefId: string | null;
   sourceContext: Record<string, unknown> | null;
 }
@@ -91,18 +93,9 @@ export function planAccountantDetailsEdit(
     };
   }
 
-  // An Argo-created row's (source_app, source_ref_id) pair is the key Argo
-  // re-imports against. Re-tagging it here would break that pair, so the event
-  // on those rows is Argo's to change, not ours.
-  if (patch.event !== undefined && expense.sourceRefId) {
-    return {
-      ok: false,
-      refusal: {
-        code: 'EVENT_NOT_EDITABLE',
-        message: 'This expense came from the trade show app — change its event there.',
-        status: 409,
-      },
-    };
+  if (patch.event !== undefined) {
+    const refusal = eventOwnershipRefusal(expense.sourceApp, expense.sourceRefId);
+    if (refusal) return { ok: false, refusal };
   }
 
   const changes: DetailsEditChanges = {};

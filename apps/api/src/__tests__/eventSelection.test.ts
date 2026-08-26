@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectionCutoff, orderSelectableEvents, eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS, resolveEventPatch } from '../lib/eventSelection';
+import { selectionCutoff, orderSelectableEvents, eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS, resolveEventPatch, eventOwnershipRefusal } from '../lib/eventSelection';
 
 describe('selectionCutoff', () => {
   it('is one month and one day past the end date', () => {
@@ -92,5 +92,39 @@ describe('resolveEventPatch', () => {
       code: 'UNKNOWN_EVENT',
       statusCode: 400,
     });
+  });
+});
+
+describe('eventOwnershipRefusal', () => {
+  it('allows the edit on a Midas-owned row (null sourceRefId)', () => {
+    expect(eventOwnershipRefusal('trade_show', null)).toBeNull();
+    expect(eventOwnershipRefusal(null, null)).toBeNull();
+  });
+
+  it('refuses a trade_show-owned row with trade-show wording', () => {
+    const refusal = eventOwnershipRefusal('trade_show', 'ts-4471');
+    expect(refusal).toMatchObject({ code: 'EVENT_NOT_EDITABLE', status: 409 });
+    expect(refusal?.message).toContain('trade show app');
+  });
+
+  it('refuses a browser_extension-owned row with extension wording, not trade-show wording', () => {
+    const refusal = eventOwnershipRefusal('browser_extension', 'https://example.com/receipt');
+    expect(refusal).toMatchObject({ code: 'EVENT_NOT_EDITABLE', status: 409 });
+    expect(refusal?.message).toContain('browser extension');
+    expect(refusal?.message).not.toContain('trade show app');
+  });
+
+  it('still refuses an unrecognized sourceApp, with a generic message naming it', () => {
+    const refusal = eventOwnershipRefusal('milo', 'payroll-99');
+    expect(refusal).toMatchObject({ code: 'EVENT_NOT_EDITABLE', status: 409 });
+    expect(refusal?.message).toContain('milo');
+  });
+
+  it('still refuses a null sourceApp paired with a non-null sourceRefId', () => {
+    // Shouldn't happen given the app's own write paths, but sourceRefId is
+    // the ownership signal — a row with a ref and no recorded app name is
+    // still not Midas's to edit.
+    const refusal = eventOwnershipRefusal(null, 'orphan-ref');
+    expect(refusal).toMatchObject({ code: 'EVENT_NOT_EDITABLE', status: 409 });
   });
 });

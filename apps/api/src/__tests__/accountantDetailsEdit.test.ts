@@ -7,6 +7,7 @@ const base: DetailsEditTarget = {
   date: '2026-05-05',
   paymentMethodId: null,
   zohoExpenseId: null,
+  sourceApp: null,
   sourceRefId: null,
   sourceContext: {},
 };
@@ -125,7 +126,7 @@ describe('planAccountantDetailsEdit — event re-tag', () => {
   const midasOwned = {
     merchant: 'SPEEDEE MART', amount: '10.46', date: '2026-08-25',
     paymentMethodId: null, zohoExpenseId: null,
-    sourceRefId: null, sourceContext: {},
+    sourceApp: null, sourceRefId: null, sourceContext: {},
   };
 
   it('attaches an event to a Midas-owned expense', () => {
@@ -165,9 +166,22 @@ describe('planAccountantDetailsEdit — event re-tag', () => {
   });
 
   it('refuses to re-tag an Argo-created row, whose (source_app, source_ref_id) is Argo\'s idempotency key', () => {
-    const argoOwned = { ...midasOwned, sourceRefId: 'ts-4471' };
+    const argoOwned = { ...midasOwned, sourceApp: 'trade_show', sourceRefId: 'ts-4471' };
     const plan = planAccountantDetailsEdit(argoOwned, { event: null }, []);
     expect(plan).toMatchObject({ ok: false, refusal: { code: 'EVENT_NOT_EDITABLE', status: 409 } });
+    if (plan.ok) return;
+    expect(plan.refusal.message).toContain('trade show app');
+  });
+
+  it('refuses to re-tag a browser-extension-owned row, with wording that names the extension, not Argo', () => {
+    const extensionOwned = {
+      ...midasOwned, sourceApp: 'browser_extension', sourceRefId: 'https://example.com/receipt',
+    };
+    const plan = planAccountantDetailsEdit(extensionOwned, { event: null }, []);
+    expect(plan).toMatchObject({ ok: false, refusal: { code: 'EVENT_NOT_EDITABLE', status: 409 } });
+    if (plan.ok) return;
+    expect(plan.refusal.message).toContain('browser extension');
+    expect(plan.refusal.message).not.toContain('trade show app');
   });
 
   it('still refuses every edit once pushed to Zoho', () => {
