@@ -28,3 +28,37 @@ export function shouldAttemptPoReceiptAttach(
 ): boolean {
   return Boolean(zohoPurchaseOrderId) && !dryRun;
 }
+
+/**
+ * What became of the PO's receipt during a real (non-dry-run) push.
+ *
+ * `none` is the case the first cut of this feature missed: with no receipt at
+ * all there was nothing to attach, so nothing was flagged and the PO rendered
+ * as a clean "Created". Spec Decision 6 says a receipt-less PO pushes *and is
+ * flagged* — the expense-side `missing_receipt` flag cannot cover it, because
+ * that flag's subquery keys on `receipts.expense_id`, which a PO receipt never
+ * has.
+ */
+export type PoReceiptOutcome =
+  | { kind: 'attached' }
+  | { kind: 'none' }
+  | { kind: 'rejected' }
+  | { kind: 'unreadable'; storagePath: string };
+
+/**
+ * Map a receipt outcome to the problem text that goes into the warning, or
+ * null when there is nothing to warn about. Pure so the "no receipt is still a
+ * warning" rule is covered without a database or a Zoho client.
+ */
+export function poReceiptProblem(outcome: PoReceiptOutcome): string | null {
+  switch (outcome.kind) {
+    case 'attached':
+      return null;
+    case 'none':
+      return 'purchase order pushed with no receipt';
+    case 'rejected':
+      return 'Zoho rejected the receipt upload';
+    case 'unreadable':
+      return `receipt file could not be read (${outcome.storagePath})`;
+  }
+}

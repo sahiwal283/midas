@@ -7,7 +7,12 @@ import { env } from '../config/env';
 import { auditLog } from './audit';
 import { zoho, ZohoServiceError, attachReceiptToBooksPurchaseOrder, type ZohoPoPushResult } from './zoho';
 import { buildZohoPoServicePayload, type PayloadPurchaseOrder } from './zohoPoPayload';
-import { poReceiptWarning, shouldAttemptPoReceiptAttach } from './zohoPoReceipt';
+import {
+  poReceiptProblem,
+  poReceiptWarning,
+  shouldAttemptPoReceiptAttach,
+  type PoReceiptOutcome,
+} from './zohoPoReceipt';
 import { resolveBrandFromEntity } from './zohoBrand';
 import { classifyZohoError } from './zohoErrors';
 import { isCompanyZohoEnabled } from './companies';
@@ -158,31 +163,42 @@ export async function pushPurchaseOrderToZoho(
           where: eq(receipts.transactionId, tx.id),
           orderBy: [asc(receipts.uploadedAt)],
         });
-        if (receipt) {
+
+        let outcome: PoReceiptOutcome;
+        if (!receipt) {
+          // Spec Decision 6: a receipt-less PO pushes and is *flagged*. Not a
+          // hard gate — blocking would strand every PO already in flight
+          // without one — but it must not render as a clean "Created" either.
+          outcome = { kind: 'none' };
+        } else {
           try {
             const buffer = await fs.readFile(path.join(env.UPLOADS_DIR, receipt.storagePath));
-            receiptAttached = await attachReceiptToBooksPurchaseOrder(
+            const attached = await attachReceiptToBooksPurchaseOrder(
               result.zohoPurchaseOrderId,
               { buffer, filename: receipt.filename, mimeType: receipt.mimeType },
               resolveBrandFromEntity(tx.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND,
             );
-            if (!receiptAttached) receiptProblem = 'Zoho rejected the receipt upload';
+            outcome = attached ? { kind: 'attached' } : { kind: 'rejected' };
           } catch (err) {
-            receiptProblem = `receipt file could not be read (${receipt.storagePath})`;
+            outcome = { kind: 'unreadable', storagePath: receipt.storagePath };
             logger.error(
               { err, transactionId: tx.id, storagePath: receipt.storagePath, uploadsDir: env.UPLOADS_DIR },
               'Receipt unreadable — purchase order pushed to Zoho without its receipt',
             );
           }
-          // Surface a missing receipt where the accountant will see it. The
-          // row stays synced — the Books PO is real and must never be re-pushed.
-          if (receiptProblem) {
-            const [rewarned] = await db.update(transactions)
-              .set({ zohoSyncError: poReceiptWarning(receiptProblem), updatedAt: new Date() })
-              .where(eq(transactions.id, tx.id))
-              .returning();
-            if (rewarned) finalTransaction = rewarned;
-          }
+        }
+
+        receiptAttached = outcome.kind === 'attached';
+        receiptProblem = poReceiptProblem(outcome);
+
+        // Surface the problem where the accountant will see it. The row stays
+        // synced — the Books PO is real and must never be re-pushed.
+        if (receiptProblem) {
+          const [rewarned] = await db.update(transactions)
+            .set({ zohoSyncError: poReceiptWarning(receiptProblem), updatedAt: new Date() })
+            .where(eq(transactions.id, tx.id))
+            .returning();
+          if (rewarned) finalTransaction = rewarned;
         }
       } catch (err) {
         // Receipt lookup or the warning write itself failed (e.g. a DB blip),
