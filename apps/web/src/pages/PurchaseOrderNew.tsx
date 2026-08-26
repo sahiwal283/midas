@@ -63,7 +63,6 @@ export function PurchaseOrderNew() {
   const [zohoVendorId, setZohoVendorId] = useState('');
   const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [zohoEntity, setZohoEntity] = useState('');
-  const [poNumber, setPoNumber] = useState('');
   const [taxTotal, setTaxTotal] = useState('0');
   const [lines, setLines] = useState<LineDraft[]>([blankLine(1)]);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +117,6 @@ export function PurchaseOrderNew() {
         zohoVendorId: zohoVendorId || null,
         transactionDate,
         zohoEntity: zohoEntity || null,
-        poNumber: poNumber || null,
         taxTotal: Number(taxTotal) || 0,
         lineItems,
       });
@@ -183,11 +181,7 @@ export function PurchaseOrderNew() {
             onChange={(e) => setTransactionDate(e.target.value)}
           />
         </label>
-        <label className="block text-sm">
-          <span className="text-charcoal/80">PO number</span>
-          <input className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
-        </label>
-        <label className="block text-sm">
+        <label className="block text-sm sm:col-span-2">
           <span className="text-charcoal/80">Company</span>
           <select className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2" value={zohoEntity} onChange={(e) => setZohoEntity(e.target.value)}>
             <option value="">—</option>

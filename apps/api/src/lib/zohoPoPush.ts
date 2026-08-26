@@ -90,7 +90,6 @@ export async function pushPurchaseOrderToZoho(
     id: tx.id,
     vendorName: tx.vendorName,
     zohoVendorId: tx.purchaseOrder?.zohoVendorId ?? null,
-    poNumber: tx.purchaseOrder?.poNumber ?? null,
     receiptCount,
     transactionDate: tx.transactionDate,
     currency: tx.currency,

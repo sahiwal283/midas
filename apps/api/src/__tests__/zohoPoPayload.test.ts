@@ -16,7 +16,6 @@ import { toZohoBooksPoCreateBody } from '../lib/zohoPoPayload';
 const base: ZohoPoServicePayload = {
   idempotencyKey: 'midas-po-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
   transactionId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-  poNumber: null,
   vendor: { name: 'ABC Foods', zohoVendorId: '5254962000007610090' },
   date: '2026-08-10',
   currency: 'USD',

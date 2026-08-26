@@ -46,7 +46,6 @@ const createPoSchema = z.object({
   total: z.coerce.number().nonnegative().optional(),
   description: z.string().optional().nullable(),
   zohoEntity: z.string().optional().nullable(),
-  poNumber: z.string().optional().nullable(),
   zohoVendorId: z.string().optional().nullable(),
   deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -247,7 +246,6 @@ router.post('/purchase-orders', asyncHandler(async (req, res) => {
 
   await db.insert(purchaseOrders).values({
     transactionId: tx.id,
-    poNumber: body.poNumber ?? null,
     zohoVendorId: body.zohoVendorId ?? null,
     deliveryDate: body.deliveryDate ?? null,
     notes: body.notes ?? null,
@@ -287,6 +285,7 @@ router.post('/purchase-orders', asyncHandler(async (req, res) => {
 }));
 
 const updatePoSchema = createPoSchema.partial().extend({
+  poNumber: z.string().optional().nullable(),
   lineItems: z.array(lineItemSchema).optional(),
 });
 
@@ -353,6 +352,8 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     .where(eq(transactions.id, existing.id))
     .returning();
 
+  // po_number is no longer user input: Zoho assigns the number and Midas
+  // records what it assigned. See docs/superpowers/specs/2026-08-26-po-receipts-design.md.
   if (body.poNumber !== undefined || body.zohoVendorId !== undefined || body.deliveryDate !== undefined || body.notes !== undefined) {
     await db.update(purchaseOrders)
       .set({

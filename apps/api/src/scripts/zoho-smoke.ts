@@ -51,7 +51,6 @@ async function main() {
   const sample: ZohoPoServicePayload = {
     idempotencyKey: `smoke-${Date.now()}`,
     transactionId: '00000000-0000-4000-8000-000000000099',
-    poNumber: 'SMOKE-PO',
     vendor: { name: 'Smoke Vendor', zohoVendorId: 'vendor-smoke' },
     date: new Date().toISOString().slice(0, 10),
     currency: 'USD',

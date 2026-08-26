@@ -23,7 +23,6 @@ export interface ZohoPoLineItemPayload {
 export interface ZohoPoServicePayload {
   idempotencyKey: string;
   transactionId: string;
-  poNumber: string | null;
   vendor: { name: string; zohoVendorId: string | null };
   date: string;
   currency: string;
@@ -65,7 +64,6 @@ export interface PayloadPurchaseOrder {
   id: string;
   vendorName: string;
   zohoVendorId?: string | null;
-  poNumber?: string | null;
   transactionDate: string;
   currency: string;
   taxTotal: string;
@@ -85,7 +83,6 @@ export function buildZohoPoServicePayload(po: PayloadPurchaseOrder): ZohoPoServi
   return {
     idempotencyKey: buildPoIdempotencyKey(po.id),
     transactionId: po.id,
-    poNumber: po.poNumber ?? null,
     vendor: {
       name: po.vendorName,
       zohoVendorId: po.zohoVendorId ?? null,
