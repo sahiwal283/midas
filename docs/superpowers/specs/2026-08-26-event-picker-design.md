@@ -129,8 +129,22 @@ Both consumers use it:
   section.
 - **`components/AccountantDetailsEdit.tsx`** — attach, change or clear the
   event on an existing expense. Re-tagging moves the row between Daily and
-  Event Review. Changing the event on an expense already pushed to Zoho goes
-  through the existing `SyncedChangeConfirm` guard, like other corrections.
+  Event Review.
+
+Two guards on re-tagging, both corrections to earlier drafts of this spec made
+while reading the code:
+
+- **Already pushed to Zoho → refused.** `planAccountantDetailsEdit`
+  (`lib/accountantDetailsEdit.ts:57`) rejects *every* field edit once
+  `zoho_expense_id` is set, with `NOT_EDITABLE` / 409. The event re-tag goes
+  through that same planner and inherits the rule. There is no
+  `SyncedChangeConfirm` override on this path — that pattern belongs to the
+  category and company endpoints, which have their own routes.
+- **Argo-owned rows → refused.** An expense with a non-null `source_ref_id`
+  was created by Argo, and its `(source_app, source_ref_id)` pair is the
+  idempotency key Argo re-imports against. Clearing or changing the event on
+  such a row would break that pair, so re-tagging is limited to rows Midas
+  owns (`source_ref_id IS NULL`).
 
 Re-tagging is audit-logged through `planAccountantDetailsEdit`
 (`lib/accountantDetailsEdit.ts`), so the before/after event is recoverable.
