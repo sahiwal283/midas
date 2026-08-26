@@ -25,6 +25,9 @@ import { isDailyAutoPushCandidate, incompleteSubmissionMessage } from '../lib/pe
 import { maybeAutoPushPending } from '../lib/pendingCompletionDb';
 import { notifyUser } from '../lib/notify';
 import { normalizeReferenceNumber } from '@midas/shared';
+import { resolveEventPatch } from '../lib/eventSelection';
+import { findSelectableEvent, isTradeShowLinkEnabled } from '../lib/tradeShowEvents';
+import { localTodayIso } from '../lib/cashLedger';
 
 const router = Router();
 
@@ -49,6 +52,8 @@ const createExpenseSchema = z.object({
   zohoExpenseAccountName: z.string().min(1).optional(),
   /** Partner-role only; coerced to 'business' for every other role. */
   expenseKind: z.enum(['business', 'partner']).optional(),
+  /** Argo event id. null clears the event; absent leaves it unchanged. */
+  eventId: z.string().min(1).nullable().optional(),
 });
 
 const updateExpenseSchema = createExpenseSchema.partial();
@@ -145,6 +150,15 @@ router.get('/:id', asyncHandler(async (req, res) => {
   res.json({ expense: safeExpense });
 }));
 
+/** Resolve a request's eventId against Argo, or refuse if the link is down. */
+async function eventPatch(eventId: string | null | undefined) {
+  if (eventId === undefined || eventId === null) return resolveEventPatch(eventId, async () => null);
+  if (!isTradeShowLinkEnabled()) {
+    throw createError('Event tagging is unavailable — the trade show link is not configured', 503, 'EVENTS_UNAVAILABLE');
+  }
+  return resolveEventPatch(eventId, (id) => findSelectableEvent(id, localTodayIso()));
+}
+
 // Create draft expense
 router.post('/', asyncHandler(async (req, res) => {
   const body = createExpenseSchema.parse(req.body);
@@ -176,6 +190,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
   zohoEntity = await assertActiveCompany(zohoEntity);
 
+  const event = await eventPatch(body.eventId);
+
   const [expense] = await db.insert(expenses).values({
     userId: req.user!.id,
     merchant: body.merchant ?? '',
@@ -192,6 +208,7 @@ router.post('/', asyncHandler(async (req, res) => {
     expenseKind,
     status: 'draft',
     reimbursementStatus,
+    ...(event ?? {}),
   }).returning();
 
   await syncExpenseToTransaction(expense);
@@ -255,6 +272,8 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     if (next === 'pending') reimbursementPatch = { reimbursementStatus: 'pending' };
   }
 
+  const event = await eventPatch(body.eventId);
+
   const [updated] = await db.update(expenses)
     .set({
       ...body,
@@ -262,6 +281,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       ...(body.expenseKind !== undefined
         ? { expenseKind: resolveExpenseKind(body.expenseKind, req.user!.role) }
         : {}),
+      ...(event ?? {}),
       amount: body.amount !== undefined ? String(body.amount) : undefined,
       updatedAt: new Date(),
     })

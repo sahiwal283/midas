@@ -5,6 +5,13 @@
 // filterActiveEvents (trade-show-app/src/utils/eventUtils.ts): an event stays
 // selectable until one month and one day past its end date.
 
+// Type-only: this file (and its pure-function unit tests) must stay
+// importable without a DATABASE_URL/JWT_SECRET — pulling in the real
+// `createError` would drag in ../middleware/error -> ../lib/logger ->
+// ../config/env, which process.exit(1)s outside a fully configured
+// environment. We reuse the same AppError shape by hand instead.
+import type { AppError } from '../middleware/error';
+
 export interface SelectableEventInput {
   id: string;
   name: string;
@@ -81,3 +88,31 @@ export const CLEARED_EVENT_SOURCE_FIELDS: EventSourceFields = {
   sourceLabel: null,
   sourceContext: {},
 };
+
+/** Looks an event id up; returns null when it does not exist. */
+export type EventLookup = (id: string) => Promise<{ id: string; name: string } | null>;
+
+/**
+ * Turn a request's `eventId` into columns to write.
+ *
+ * - `undefined` (key absent)  -> undefined, leave the expense as it is
+ * - `null`                    -> clear the event, back to a daily expense
+ * - an id                     -> that event's source fields
+ * - an unknown id             -> 400, never a silently untagged expense
+ */
+export async function resolveEventPatch(
+  eventId: string | null | undefined,
+  lookup: EventLookup,
+): Promise<EventSourceFields | undefined> {
+  if (eventId === undefined) return undefined;
+  if (eventId === null) return CLEARED_EVENT_SOURCE_FIELDS;
+
+  const event = await lookup(eventId);
+  if (!event) {
+    const err = new Error(`Unknown event: ${eventId}`) as AppError;
+    err.statusCode = 400;
+    err.code = 'UNKNOWN_EVENT';
+    throw err;
+  }
+  return eventSourceFields(event);
+}

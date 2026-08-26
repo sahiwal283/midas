@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectionCutoff, orderSelectableEvents, eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS } from '../lib/eventSelection';
+import { selectionCutoff, orderSelectableEvents, eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS, resolveEventPatch } from '../lib/eventSelection';
 
 describe('selectionCutoff', () => {
   it('is one month and one day past the end date', () => {
@@ -62,6 +62,35 @@ describe('eventSourceFields', () => {
       sourceType: null,
       sourceLabel: null,
       sourceContext: {},
+    });
+  });
+});
+
+describe('resolveEventPatch', () => {
+  const lookup = async (id: string) =>
+    id === 'evt-1' ? { id: 'evt-1', name: 'Champs Spring LV 2026' } : null;
+
+  it('leaves the expense alone when eventId is absent', async () => {
+    expect(await resolveEventPatch(undefined, lookup)).toBeUndefined();
+  });
+
+  it('clears the event when eventId is null', async () => {
+    expect(await resolveEventPatch(null, lookup)).toEqual(CLEARED_EVENT_SOURCE_FIELDS);
+  });
+
+  it('resolves a known event to its source fields', async () => {
+    expect(await resolveEventPatch('evt-1', lookup)).toEqual({
+      sourceApp: 'trade_show',
+      sourceType: 'trade_show_event',
+      sourceLabel: 'Champs Spring LV 2026',
+      sourceContext: { eventId: 'evt-1', eventName: 'Champs Spring LV 2026' },
+    });
+  });
+
+  it('throws UNKNOWN_EVENT rather than silently leaving the expense untagged', async () => {
+    await expect(resolveEventPatch('nope', lookup)).rejects.toMatchObject({
+      code: 'UNKNOWN_EVENT',
+      statusCode: 400,
     });
   });
 });
