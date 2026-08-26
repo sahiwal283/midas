@@ -31,6 +31,7 @@ export const expenseApi = {
     zohoExpenseAccountId?: string;
     zohoExpenseAccountName?: string;
     expenseKind?: 'business' | 'partner';
+    eventId?: string | null;
   }) =>
     client.post<{ expense: Expense }>('/expenses', data).then((r) => r.data.expense),
 
@@ -46,6 +47,7 @@ export const expenseApi = {
     zohoExpenseAccountId: string;
     zohoExpenseAccountName: string;
     expenseKind: 'business' | 'partner';
+    eventId: string | null;
   }>) =>
     client.patch<{ expense: Expense }>(`/expenses/${id}`, data).then((r) => r.data.expense),
 
@@ -56,6 +58,13 @@ export const expenseApi = {
   /** Non-blocking duplicate pre-check for the wizard. */
   checkDuplicate: (data: { merchant: string; amount: number; date: string }) =>
     client.post<{ duplicate: DuplicateMatch | null }>('/expenses/check-duplicate', data).then((r) => r.data),
+
+  /** Argo's event list for the picker. available:false → hide the picker. */
+  events: () =>
+    client.get<{
+      events: Array<{ id: string; name: string; city: string | null; state: string | null; startDate: string; endDate: string; isPast: boolean }>;
+      available: boolean;
+    }>('/events').then((r) => r.data),
 
   zohoEntities: () =>
     client.get<{ entities: Array<{ entity: string; brand: string }> }>('/zoho/entities')
@@ -225,7 +234,7 @@ export const accountantApi = {
   /** Correct the push-blocking fields accountants could see but not fix. */
   updateDetails: (
     id: string,
-    data: { merchant?: string; amount?: number; date?: string; paymentMethodId?: string },
+    data: { merchant?: string; amount?: number; date?: string; paymentMethodId?: string; eventId?: string | null },
   ) =>
     client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/details`, data).then((r) => r.data.expense),
 
