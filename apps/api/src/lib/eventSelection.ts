@@ -50,3 +50,34 @@ export function orderSelectableEvents(
       : a.startDate.localeCompare(b.startDate);
   });
 }
+
+/** The five columns an event selection owns. */
+export interface EventSourceFields {
+  sourceApp: string | null;
+  sourceType: string | null;
+  sourceLabel: string | null;
+  sourceContext: Record<string, unknown>;
+}
+
+/**
+ * Columns to write when an event is chosen. `sourceLabel` comes from the event
+ * row read out of Argo, never from the request — Reports and the Event Review
+ * filter both group on it, so a client-supplied name would fragment them.
+ * `sourceRefId` stays null: Midas owns this row, Argo did not create it.
+ */
+export function eventSourceFields(event: { id: string; name: string }): EventSourceFields {
+  return {
+    sourceApp: 'trade_show',
+    sourceType: 'trade_show_event',
+    sourceLabel: event.name,
+    sourceContext: { eventId: event.id, eventName: event.name },
+  };
+}
+
+/** Columns to write when the event is removed — back to a daily expense. */
+export const CLEARED_EVENT_SOURCE_FIELDS: EventSourceFields = {
+  sourceApp: null,
+  sourceType: null,
+  sourceLabel: null,
+  sourceContext: {},
+};

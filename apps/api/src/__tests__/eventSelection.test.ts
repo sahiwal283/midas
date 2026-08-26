@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectionCutoff, orderSelectableEvents } from '../lib/eventSelection';
+import { selectionCutoff, orderSelectableEvents, eventSourceFields, CLEARED_EVENT_SOURCE_FIELDS } from '../lib/eventSelection';
 
 describe('selectionCutoff', () => {
   it('is one month and one day past the end date', () => {
@@ -43,5 +43,25 @@ describe('orderSelectableEvents', () => {
     const one = [{ id: 'x', name: 'X', city: null, state: null, startDate: '2026-11-01', endDate: '2026-11-03' }];
     expect(orderSelectableEvents(one, '2026-12-03')[0].isPast).toBe(false);
     expect(orderSelectableEvents(one, '2026-12-04')[0].isPast).toBe(true);
+  });
+});
+
+describe('eventSourceFields', () => {
+  it('writes the trade_show contract, taking the label from the event row', () => {
+    expect(eventSourceFields({ id: 'evt-1', name: 'Champs Spring LV 2026' })).toEqual({
+      sourceApp: 'trade_show',
+      sourceType: 'trade_show_event',
+      sourceLabel: 'Champs Spring LV 2026',
+      sourceContext: { eventId: 'evt-1', eventName: 'Champs Spring LV 2026' },
+    });
+  });
+
+  it('clears back to a daily expense', () => {
+    expect(CLEARED_EVENT_SOURCE_FIELDS).toEqual({
+      sourceApp: null,
+      sourceType: null,
+      sourceLabel: null,
+      sourceContext: {},
+    });
   });
 });
