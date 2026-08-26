@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle } from 'lucide-react';
 import { accountantApi, expenseApi } from '../api/expenses';
 import { VendorCombobox } from './VendorCombobox';
+import { EventPicker } from './EventPicker';
 import type { Expense } from '../types';
 
 function apiError(err: unknown): { code?: string; message?: string } {
@@ -21,7 +22,7 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ merchant: '', amount: '', date: '', paymentMethodId: '' });
+  const [form, setForm] = useState({ merchant: '', amount: '', date: '', paymentMethodId: '', eventId: '' });
   const locked = Boolean(expense.zohoExpenseId);
 
   const { data: paymentMethods = [] } = useQuery({
@@ -35,7 +36,7 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
     mutationFn: () => {
       // Send only what the accountant actually touched — the server treats an
       // absent key as "leave alone", so a no-op patch stays a no-op.
-      const patch: { merchant?: string; amount?: number; date?: string; paymentMethodId?: string } = {};
+      const patch: { merchant?: string; amount?: number; date?: string; paymentMethodId?: string; eventId?: string | null } = {};
       const merchant = form.merchant.trim();
       if (merchant && merchant !== (expense.merchant ?? '').trim()) patch.merchant = merchant;
       if (form.amount && Number(form.amount) !== Number(expense.amount)) patch.amount = Number(form.amount);
@@ -43,6 +44,8 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
       if (form.paymentMethodId && form.paymentMethodId !== expense.paymentMethodId) {
         patch.paymentMethodId = form.paymentMethodId;
       }
+      const currentEventId = (expense.sourceContext as { eventId?: string } | null)?.eventId ?? '';
+      if (form.eventId !== currentEventId) patch.eventId = form.eventId || null;
       return accountantApi.updateDetails(expense.id, patch);
     },
     onSuccess: () => {
@@ -58,7 +61,7 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
     onError: (err: unknown) => {
       const { code, message } = apiError(err);
       setError(
-        (code === 'NOT_EDITABLE' || code === 'PERIOD_CLOSED') && message
+        (code === 'NOT_EDITABLE' || code === 'PERIOD_CLOSED' || code === 'EVENT_NOT_EDITABLE') && message
           ? message
           : message ?? 'Could not save changes. Please try again.',
       );
@@ -71,6 +74,7 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
       amount: expense.amount != null ? String(expense.amount) : '',
       date: expense.date ?? '',
       paymentMethodId: expense.paymentMethodId ?? '',
+      eventId: (expense.sourceContext as { eventId?: string } | null)?.eventId ?? '',
     });
     setError('');
     setEditing(true);
@@ -152,6 +156,14 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-charcoal/60">Event</label>
+            <EventPicker
+              value={form.eventId}
+              onChange={(id) => setForm((f) => ({ ...f, eventId: id }))}
+              className={inputCls}
+            />
           </div>
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-danger">

@@ -228,6 +228,8 @@ export interface Expense {
   reviewedAt: string | null;
   reviewedBy?: Pick<User, 'id' | 'name' | 'email'> | null;
   sourceLabel: string | null;
+  /** Embedder context — `{ eventId, eventName }` for trade-show expenses. */
+  sourceContext?: Record<string, unknown> | null;
   sourceUrl: string | null;
   zohoEntity: string | null;
   /** Live Zoho Books expense COA account_id (general/daily expenses). */
