@@ -5,6 +5,7 @@ import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, Ch
 import { expenseApi, type DuplicateMatch } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { CategoryPicker } from '../components/CategoryPicker';
+import { EventPicker } from '../components/EventPicker';
 import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
 import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
@@ -63,6 +64,7 @@ export function ExpenseNew() {
     categoryId: '',
     description: '',
     referenceNumber: '',
+    eventId: '',
     expenseKind: 'business' as 'business' | 'partner',
   });
 
@@ -296,6 +298,7 @@ export function ExpenseNew() {
         categoryId: form.categoryId || undefined,
         description: form.description || undefined,
         referenceNumber: form.referenceNumber.trim() || undefined,
+        eventId: form.eventId || null,
         expenseKind: form.expenseKind,
       };
 
@@ -615,6 +618,14 @@ export function ExpenseNew() {
             {categoryAutoSuggested && !!form.categoryId && (
               <p className="mt-1 text-xs text-charcoal/40">Suggested from the receipt — change if wrong.</p>
             )}
+          </Field>
+
+          <Field label="Event">
+            <EventPicker
+              value={form.eventId}
+              onChange={(id) => set('eventId', id)}
+              className={inputCls}
+            />
           </Field>
 
           {(user?.role === 'partner' || user?.role === 'developer') && (
