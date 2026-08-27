@@ -169,7 +169,7 @@ function RankedTable({ rows, nameHeader }: { rows: ReportRow[]; nameHeader: stri
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-ink/5 text-left text-xs font-semibold uppercase tracking-wider text-muted">
+            <tr className="border-b border-ink/5 text-left field-caption">
               <th className="py-2 pr-2 w-8">#</th>
               <th className="py-2 pr-2">{nameHeader}</th>
               <th className="py-2 pr-2 text-right">Count</th>
@@ -417,7 +417,7 @@ export function Reports() {
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     {entities.map((e) => (
                       <div key={e.name} className="rounded-xl border border-ink/10 bg-white px-4 py-4">
-                        <p className="truncate text-xs font-semibold uppercase tracking-wider text-muted" title={e.name}>
+                        <p className="truncate field-caption" title={e.name}>
                           {e.name}
                         </p>
                         <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">
@@ -487,7 +487,7 @@ export function Reports() {
                 </div>
                 {data.reimbursement.byEmployee.length > 0 && (
                   <Card>
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">By employee</p>
+                    <p className="mb-3 field-caption">By employee</p>
                     <div className="divide-y divide-ink/5 md:hidden">
                       {data.reimbursement.byEmployee.map((r) => (
                         <div key={r.name} className="flex items-center justify-between gap-3 py-2 text-sm">
@@ -501,7 +501,7 @@ export function Reports() {
                     <div className="hidden overflow-x-auto md:block">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-ink/5 text-left text-xs font-semibold uppercase tracking-wider text-muted">
+                          <tr className="border-b border-ink/5 text-left field-caption">
                             <th className="py-2 pr-2">Name</th>
                             <th className="py-2 pr-2 text-right">Outstanding</th>
                             <th className="py-2 pl-3 text-right">Paid</th>

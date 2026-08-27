@@ -150,7 +150,7 @@ export function CategoryRecode({
   if (variant === 'inline') {
     return (
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Category</p>
+        <p className="field-caption">Category</p>
         <div className="mt-1">{body}</div>
       </div>
     );

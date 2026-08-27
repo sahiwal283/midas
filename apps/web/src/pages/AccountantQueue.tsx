@@ -8,6 +8,7 @@ import { StatusBadge, ZohoPushBadge, ReimbursementBadge, REIMBURSEMENT_OPTIONS }
 import { ZohoErrorCategoryChip } from '../components/ZohoSyncCard';
 import { ReceiptDetailsButton } from '../components/ReceiptDetailsButton';
 import { ExpenseQuickViewModal } from '../components/ExpenseQuickViewModal';
+import { Modal } from '../components/Modal';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { ExpenseBrowser, ExpenseTypeChip } from '../components/ExpenseBrowser';
 import { PageHeader } from '../components/PageHeader';
@@ -1101,17 +1102,34 @@ function BulkApproveModal({
   if (awaiting.length > 0) breakdown.push(`${awaiting.length} have unresolved issues`);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-ink">
-          Approve {rows.length} expense{rows.length !== 1 ? 's' : ''}?
-        </h2>
-        <p className="mt-1 text-sm text-charcoal/70">
-          Total selected: <span className="font-semibold text-ink">{fmtMoney(total)}</span>
-        </p>
-
+    <Modal
+      open
+      onClose={onCancel}
+      size="sm"
+      busy={isPending}
+      dismissOnBackdrop={false}
+      title={`Approve ${rows.length} expense${rows.length !== 1 ? 's' : ''}?`}
+      subtitle={`Total selected: ${fmtMoney(total)}`}
+      footer={
+        <>
+          <button onClick={onCancel} disabled={isPending} className="btn-secondary">
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(readyRows.map((e) => e.id), flaggedRows.length)}
+            disabled={isPending || readyRows.length === 0}
+            className="btn-primary"
+          >
+            {isPending
+              ? 'Approving…'
+              : `Approve ${readyRows.length} ready expense${readyRows.length !== 1 ? 's' : ''}`}
+          </button>
+        </>
+      }
+    >
+      <div>
         {breakdown.length > 0 && (
-          <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
             <p className="text-xs font-semibold text-amber-900">Flagged in this selection:</p>
             <ul className="mt-1 space-y-0.5">
               {breakdown.map((line) => (
@@ -1123,8 +1141,8 @@ function BulkApproveModal({
 
         {flaggedRows.length > 0 && (
           <div className="mt-3">
-            <p className="text-xs font-semibold text-muted uppercase tracking-wider">Will be skipped</p>
-            <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto">
+            <p className="field-caption">Will be skipped</p>
+            <ul className="mt-1.5 max-h-32 space-y-0.5 overflow-y-auto">
               {flaggedRows.map((e) => (
                 <li key={e.id} className="text-xs text-charcoal/70">
                   • {e.merchant} — {fmtMoney(Number(e.amount || 0))}
@@ -1134,31 +1152,13 @@ function BulkApproveModal({
           </div>
         )}
 
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            onClick={onCancel}
-            disabled={isPending}
-            className="min-h-11 rounded-lg px-3 py-2 text-sm text-charcoal/70 hover:bg-brand-50 disabled:opacity-50 sm:min-h-0"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onConfirm(readyRows.map((e) => e.id), flaggedRows.length)}
-            disabled={isPending || readyRows.length === 0}
-            className="min-h-11 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-cream hover:bg-brand-700 disabled:opacity-50 sm:min-h-0"
-          >
-            {isPending
-              ? 'Approving…'
-              : `Approve ${readyRows.length} ready expense${readyRows.length !== 1 ? 's' : ''}`}
-          </button>
-        </div>
         {readyRows.length === 0 && (
-          <p className="mt-2 text-right text-xs text-danger">
+          <p role="alert" className="mt-3 text-xs text-danger">
             Every selected expense is flagged — nothing to approve.
           </p>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
 

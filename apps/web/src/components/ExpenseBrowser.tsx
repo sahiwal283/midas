@@ -625,7 +625,7 @@ export function ExpenseBrowser({ expenses, isLoading, mode, onChanged }: Expense
                 if (!window.confirm(`Delete ${selected.size} expense(s)? This cannot be undone.`)) return;
                 bulkDeleteMutation.mutate();
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-cream hover:bg-danger disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-cream hover:bg-[#B03F3F] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Trash2 className="h-4 w-4" />
               {bulkDeleteMutation.isPending ? 'Deleting…' : 'Delete selected'}

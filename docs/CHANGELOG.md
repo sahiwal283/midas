@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.6.3 (2026-08-27)
+
+### Six expenses sat in Zoho Failed because Midas sent another company's account
+
+- **An expense can no longer be pushed with an account belonging to a different
+  Zoho org.** Account ids in Zoho Books are org-scoped. When a company had no
+  mapping for a category, Midas fell back to a single shared column that holds
+  one org's ids — so a Nirvana Kulture expense was sent a Haute Brands account
+  and Zoho rejected it every time, with no way for the accountant to tell why.
+  That fallback is now refused when the account plainly belongs to another org.
+  The push stops inside Midas naming the missing mapping, instead of coming
+  back as an opaque rejection from Zoho.
+- **"Retry Zoho" no longer appears on failures that retrying cannot fix.** Zoho
+  rejects bad field values with its own error code, which the integration
+  service passes back wrapped in a server-error status. Midas read that status,
+  concluded the service was having a bad day, and retried three times before
+  showing the accountant a retry button — for an error that would fail
+  identically forever. These are now recognised as final and shown as a mapping
+  problem to fix. A genuine service outage is still retried as before.
+- Nothing was ever at risk in Zoho Books: these pushes were rejected before any
+  record was created, so no expense was duplicated or half-written.
+
+### Dialogs behave like dialogs
+
+- **Every dialog now shares one shell.** They had each been built separately,
+  which left five different paddings, a single Escape handler between all of
+  them, and no focus trap — a keyboard user could tab out of an open dialog
+  into the page behind it. Focus is now held and restored, Escape closes only
+  the dialog on top, and the page no longer jumps sideways as the scrollbar
+  disappears.
+- **On a phone, dialogs are bottom sheets** that rise from the edge they touch
+  and respect the safe area, rather than being desktop boxes squeezed onto a
+  small screen.
+- **Some headings were invisible.** They rendered in a colour matching their own
+  background and only appeared when you selected the text. Some rows also
+  offered a hover effect that pointed at a style that no longer existed, so
+  they looked interactive and did nothing. Both are fixed.
+
 ## 1.6.2 (2026-08-26)
 
 ### Attach a purchase order's receipt while creating it

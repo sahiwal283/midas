@@ -709,7 +709,7 @@ export function ExpenseDetail() {
                 type="button"
                 disabled={deleteMutation.isPending}
                 onClick={() => deleteMutation.mutate()}
-                className="min-h-11 rounded-lg bg-danger px-2.5 py-1 text-xs font-semibold text-cream hover:bg-danger disabled:opacity-50 lg:min-h-0"
+                className="min-h-11 rounded-lg bg-danger px-2.5 py-1 text-xs font-semibold text-cream hover:bg-[#B03F3F] disabled:opacity-50 lg:min-h-0"
               >
                 {deleteMutation.isPending ? 'Deleting…' : 'Confirm delete'}
               </button>
@@ -758,7 +758,7 @@ export function ExpenseDetail() {
                 type="button"
                 onClick={() => cloneMutation.mutate()}
                 disabled={cloneMutation.isPending}
-                className="mt-3 min-h-11 w-full rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-cream hover:bg-danger disabled:opacity-60 sm:w-auto lg:min-h-0"
+                className="mt-3 min-h-11 w-full rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-cream hover:bg-[#B03F3F] disabled:opacity-60 sm:w-auto lg:min-h-0"
               >
                 {cloneMutation.isPending ? 'Creating…' : 'Create corrected expense'}
               </button>

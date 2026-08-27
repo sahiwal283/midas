@@ -64,7 +64,7 @@ export function ReferenceNumberField({
 
   return (
     <div className={wrapCls}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Reference number</p>
+      <p className="field-caption">Reference number</p>
       {editing ? (
         <div className="mt-2 space-y-2">
           <input

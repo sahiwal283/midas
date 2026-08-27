@@ -245,7 +245,7 @@ function CompaniesTab() {
         </div>
         <table className="hidden w-full text-sm md:table">
           <thead>
-            <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-muted">
+            <tr className="border-b text-left field-caption">
               <th className="px-5 py-3">Name</th>
               <th className="px-5 py-3">Zoho</th>
               <th className="px-5 py-3">Status</th>
@@ -433,7 +433,7 @@ function AuditTab() {
             </div>
             <table className="hidden w-full text-sm md:table">
             <thead>
-              <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-muted">
+              <tr className="border-b text-left field-caption">
                 <th className="px-4 py-3">When</th>
                 <th className="px-4 py-3">Actor</th>
                 <th className="px-4 py-3">Action</th>

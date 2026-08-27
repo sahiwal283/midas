@@ -172,7 +172,7 @@ export function EventBreakdownView({ event, onBack }: { event: string; onBack: (
           </button>
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-200">Viewing trade show</p>
-            <h2 className="truncate font-display text-xl font-semibold">{data.event}</h2>
+            <h2 className="truncate font-display text-xl font-semibold text-cream">{data.event}</h2>
           </div>
         </div>
         <div className="text-right">

@@ -905,7 +905,7 @@ function PaymentMethodEditor({ pm, users, companies, canAssign, onClose, onSaved
 
   return (
     <div className="space-y-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Edit — {pm.label}</h3>
+      <h3 className="field-caption">Edit — {pm.label}</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <label className="mb-1 block text-xs font-medium text-charcoal/80">Label *</label>

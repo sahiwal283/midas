@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { X } from 'lucide-react';
 import client from '../../api/client';
 import { companyApi } from '../../api/companies';
 import { paymentMethodsApi } from '../../api/expenses';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { Modal } from '../../components/Modal';
 import { useAuth } from '../../contexts/AuthContext';
 import type { User } from '../../types';
 
@@ -469,7 +469,7 @@ export function UsersSection() {
       <div className="overflow-x-auto rounded-xl border border-ink/10 bg-white">
         {/* Mobile cards */}
         <div className="md:hidden">
-          <label className="flex min-h-11 cursor-pointer items-center gap-2 border-b border-ink/5 px-4 text-xs font-semibold uppercase tracking-wider text-muted">
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 border-b border-ink/5 px-4 field-caption">
             <input
               type="checkbox"
               checked={allSelected}
@@ -525,7 +525,7 @@ export function UsersSection() {
         </div>
         <table className="hidden w-full text-sm md:table">
           <thead>
-            <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-muted">
+            <tr className="border-b text-left field-caption">
               <th className="px-4 py-3">
                 <input
                   type="checkbox"
@@ -795,33 +795,27 @@ function UserDetailModal({
   const actionBtnCls = 'min-h-11 rounded-lg border px-3.5 py-1.5 text-sm font-medium shadow-sm disabled:opacity-40 sm:min-h-0';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center" onClick={onClose}>
-      <div
-        className="my-4 w-full max-w-2xl rounded-xl bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-ink/5 px-6 py-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-ink">{user.name}</h2>
-              <StatusPill active={user.isActive} />
-              <AuthBadge user={user} />
-            </div>
-            <p className="mt-0.5 truncate text-sm text-muted">
-              {user.email ?? 'No email'}
-              {user.username ? ` · @${user.username}` : ''}
-            </p>
-            <p className="mt-0.5 text-xs text-charcoal/40">
-              Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'never'}
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded p-1.5 text-charcoal/40 hover:bg-brand-50 hover:text-charcoal/70" aria-label="Close">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="space-y-5 px-6 py-5">
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={user.name}
+      titleAdornment={
+        <>
+          <StatusPill active={user.isActive} />
+          <AuthBadge user={user} />
+        </>
+      }
+      subtitle={
+        <>
+          {user.email ?? 'No email'}
+          {user.username ? ` · @${user.username}` : ''}
+          {' · Last login: '}
+          {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'never'}
+        </>
+      }
+    >
+        <div className="space-y-5">
           <ErrorPanel message={error} onDismiss={() => setError('')} />
 
           {/* One-time secrets for this user */}
@@ -838,7 +832,7 @@ function UserDetailModal({
 
           {/* Profile */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Profile</h3>
+            <h3 className="field-caption">Profile</h3>
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-charcoal/70">Name</label>
@@ -916,7 +910,7 @@ function UserDetailModal({
 
           {/* Account actions */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Account</h3>
+            <h3 className="field-caption">Account</h3>
             <div className="mt-2 flex flex-wrap gap-2">
               {user.isActive ? (
                 <button
@@ -958,23 +952,19 @@ function UserDetailModal({
 
           {/* Danger zone */}
           {!isSelf && (
-            <div className="rounded-lg border border-danger/25 bg-danger/10/50 px-4 py-3">
+            <div className="rounded-lg border border-danger/25 bg-danger/[0.06] px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-danger">Delete this user</p>
-                  <p className="text-xs text-danger">Deactivating is usually the right choice — deletion cannot be undone.</p>
+                  <p className="text-xs text-charcoal/70">Deactivating is usually the right choice — deletion cannot be undone.</p>
                 </div>
-                <button
-                  onClick={onDelete}
-                  className="min-h-11 rounded-lg bg-danger px-3.5 py-1.5 text-sm font-semibold text-cream hover:bg-danger sm:min-h-0"
-                >
+                <button onClick={onDelete} className="btn-danger">
                   Delete…
                 </button>
               </div>
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

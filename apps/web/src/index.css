@@ -18,8 +18,12 @@
     @apply bg-cream font-sans text-ink;
   }
 
+  /* No colour here on purpose. `text-ink` in this rule is an *explicit*
+     declaration, so it outranks any colour inherited from a wrapper — a
+     heading placed on a navy surface rendered ink-on-navy and vanished.
+     body is text-ink, so headings still default to ink by inheritance. */
   h1, h2, h3 {
-    @apply font-display tracking-tight text-ink;
+    @apply font-display tracking-tight;
   }
 
   button:not(:disabled),
@@ -59,6 +63,24 @@
 
   .field-label {
     @apply mb-1 block text-xs font-medium text-muted;
+  }
+
+  /* Micro-label above a read-only value. Shared so the detail panes, the
+     quick-view modal and the inline editors all sit on the same baseline. */
+  .field-caption {
+    @apply text-[11px] font-semibold uppercase tracking-[0.07em] text-muted;
+  }
+
+  .field-value {
+    @apply mt-1 text-sm text-ink;
+  }
+
+  .btn-danger {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-cream transition-colors duration-150 hover:bg-[#B03F3F] disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0;
+  }
+
+  .btn-danger-quiet {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-danger/25 bg-white px-3 py-2 text-sm font-medium text-danger transition-colors duration-150 hover:border-danger/40 hover:bg-danger/[0.06] disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-0;
   }
 
   .btn-primary {
