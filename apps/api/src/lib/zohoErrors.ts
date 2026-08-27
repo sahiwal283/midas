@@ -20,6 +20,18 @@ const NETWORK_HINTS = ['econnrefused', 'econnreset', 'etimedout', 'enotfound', '
 
 interface ServiceErrorShape { name: string; status: number; code: string; message: string }
 
+/** Zoho Books error codes are bare integers; the service's own codes are words. */
+function isZohoAssignedCode(code: string): boolean {
+  return /^[0-9]+$/.test(code);
+}
+
+/** Split a terminal rejection into "wrong account/entity" vs "bad field value". */
+function byMessage(message: string): { category: ZohoErrorCategory; retryable: boolean } {
+  const msg = message.toLowerCase();
+  const isMapping = MAPPING_HINTS.some((h) => msg.includes(h));
+  return { category: isMapping ? 'MAPPING_ERROR' : 'VALIDATION_ERROR', retryable: false };
+}
+
 function isServiceError(err: unknown): err is ServiceErrorShape {
   return err instanceof Error && err.name === 'ZohoServiceError'
     && typeof (err as Partial<ServiceErrorShape>).status === 'number'
@@ -34,12 +46,14 @@ export function classifyZohoError(err: unknown): { category: ZohoErrorCategory; 
     }
     if (code.includes('DUPLICATE')) return { category: 'DUPLICATE', retryable: false };
     if (err.status === 429) return { category: 'RATE_LIMIT', retryable: true };
+    // A numeric code is Zoho Books' own (e.g. 1002 "invalid value for field"),
+    // forwarded by the integration service — which wraps it in a 5xx. The
+    // request reached Zoho and was rejected on its contents, so resending the
+    // identical payload can only fail again. Classify by message and stop the
+    // auto-retry, whatever HTTP status the wrapper chose.
+    if (isZohoAssignedCode(code)) return byMessage(err.message);
     if (err.status >= 500) return { category: 'ZOHO_ERROR', retryable: true };
-    if (err.status === 400 || err.status === 422) {
-      const msg = err.message.toLowerCase();
-      const isMapping = MAPPING_HINTS.some((h) => msg.includes(h));
-      return { category: isMapping ? 'MAPPING_ERROR' : 'VALIDATION_ERROR', retryable: false };
-    }
+    if (err.status === 400 || err.status === 422) return byMessage(err.message);
     return { category: 'ZOHO_ERROR', retryable: false };
   }
 
