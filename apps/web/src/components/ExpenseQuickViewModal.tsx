@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Eye, EyeOff, Trash2, X } from 'lucide-react';
+import { ExternalLink, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { accountantApi, expenseApi } from '../api/expenses';
 import {
   StatusBadge,
   ReimbursementBadge,
   ZohoPushBadge,
 } from './StatusBadge';
+import { Modal } from './Modal';
+import { ConfirmModal } from './ConfirmModal';
 import { ReceiptPreview } from './ReceiptPreview';
 import { ReimbursementControl } from './ReimbursementControl';
 import { CategoryRecode } from './CategoryRecode';
@@ -57,14 +59,6 @@ export function ExpenseQuickViewModal({
   });
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  useEffect(() => {
     setReceiptIndex(0);
     setConfirmDelete(false);
     setShowReceipt(true);
@@ -107,141 +101,182 @@ export function ExpenseQuickViewModal({
   const personalCard = Boolean(expense?.paymentMethod?.requiresReimbursement)
     || /personal/i.test(expense?.paymentMethod?.label ?? '');
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="expense-quick-view-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-xl sm:pb-0">
-        <div className="flex items-start justify-between gap-3 border-b border-gold-400/60 bg-brand-800 px-5 py-4 text-cream">
-          <div className="min-w-0">
-            <h2 id="expense-quick-view-title" className="text-lg font-semibold">
-              Expense Details
-            </h2>
-            <p className="mt-0.5 truncate text-sm text-brand-200">
-              {expense?.sourceLabel || expense?.merchant || 'Loading…'}
-            </p>
-          </div>
+  const footer = (
+    <div className="flex w-full flex-wrap items-center justify-between gap-2">
+      <div>
+        {del.allowed && (
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-lg p-1 text-cream/90 hover:bg-white/10"
-            aria-label="Close"
+            onClick={() => setConfirmDelete(true)}
+            className="btn-danger-quiet"
           >
-            <X className="h-5 w-5" />
+            <Trash2 className="h-4 w-4" />
+            Delete
           </button>
-        </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={onClose} className="btn-secondary">
+          Close
+        </button>
+        {expense && (
+          <Link to={`/expenses/${expense.id}`} className="btn-primary" onClick={onClose}>
+            Open full page
+            <ExternalLink className="h-4 w-4" />
+          </Link>
+        )}
+      </div>
+    </div>
+  );
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {isLoading && <p className="text-sm text-muted">Loading…</p>}
-          {error && <p className="text-sm text-danger">Could not load expense.</p>}
-          {expense && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Date" value={expense.date} />
-                <Field label="Amount" value={`${expense.currency} ${Number(expense.amount).toFixed(2)}`} />
-                <Field label="Merchant" value={expense.merchant} />
-                {!isPrivileged && (
-                  <Field label="Category" value={expense.category?.name ?? '—'} />
+  return (
+    <>
+      <Modal
+        open
+        onClose={onClose}
+        size="xl"
+        tone="navy"
+        title="Expense Details"
+        subtitle={expense?.sourceLabel || expense?.merchant || 'Loading…'}
+        footer={footer}
+        bodyClassName="px-5 py-5 sm:px-6"
+      >
+        {isLoading && <ExpenseSkeleton />}
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            Could not load this expense.
+          </p>
+        )}
+
+        {expense && (
+          <div className="space-y-5">
+            {/* ── Facts ─────────────────────────────────────────────── */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+              <Field label="Date" value={expense.date} />
+              <Field
+                label="Amount"
+                value={`${expense.currency} ${Number(expense.amount).toFixed(2)}`}
+                emphasis
+              />
+              <Field label="Merchant" value={expense.merchant} />
+              <Field
+                label="Card used"
+                value={
+                  expense.paymentMethod
+                    ? `${expense.paymentMethod.label}${expense.paymentMethod.lastFour ? ` (···${expense.paymentMethod.lastFour})` : ''}`
+                    : '—'
+                }
+              />
+              <Field label="Submitted by" value={expense.user?.name ?? '—'} />
+              {!isPrivileged && <Field label="Category" value={expense.category?.name ?? '—'} />}
+            </div>
+
+            {/* ── Editable / long-form ──────────────────────────────── */}
+            {(isPrivileged || expense.referenceNumber || expense.description) && (
+              <div className="divide-y divide-ink/[0.07] overflow-hidden rounded-xl border border-ink/10">
+                {isPrivileged && (
+                  <div className="px-4 py-3">
+                    <ReferenceNumberField
+                      expenseId={expense.id}
+                      value={expense.referenceNumber}
+                      zohoExpenseId={expense.zohoExpenseId}
+                      variant="inline"
+                    />
+                  </div>
                 )}
-                <Field
-                  label="Card used"
-                  value={
-                    expense.paymentMethod
-                      ? `${expense.paymentMethod.label}${expense.paymentMethod.lastFour ? ` (···${expense.paymentMethod.lastFour})` : ''}`
-                      : '—'
-                  }
-                />
-                <Field label="Submitted by" value={expense.user?.name ?? '—'} />
+
+                {isPrivileged && (
+                  <div className="px-4 py-3">
+                    <CategoryRecode
+                      expenseId={expense.id}
+                      categoryId={expense.categoryId}
+                      categoryName={expense.category?.name ?? expense.zohoExpenseAccountName ?? null}
+                      zohoExpenseId={expense.zohoExpenseId}
+                      variant="inline"
+                    />
+                  </div>
+                )}
+
+                {!isPrivileged && expense.referenceNumber && (
+                  <div className="px-4 py-3">
+                    <p className="field-caption">Reference number</p>
+                    <p className="field-value">{expense.referenceNumber}</p>
+                  </div>
+                )}
+
+                {expense.description && (
+                  <div className="px-4 py-3">
+                    <p className="field-caption">Description</p>
+                    <p className="field-value whitespace-pre-wrap text-charcoal/80">
+                      {expense.description}
+                    </p>
+                  </div>
+                )}
               </div>
+            )}
 
-              {isPrivileged && (
-                <ReferenceNumberField
-                  expenseId={expense.id}
-                  value={expense.referenceNumber}
-                  zohoExpenseId={expense.zohoExpenseId}
-                  variant="inline"
-                />
-              )}
-
-              {isPrivileged && (
-                <CategoryRecode
-                  expenseId={expense.id}
-                  categoryId={expense.categoryId}
-                  categoryName={expense.category?.name ?? expense.zohoExpenseAccountName ?? null}
-                  zohoExpenseId={expense.zohoExpenseId}
-                  variant="inline"
-                />
-              )}
-
-              {!isPrivileged && expense.referenceNumber && (
+            {/* ── Status ────────────────────────────────────────────── */}
+            <div className="overflow-hidden rounded-xl border border-ink/10 bg-cream">
+              <div className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Reference number</p>
-                  <p className="mt-1 text-sm text-charcoal/80">{expense.referenceNumber}</p>
-                </div>
-              )}
-
-              {expense.description && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Description</p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-charcoal/80">{expense.description}</p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Approval</p>
-                  <div className="mt-1">
+                  <p className="field-caption">Approval</p>
+                  <div className="mt-1.5">
                     <StatusBadge status={expense.status} variant="accountant" />
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Zoho</p>
-                  <div className="mt-1">
+                  <p className="field-caption">Zoho</p>
+                  <div className="mt-1.5">
                     <ZohoPushBadge
                       zohoExpenseId={expense.zohoExpenseId}
                       syncFailed={expense.status === 'zoho_sync_failed'}
                     />
                     {expense.zohoExpenseId && (
-                      <p className="mt-0.5 font-mono text-[10px] text-charcoal/40">{expense.zohoExpenseId}</p>
+                      <p className="mt-1 font-mono text-[10px] text-charcoal/45">
+                        {expense.zohoExpenseId}
+                      </p>
                     )}
                   </div>
                 </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Company</p>
-                  <p className="mt-1 text-sm text-ink">{expense.zohoEntity ?? '—'}</p>
+                <div className="col-span-2 sm:col-span-1">
+                  <p className="field-caption">Company</p>
+                  <p className="field-value">{expense.zohoEntity ?? '—'}</p>
                 </div>
               </div>
 
-              {isPrivileged ? (
-                <ReimbursementControl
-                  expenseId={expense.id}
-                  status={expense.reimbursementStatus as ReimbursementStatus}
-                  zohoExpenseId={expense.zohoExpenseId}
-                  personalCard={personalCard}
-                  variant="inline"
-                />
-              ) : (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Reimbursement</p>
-                  <div className="mt-1">
-                    <ReimbursementBadge status={expense.reimbursementStatus as ReimbursementStatus} showIdle />
-                  </div>
-                </div>
-              )}
+              <div className="border-t border-ink/[0.07] p-4">
+                {isPrivileged ? (
+                  <ReimbursementControl
+                    expenseId={expense.id}
+                    status={expense.reimbursementStatus as ReimbursementStatus}
+                    zohoExpenseId={expense.zohoExpenseId}
+                    personalCard={personalCard}
+                    variant="inline"
+                  />
+                ) : (
+                  <>
+                    <p className="field-caption">Reimbursement</p>
+                    <div className="mt-1.5">
+                      <ReimbursementBadge
+                        status={expense.reimbursementStatus as ReimbursementStatus}
+                        showIdle
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
 
-              {isPrivileged && canReview && (
-                <div className="flex flex-wrap gap-2 rounded-lg border border-ink/10 bg-cream p-3">
+            {/* ── Review actions ────────────────────────────────────── */}
+            {isPrivileged && canReview && (
+              <div className="rounded-xl border border-gold-400/50 bg-gold-50 p-3">
+                <p className="field-caption mb-2 text-gold-800">Review this expense</p>
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={reviewMutation.isPending}
                     onClick={() => reviewMutation.mutate('approve')}
-                    className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-cream hover:bg-success disabled:opacity-50"
+                    className="btn-primary"
                   >
                     Approve
                   </button>
@@ -249,7 +284,7 @@ export function ExpenseQuickViewModal({
                     type="button"
                     disabled={reviewMutation.isPending}
                     onClick={() => reviewMutation.mutate('reject')}
-                    className="rounded-lg bg-danger px-3 py-1.5 text-sm font-semibold text-cream hover:bg-danger disabled:opacity-50"
+                    className="btn-danger"
                   >
                     Reject
                   </button>
@@ -257,124 +292,120 @@ export function ExpenseQuickViewModal({
                     type="button"
                     disabled={reviewMutation.isPending}
                     onClick={() => reviewMutation.mutate('request_info')}
-                    className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                    className="btn-secondary"
                   >
                     Needs further review
                   </button>
                 </div>
-              )}
+              </div>
+            )}
 
-              <div>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                    Receipt{receipts.length > 1 ? `s (${receipts.length})` : ''}
-                  </p>
-                  {receipts.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowReceipt((v) => !v)}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-charcoal/70 hover:text-ink"
-                    >
-                      {showReceipt ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      {showReceipt ? 'Hide' : 'Show'}
-                    </button>
-                  )}
+            {/* ── Receipt ───────────────────────────────────────────── */}
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="field-caption">
+                  Receipt{receipts.length > 1 ? `s (${receipts.length})` : ''}
+                </p>
+                {receipts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowReceipt((v) => !v)}
+                    aria-expanded={showReceipt}
+                    className="btn-ghost gap-1.5 text-xs"
+                  >
+                    {showReceipt ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    {showReceipt ? 'Hide' : 'Show'}
+                  </button>
+                )}
+              </div>
+
+              {receipts.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-ink/15 bg-cream px-4 py-6 text-center">
+                  <p className="text-sm text-muted">No receipt attached.</p>
                 </div>
-                {receipts.length === 0 && (
-                  <p className="text-sm text-charcoal/40">No receipt attached.</p>
-                )}
-                {receipts.length > 1 && (
-                  <div className="mb-2 flex flex-wrap gap-1">
-                    {receipts.map((r, i) => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => setReceiptIndex(i)}
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          i === receiptIndex
-                            ? 'bg-ink text-cream'
-                            : 'bg-brand-50 text-charcoal/70 hover:bg-ink/[0.08]'
-                        }`}
-                      >
-                        {i + 1}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {showReceipt && activeReceipt && (
-                  <ReceiptPreview expenseId={expense.id} receipt={activeReceipt} />
-                )}
-              </div>
+              ) : (
+                <>
+                  {receipts.length > 1 && (
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {receipts.map((r, i) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => setReceiptIndex(i)}
+                          aria-current={i === receiptIndex}
+                          aria-label={`Receipt ${i + 1} of ${receipts.length}`}
+                          className={`h-8 min-w-8 rounded-lg px-2.5 text-xs font-semibold transition-colors duration-150 ${
+                            i === receiptIndex
+                              ? 'bg-brand-500 text-cream'
+                              : 'bg-brand-50 text-charcoal/70 hover:bg-brand-100'
+                          }`}
+                        >
+                          {i + 1}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {showReceipt && activeReceipt && (
+                    <div className="rounded-xl border border-ink/10 bg-cream p-3">
+                      <ReceiptPreview
+                        expenseId={expense.id}
+                        receipt={activeReceipt}
+                        className="max-h-[20rem]"
+                      />
+                      <p className="mt-2 truncate text-center text-[11px] text-muted">
+                        {activeReceipt.filename} · opens full size in a new tab
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </Modal>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink/5 bg-cream px-5 py-3">
-          <div>
-            {del.allowed && !confirmDelete && (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-danger hover:bg-danger/10"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </button>
-            )}
-            {del.allowed && confirmDelete && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-danger">
-                  {del.needsForce
-                    ? 'Zoho-linked — permanently delete?'
-                    : 'Delete this expense permanently?'}
-                </span>
-                <button
-                  type="button"
-                  disabled={deleteMutation.isPending}
-                  onClick={() => deleteMutation.mutate()}
-                  className="rounded-lg bg-danger px-3 py-1.5 text-xs font-semibold text-cream hover:bg-danger disabled:opacity-50"
-                >
-                  {deleteMutation.isPending ? 'Deleting…' : 'Confirm'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal/70 hover:bg-ink/[0.08]"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm font-medium text-charcoal/80 hover:bg-ink/[0.03]"
-            >
-              Close
-            </button>
-            {expense && (
-              <Link
-                to={`/expenses/${expense.id}`}
-                className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-cream hover:bg-brand-700"
-                onClick={onClose}
-              >
-                Open full page
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete this expense?"
+        danger
+        confirmLabel="Delete permanently"
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+        onCancel={() => setConfirmDelete(false)}
+      >
+        {del.needsForce
+          ? 'This expense is already linked to Zoho. Deleting it here removes the Midas record permanently and will not remove it from Zoho Books.'
+          : 'This permanently removes the expense and its receipts. This cannot be undone.'}
+      </ConfirmModal>
+    </>
+  );
+}
+
+function Field({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <p className="field-caption">{label}</p>
+      <p className={emphasis ? 'mt-1 text-base font-semibold tabular-nums text-ink' : 'field-value break-words'}>
+        {value}
+      </p>
     </div>
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+/** Placeholder that matches the loaded layout, so the modal doesn't resize under the user. */
+function ExpenseSkeleton() {
   return (
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-0.5 text-sm text-ink">{value}</p>
+    <div className="animate-pulse space-y-5" aria-hidden="true">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i}>
+            <div className="h-2.5 w-20 rounded bg-ink/10" />
+            <div className="mt-2 h-4 w-32 rounded bg-ink/[0.07]" />
+          </div>
+        ))}
+      </div>
+      <div className="h-24 rounded-xl bg-ink/[0.05]" />
+      <div className="h-40 rounded-xl bg-ink/[0.05]" />
     </div>
   );
 }

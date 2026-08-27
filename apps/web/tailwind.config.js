@@ -66,6 +66,27 @@ export default {
       boxShadow: {
         panel: '0 1px 2px rgba(11, 31, 51, 0.05), 0 4px 16px rgba(11, 31, 51, 0.05)',
       },
+      keyframes: {
+        'overlay-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
+        },
+        // Desktop dialogs settle in place rather than sliding.
+        'modal-in': {
+          from: { opacity: '0', transform: 'translateY(6px) scale(0.98)' },
+          to: { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        // Mobile dialogs are bottom sheets — they rise from the edge they touch.
+        'sheet-in': {
+          from: { transform: 'translateY(100%)' },
+          to: { transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'overlay-in': 'overlay-in 150ms ease-out',
+        'modal-in': 'modal-in 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'sheet-in': 'sheet-in 240ms cubic-bezier(0.16, 1, 0.3, 1)',
+      },
     },
   },
   plugins: [],

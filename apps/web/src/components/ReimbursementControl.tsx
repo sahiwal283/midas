@@ -147,7 +147,7 @@ export function ReimbursementControl({
   if (variant === 'inline') {
     return (
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</p>
+        <p className="field-caption">{title}</p>
         <div className="mt-1">{body}</div>
         {editing && !confirmSynced && (
           <p className="mt-1.5 text-xs text-charcoal/40">{help}</p>

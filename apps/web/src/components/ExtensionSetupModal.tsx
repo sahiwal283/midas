@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Download, Puzzle, X } from 'lucide-react';
+import { Download, Puzzle } from 'lucide-react';
+import { Modal } from './Modal';
 
 // First-run modal that replaces the old /get-extension page. Desktop-only
 // (the extension can't be installed on mobile).
@@ -60,6 +61,15 @@ function extensionInstalled(): boolean {
   return Boolean(document.documentElement.dataset.midasExtension);
 }
 
+/**
+ * Desktop-only, gated here rather than with a `hidden lg:flex` class: the old
+ * approach still mounted the dialog on phones, where it would lock body scroll
+ * and trap focus in something nobody could see.
+ */
+function isDesktop(): boolean {
+  return window.matchMedia('(min-width: 1024px)').matches;
+}
+
 /** Clears the suppression flag and asks the mounted modal to re-open. */
 export function reopenExtensionSetup() {
   try {
@@ -83,6 +93,7 @@ export function ExtensionSetupModal() {
       writeState('installed');
       return;
     }
+    if (!isDesktop()) return;
     if (readState() || isSnoozed()) return;
     const timer = window.setTimeout(() => {
       if (extensionInstalled()) {
@@ -98,7 +109,7 @@ export function ExtensionSetupModal() {
   // dispatches this event (see reopenExtensionSetup).
   useEffect(() => {
     function onShow() {
-      setOpen(true);
+      if (isDesktop()) setOpen(true);
     }
     window.addEventListener(SHOW_EXTENSION_SETUP_EVENT, onShow);
     return () => window.removeEventListener(SHOW_EXTENSION_SETUP_EVENT, onShow);
@@ -125,39 +136,31 @@ export function ExtensionSetupModal() {
   }
 
   return (
-    // Backdrop intentionally has no onClick — close via the X (or download).
-    <div
-      className="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4 lg:flex"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="extension-setup-title"
-    >
-      <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-xl">
-        <div className="flex items-start justify-between gap-3 border-b border-ink/10 px-6 py-4">
-          <div className="min-w-0">
-            <h2
-              id="extension-setup-title"
-              className="flex items-center gap-2 font-display text-xl font-semibold text-ink"
-            >
-              <Puzzle className="h-5 w-5 text-brand-600" />
-              Get the Midas Extension
-            </h2>
-            <p className="mt-0.5 text-sm text-charcoal/60">
-              Capture receipts from any webpage and file expenses without leaving the tab.
-            </p>
+    <Modal
+      open={open}
+      // Backdrop click only snoozes, same as the X — nothing is lost.
+      onClose={handleClose}
+      size="md"
+      title="Get the Midas Extension"
+      subtitle="Capture receipts from any webpage and file expenses without leaving the tab."
+      icon={<Puzzle className="h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />}
+      footer={
+        <div className="flex w-full flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-muted">
+            Reappears next visit until the extension is installed.
+          </p>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleNeverShow} className="btn-ghost">
+              Don&apos;t show this again
+            </button>
+            <button type="button" onClick={handleClose} className="btn-secondary">
+              Remind me later
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="rounded-lg p-1 text-charcoal/40 hover:bg-ink/[0.04] hover:text-ink"
-            aria-label="Close — we'll remind you next time"
-            title="Close — we'll remind you next time"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+      }
+    >
+      <div>
           <div className="mb-5 rounded-xl border border-brand-200 bg-brand-50 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -212,31 +215,8 @@ export function ExtensionSetupModal() {
             <strong className="text-charcoal/80">Firefox:</strong> not supported yet — the extension
             is Chrome/Edge only for now.
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink/10 px-6 py-3">
-          <p className="text-xs text-charcoal/50">
-            This closes for now and reappears next time, until the extension is installed.
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleNeverShow}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-charcoal/60 underline-offset-2 hover:text-ink hover:underline"
-            >
-              Don&apos;t show this again
-            </button>
-            <button
-              type="button"
-              onClick={handleClose}
-              className="rounded-lg border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink hover:bg-ink/[0.04]"
-            >
-              Remind me later
-            </button>
-          </div>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

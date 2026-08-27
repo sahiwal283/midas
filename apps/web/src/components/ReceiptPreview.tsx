@@ -29,11 +29,20 @@ export function ReceiptPreview({
   }
 
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="block">
+    // `className` replaces the height cap rather than stacking with it — two
+    // max-h utilities on one element resolve by stylesheet order, not by the
+    // order they're written here, so the caller's cap would not reliably win.
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+    >
       <img
         src={url}
-        alt={receipt.filename}
-        className={`mx-auto max-h-[28rem] w-auto max-w-full rounded-lg border border-ink/10 object-contain ${className}`}
+        alt={`Receipt: ${receipt.filename}`}
+        loading="lazy"
+        className={`mx-auto w-auto max-w-full rounded-lg border border-ink/10 bg-white object-contain ${className || 'max-h-[28rem]'}`}
       />
     </a>
   );
