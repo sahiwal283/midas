@@ -63,3 +63,31 @@ describe('toZohoBooksPoCreateBody', () => {
     })).toThrow(/Zoho item/);
   });
 });
+
+describe('purchase order notes', () => {
+  it('writes the provenance Zoho has no other record of into notes', () => {
+    const body = toZohoBooksPoCreateBody({
+      ...base,
+      source: { app: 'midas', type: 'purchase_order', id: null, url: null, label: 'Champs Summer LV 2026' },
+      provenance: {
+        submittedBy: 'Shruti Patel', submittedOn: '2026-08-25',
+        pushedBy: 'Sahil Khatri', pushedOn: '2026-08-27',
+        midasUrl: 'https://midas.example/purchase-orders/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      },
+    });
+    expect(body.notes).toBe(
+      'Purchase order — ABC Foods\n'
+      + '\n'
+      + 'Event: Champs Summer LV 2026\n'
+      + 'Submitted by: Shruti Patel on 2026-08-25\n'
+      + 'Pushed by: Sahil Khatri on 2026-08-27\n'
+      + 'Origin: Midas\n'
+      + 'Midas: https://midas.example/purchase-orders/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    );
+  });
+
+  it('falls back to the transaction id when no web base url is set', () => {
+    const body = toZohoBooksPoCreateBody(base);
+    expect(body.notes).toContain('Midas: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  });
+});
