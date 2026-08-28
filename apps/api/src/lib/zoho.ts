@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { logger } from './logger';
+import { buildZohoNote } from './zohoNotes';
 import { matchVendorByName } from './vendorMatch';
 import type { ZohoServicePayload } from './zohoPayload';
 import type { ZohoPoServicePayload } from './zohoPoPayload';
@@ -358,6 +359,20 @@ export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown
     ? (merchant && !notes.toLowerCase().startsWith(merchant.toLowerCase()) ? `${merchant} — ${notes}` : notes)
     : merchant || null;
   const referenceNumber = typeof p.reference_number === 'string' ? p.reference_number.trim() : '';
+  // Zoho keeps the accounting facts but none of the provenance. Fold it into the
+  // one free-text field it does store — the nested `source` object is dropped below.
+  const note = buildZohoNote({
+    headline: description,
+    event: p.source?.label ?? null,
+    submittedBy: p.provenance?.submittedBy ?? null,
+    submittedOn: p.provenance?.submittedOn ?? null,
+    pushedBy: p.provenance?.pushedBy ?? null,
+    pushedOn: p.provenance?.pushedOn ?? null,
+    origin: p.source?.app ?? null,
+    midasUrl: p.provenance?.midasUrl ?? null,
+    midasId: 'expenseId' in p && p.expenseId ? p.expenseId : '',
+    sourceUrl: p.source?.url ?? null,
+  });
   return {
     idempotencyKey: 'idempotencyKey' in p ? p.idempotencyKey : undefined,
     expenseId: 'expenseId' in p ? p.expenseId : undefined,
@@ -365,7 +380,7 @@ export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown
     amount: p.amount,
     currency: p.currency,
     date: p.date,
-    description,
+    description: note,
     zohoEntity: p.zohoEntity,
     brand: 'brand' in p ? p.brand : env.ZOHO_DEFAULT_BRAND,
     account_id: 'account_id' in p ? p.account_id : undefined,

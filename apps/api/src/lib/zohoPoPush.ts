@@ -16,6 +16,7 @@ import {
 import { resolveBrandFromEntity } from './zohoBrand';
 import { classifyZohoError } from './zohoErrors';
 import { isCompanyZohoEnabled } from './companies';
+import { resolveUserNames, toDateOnly } from './userNames';
 import { logger } from './logger';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
@@ -90,6 +91,8 @@ export async function pushPurchaseOrderToZoho(
   }
 
   const receiptCount = await db.$count(receipts, eq(receipts.transactionId, tx.id));
+  // Names, not ids: the Zoho note is read by accountants in Zoho Books.
+  const names = await resolveUserNames([tx.userId, actorUserId]);
 
   const payloadInput: PayloadPurchaseOrder = {
     id: tx.id,
@@ -106,6 +109,10 @@ export async function pushPurchaseOrderToZoho(
     sourceRefId: tx.sourceRefId,
     sourceUrl: tx.sourceUrl,
     sourceLabel: tx.sourceLabel,
+    submitterName: tx.userId ? names.get(tx.userId) ?? null : null,
+    submittedOn: toDateOnly(tx.createdAt),
+    pushedByName: names.get(actorUserId) ?? null,
+    pushedOn: toDateOnly(new Date()),
     lineItems: tx.lineItems
       .slice()
       .sort((a, b) => a.lineNumber - b.lineNumber)

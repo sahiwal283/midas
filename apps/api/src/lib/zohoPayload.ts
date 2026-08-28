@@ -1,10 +1,21 @@
 import { normalizeReferenceNumber, resolveZohoAccountId } from '@midas/shared';
 import { env } from '../config/env';
 import { resolveBrandFromEntity } from './zohoBrand';
+import { midasRecordUrl } from './midasLinks';
 
 // Payload Midas sends to POST /zoho/expenses/create_books on the Zoho Integration Service.
 // Flat account_id / paid_through_account_id match Zoho Books + the integration service contract
 // (Trade Show uses the same field names). Nested category/paymentMethod remain for readiness UI.
+/** Who touched the record and when — folded into the Zoho note, not sent as fields. */
+export interface ZohoProvenance {
+  submittedBy: string | null;
+  submittedOn: string | null;
+  pushedBy: string | null;
+  pushedOn: string | null;
+  /** Deep link back into Midas; null when MIDAS_WEB_BASE_URL is unset. */
+  midasUrl: string | null;
+}
+
 export interface ZohoServicePayload {
   // Stable, deterministic key for duplicate prevention on the service side.
   idempotencyKey: string;
@@ -20,6 +31,7 @@ export interface ZohoServicePayload {
   paid_through_account_id: string | null;
   /** Zoho Books vendor (contact) id resolved from the merchant name — set just before push. */
   vendor_id?: string | null;
+  provenance?: ZohoProvenance;
   /** Zoho Books expense Reference Number — omitted from the wire body when empty. */
   reference_number?: string;
   category: { id: string | null; name: string | null; proposedZohoAccount: string | null };
@@ -64,6 +76,11 @@ export interface PayloadExpense {
   category?: { name: string; zohoAccountId?: string | null } | null;
   paymentMethod?: { label: string; zohoAccountName: string | null } | null;
   receipts?: { id: string }[];
+  /** Resolved by the pusher — Zoho stores names, not Midas user ids. */
+  submitterName?: string | null;
+  submittedOn?: string | null;
+  pushedByName?: string | null;
+  pushedOn?: string | null;
 }
 
 // Deterministic idempotency key — same expense always yields the same key, so a retry
@@ -116,6 +133,13 @@ export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePay
     // Heuristic until decision A (reimbursable vs company-card) is finalized by accounting.
     reimbursable: expense.reimbursementStatus !== 'not_requested',
     submitter: { userId: expense.userId },
+    provenance: {
+      submittedBy: expense.submitterName ?? null,
+      submittedOn: expense.submittedOn ?? null,
+      pushedBy: expense.pushedByName ?? null,
+      pushedOn: expense.pushedOn ?? null,
+      midasUrl: midasRecordUrl('expenses', expense.id),
+    },
     brand,
     zohoEntity: expense.zohoEntity,
     receipt: expense.receipts && expense.receipts.length > 0 ? { count: expense.receipts.length } : null,

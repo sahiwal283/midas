@@ -1,4 +1,7 @@
 import { resolveBrandFromEntity } from './zohoBrand';
+import { buildZohoNote } from './zohoNotes';
+import { midasRecordUrl } from './midasLinks';
+import type { ZohoProvenance } from './zohoPayload';
 import { buildPoIdempotencyKey } from './zohoIds';
 import { env } from '../config/env';
 
@@ -32,6 +35,7 @@ export interface ZohoPoServicePayload {
   zohoEntity: string | null;
   lineItems: ZohoPoLineItemPayload[];
   receipt: { count: number } | null;
+  provenance?: ZohoProvenance;
   source: {
     app: string;
     type: string | null;
@@ -58,6 +62,8 @@ export interface ZohoBooksPoCreateBody {
     rate: number;
     name?: string;
   }>;
+  /** Provenance note — Zoho Books' own purchase-order notes field. */
+  notes?: string;
 }
 
 export interface PayloadPurchaseOrder {
@@ -76,6 +82,11 @@ export interface PayloadPurchaseOrder {
   sourceLabel?: string | null;
   lineItems: ZohoPoLineItemPayload[];
   receiptCount?: number;
+  /** Resolved by the pusher — Zoho stores names, not Midas user ids. */
+  submitterName?: string | null;
+  submittedOn?: string | null;
+  pushedByName?: string | null;
+  pushedOn?: string | null;
 }
 
 export function buildZohoPoServicePayload(po: PayloadPurchaseOrder): ZohoPoServicePayload {
@@ -95,6 +106,13 @@ export function buildZohoPoServicePayload(po: PayloadPurchaseOrder): ZohoPoServi
     zohoEntity: po.zohoEntity,
     lineItems: po.lineItems,
     receipt: po.receiptCount && po.receiptCount > 0 ? { count: po.receiptCount } : null,
+    provenance: {
+      submittedBy: po.submitterName ?? null,
+      submittedOn: po.submittedOn ?? null,
+      pushedBy: po.pushedByName ?? null,
+      pushedOn: po.pushedOn ?? null,
+      midasUrl: midasRecordUrl('purchase-orders', po.id),
+    },
     source: {
       app: po.sourceApp ?? 'midas',
       type: po.sourceType ?? 'purchase_order',
@@ -122,11 +140,26 @@ export function toZohoBooksPoCreateBody(payload: ZohoPoServicePayload): ZohoBook
   if (line_items.length === 0) {
     throw new Error('At least one line item with a Zoho item id is required');
   }
+  // `notes` is a real Zoho Books purchase-order field, so it is safe to send
+  // where the nested `source` object is not.
+  const notes = buildZohoNote({
+    headline: `Purchase order — ${payload.vendor.name}`,
+    event: payload.source?.label ?? null,
+    submittedBy: payload.provenance?.submittedBy ?? null,
+    submittedOn: payload.provenance?.submittedOn ?? null,
+    pushedBy: payload.provenance?.pushedBy ?? null,
+    pushedOn: payload.provenance?.pushedOn ?? null,
+    origin: payload.source?.app ?? null,
+    midasUrl: payload.provenance?.midasUrl ?? null,
+    midasId: payload.transactionId,
+    sourceUrl: payload.source?.url ?? null,
+  });
   return {
     idempotencyKey: payload.idempotencyKey,
     reference_number: payload.idempotencyKey.slice(0, 50),
     vendor_id: vendorId,
     date: payload.date,
     line_items,
+    notes,
   };
 }

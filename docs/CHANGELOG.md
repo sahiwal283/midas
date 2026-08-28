@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.7.0 (2026-08-28)
+
+### Zoho records now say where an expense came from
+
+- **A pushed expense carries its own story.** Until now a Zoho record showed
+  the merchant and the note someone typed — "SPEEDEE MART 109 — Beverage for
+  set up day" — and nothing else. Anyone reconciling in Zoho Books had no way
+  to tell which event it belonged to, who photographed the receipt, who pushed
+  it, or whether it arrived through the browser extension. All of that was
+  already being assembled and then thrown away at the last moment, because Zoho
+  rejects fields it does not recognise. It is now written into the note Zoho
+  keeps:
+
+  ```
+  SPEEDEE MART 109 — Beverage for set up day
+
+  Event: Champs Summer LV 2026
+  Submitted by: Shruti Patel on 2026-08-25
+  Pushed by: Sahil Khatri on 2026-08-28
+  Origin: Midas Extension
+  Midas: https://midas.example/expenses/3658f567
+  Source: https://receipts.speedeemart.com/r/115215
+  ```
+
+- **The Midas line is a link.** Any Zoho record is now one click from the
+  receipt, the conversation and the audit trail behind it.
+- **Purchase orders get the same note**, written into the purchase order's own
+  notes field in Zoho Books.
+- **An expense with no event still has a fixed shape** — the line reads `Event: —`
+  rather than disappearing, so the block looks the same on every record. The
+  capture URL is the one line that appears only when there is one.
+- The note is written to Zoho only. The description you typed in Midas is left
+  exactly as you wrote it, so editing an expense and pushing it again can never
+  stack the block on top of itself.
+
 ## 1.6.3 (2026-08-27)
 
 ### Six expenses sat in Zoho Failed because Midas sent another company's account
