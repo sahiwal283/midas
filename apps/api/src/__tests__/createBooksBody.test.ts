@@ -65,6 +65,19 @@ describe('toCreateBooksBody', () => {
     );
   });
 
+  it('dates the event on the wire when Argo supplied them', () => {
+    const body = toCreateBooksBody({
+      ...base,
+      description: null,
+      source: {
+        app: 'trade_show', type: null, id: null, url: null,
+        label: 'Champs Summer LV 2026',
+        eventStart: '2026-08-24', eventEnd: '2026-08-27',
+      },
+    });
+    expect(body.description).toContain('Event: Champs Summer LV 2026 (Aug 24–27, 2026)');
+  });
+
   it('reads Midas as the origin when nothing external submitted it', () => {
     const body = toCreateBooksBody({ ...base, description: null, source: { app: 'midas', type: null, id: null, url: null, label: null } });
     expect(body.description).toContain('Origin: Midas');

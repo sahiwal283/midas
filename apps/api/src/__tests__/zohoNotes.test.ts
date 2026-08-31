@@ -26,6 +26,33 @@ describe('buildZohoNote', () => {
     );
   });
 
+  it('spells out the event dates so Zoho shows when it ran', () => {
+    const ev = (start: string | null, end: string | null) =>
+      buildZohoNote({ ...BASE, eventStart: start, eventEnd: end })
+        .split('\n').find((l) => l.startsWith('Event:'));
+    // A range inside one month names the month once.
+    expect(ev('2026-08-24', '2026-08-27')).toBe('Event: Champs Summer LV 2026 (Aug 24–27, 2026)');
+    // Crossing a month boundary needs both months, but still one year.
+    expect(ev('2026-01-28', '2026-02-02')).toBe('Event: Champs Summer LV 2026 (Jan 28 – Feb 2, 2026)');
+    // Crossing a year needs both years spelled out.
+    expect(ev('2025-12-28', '2026-01-02')).toBe('Event: Champs Summer LV 2026 (Dec 28, 2025 – Jan 2, 2026)');
+    // A one-day event reads as a single date, not a range against itself.
+    expect(ev('2026-09-14', '2026-09-14')).toBe('Event: Champs Summer LV 2026 (Sep 14, 2026)');
+  });
+
+  it('leaves the event name bare when Argo could not supply dates', () => {
+    // The trade-show link is best-effort; a push must never wait on it.
+    expect(buildZohoNote({ ...BASE, eventStart: null, eventEnd: null }))
+      .toContain('Event: Champs Summer LV 2026\n');
+    expect(buildZohoNote({ ...BASE, eventStart: '2026-08-24', eventEnd: null }))
+      .toContain('Event: Champs Summer LV 2026\n');
+  });
+
+  it('never dates an event it does not have', () => {
+    expect(buildZohoNote({ ...BASE, event: null, eventStart: '2026-08-24', eventEnd: '2026-08-27' }))
+      .toContain('Event: —');
+  });
+
   it('keeps the core lines at a fixed shape, marking absent values', () => {
     const note = buildZohoNote({ ...BASE, event: null });
     expect(note).toContain('Event: —');

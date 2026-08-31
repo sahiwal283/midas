@@ -35,6 +35,45 @@ function originName(sourceApp: string | null | undefined): string {
   return ORIGIN_NAMES[sourceApp] ?? sourceApp;
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Splits a YYYY-MM-DD string by hand rather than through Date: `new Date`
+ * reads a bare date as UTC midnight, so formatting it in a west-of-UTC zone
+ * reports the previous day. Event dates must not drift.
+ */
+function parseIsoDate(value: string): { y: string; m: number; d: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return { y: match[1], m, d };
+}
+
+/**
+ * "Aug 24–27, 2026" — the month and year are stated once when they are shared,
+ * so the common case reads the way a person would write it. Returns null when
+ * either end is missing or malformed; the caller then shows the name alone.
+ */
+export function formatEventDates(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): string | null {
+  if (!start || !end) return null;
+  const a = parseIsoDate(start);
+  const b = parseIsoDate(end);
+  if (!a || !b) return null;
+
+  const month = (p: { m: number }) => MONTHS[p.m - 1];
+  if (a.y === b.y && a.m === b.m && a.d === b.d) return `${month(a)} ${a.d}, ${a.y}`;
+  // An en dash without spaces reads as a range within one month; with spaces
+  // when the months differ, so "Feb" does not appear to attach to "28".
+  if (a.y === b.y && a.m === b.m) return `${month(a)} ${a.d}–${b.d}, ${a.y}`;
+  if (a.y === b.y) return `${month(a)} ${a.d} – ${month(b)} ${b.d}, ${a.y}`;
+  return `${month(a)} ${a.d}, ${a.y} – ${month(b)} ${b.d}, ${b.y}`;
+}
+
 function actorLine(name: string | null | undefined, on: string | null | undefined): string {
   if (!name) return ABSENT;
   return on ? `${name} on ${on}` : name;
@@ -45,6 +84,9 @@ export interface ZohoNoteInput {
   headline: string | null;
   /** Event this belongs to (expenses.source_label). */
   event: string | null;
+  /** Event run dates, read from Argo at push time. Omitted when unavailable. */
+  eventStart?: string | null;
+  eventEnd?: string | null;
   submittedBy: string | null;
   submittedOn: string | null;
   pushedBy: string | null;
@@ -68,8 +110,13 @@ export interface ZohoNoteInput {
 export function buildZohoNote(input: ZohoNoteInput): string {
   const max = input.maxLength ?? ZOHO_NOTE_MAX;
 
+  const eventDates = input.event ? formatEventDates(input.eventStart, input.eventEnd) : null;
+  const eventLine = input.event
+    ? `${input.event}${eventDates ? ` (${eventDates})` : ''}`
+    : ABSENT;
+
   const lines = [
-    `Event: ${input.event || ABSENT}`,
+    `Event: ${eventLine}`,
     `Submitted by: ${actorLine(input.submittedBy, input.submittedOn)}`,
     `Pushed by: ${actorLine(input.pushedBy, input.pushedOn)}`,
     `Origin: ${originName(input.origin)}`,

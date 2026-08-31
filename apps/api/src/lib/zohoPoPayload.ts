@@ -42,6 +42,8 @@ export interface ZohoPoServicePayload {
     id: string | null;
     url: string | null;
     label: string | null;
+    eventStart?: string | null;
+    eventEnd?: string | null;
   };
 }
 
@@ -87,6 +89,9 @@ export interface PayloadPurchaseOrder {
   submittedOn?: string | null;
   pushedByName?: string | null;
   pushedOn?: string | null;
+  /** Event run dates, resolved from Argo by the pusher. */
+  eventStartDate?: string | null;
+  eventEndDate?: string | null;
 }
 
 export function buildZohoPoServicePayload(po: PayloadPurchaseOrder): ZohoPoServicePayload {
@@ -119,6 +124,8 @@ export function buildZohoPoServicePayload(po: PayloadPurchaseOrder): ZohoPoServi
       id: po.sourceRefId ?? null,
       url: po.sourceUrl ?? null,
       label: po.sourceLabel ?? null,
+      eventStart: po.eventStartDate ?? null,
+      eventEnd: po.eventEndDate ?? null,
     },
   };
 }
@@ -145,6 +152,8 @@ export function toZohoBooksPoCreateBody(payload: ZohoPoServicePayload): ZohoBook
   const notes = buildZohoNote({
     headline: `Purchase order — ${payload.vendor.name}`,
     event: payload.source?.label ?? null,
+    eventStart: payload.source?.eventStart ?? null,
+    eventEnd: payload.source?.eventEnd ?? null,
     submittedBy: payload.provenance?.submittedBy ?? null,
     submittedOn: payload.provenance?.submittedOn ?? null,
     pushedBy: payload.provenance?.pushedBy ?? null,

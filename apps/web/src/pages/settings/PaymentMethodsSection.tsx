@@ -115,23 +115,36 @@ export function PaymentMethodsSection() {
     queryKey: ['companies'],
     queryFn: () => companyApi.list(),
   });
-  const zohoCompanies = useMemo(
-    () => companies.filter((c) => c.zohoEnabled && c.isActive !== false),
+  // Every active company, not just the ones that post to Zoho. A company with
+  // zoho_enabled=false still needs its cards recorded in Midas — the flag keeps
+  // its expenses out of the push pipeline, it is not a reason to block
+  // bookkeeping. Filtering here hid Summitt Labs from the picker entirely.
+  const selectableCompanies = useMemo(
+    () => companies.filter((c) => c.isActive !== false),
     [companies],
   );
+  const zohoEnabledNames = useMemo(
+    () => new Set(companies.filter((c) => c.zohoEnabled).map((c) => c.name)),
+    [companies],
+  );
+  const postsToZoho = (name: string | null | undefined): boolean =>
+    !!name && zohoEnabledNames.has(name);
   useEffect(() => {
-    if (!company && zohoCompanies.length > 0) setCompany(zohoCompanies[0].name);
-  }, [company, zohoCompanies]);
+    if (!company && selectableCompanies.length > 0) setCompany(selectableCompanies[0].name);
+  }, [company, selectableCompanies]);
 
   // Accounts are fetched per company, so a card's picker always shows its OWN
   // company's accounts rather than whichever company the page selector happens
   // to be on. React Query dedupes and caches, so a company already loaded is free.
+  // Only Zoho-posting companies have a chart of accounts to fetch. Asking for
+  // one that does not returns "Brand '<name>' not found or disabled", which
+  // would surface as a spurious failure banner.
   const neededCompanies = useMemo(() => {
     const names = new Set<string>();
-    if (company) names.add(company);
-    if (form.defaultZohoEntity) names.add(form.defaultZohoEntity);
+    if (postsToZoho(company)) names.add(company);
+    if (postsToZoho(form.defaultZohoEntity)) names.add(form.defaultZohoEntity);
     return [...names];
-  }, [company, form.defaultZohoEntity]);
+  }, [company, form.defaultZohoEntity, zohoEnabledNames]);
 
   const accountQueries = useQueries({
     queries: neededCompanies.map((name) => ({
@@ -308,14 +321,16 @@ export function PaymentMethodsSection() {
           onChange={(e) => setCompany(e.target.value)}
           className="rounded-lg border border-ink/15 px-3 py-3 text-sm focus:border-brand-500 focus:outline-none lg:py-2"
         >
-          {zohoCompanies.map((c) => (
+          {selectableCompanies.map((c) => (
             <option key={c.id} value={c.name}>{c.name}</option>
           ))}
         </select>
         <span className="text-xs text-charcoal/40">
-          {accountsLoading
-            ? 'Loading Zoho accounts…'
-            : `${accounts.length} Zoho paid-through accounts · ${unclaimedAccounts.length} not yet linked to a card`}
+          {!postsToZoho(company)
+            ? 'This company does not post to Zoho — cards are recorded in Midas only'
+            : accountsLoading
+              ? 'Loading Zoho accounts…'
+              : `${accounts.length} Zoho paid-through accounts · ${unclaimedAccounts.length} not yet linked to a card`}
         </span>
       </div>
 
@@ -381,7 +396,7 @@ export function PaymentMethodsSection() {
                 className={inputCls}
               >
                 <option value="">— Select company —</option>
-                {zohoCompanies.map((c) => (
+                {selectableCompanies.map((c) => (
                   <option key={c.id} value={c.name}>{c.name}</option>
                 ))}
               </select>
@@ -400,9 +415,25 @@ export function PaymentMethodsSection() {
                 })}
                 value={form.zohoAccountName}
                 onChange={(id) => set('zohoAccountName', id)}
-                placeholder={form.defaultZohoEntity ? 'Search Zoho accounts…' : 'Pick a company first'}
-                disabled={!form.defaultZohoEntity || accountsFor(form.defaultZohoEntity).loading}
+                placeholder={
+                  !form.defaultZohoEntity
+                    ? 'Pick a company first'
+                    : !postsToZoho(form.defaultZohoEntity)
+                      ? 'Not applicable'
+                      : 'Search Zoho accounts…'
+                }
+                disabled={
+                  !form.defaultZohoEntity
+                  || !postsToZoho(form.defaultZohoEntity)
+                  || accountsFor(form.defaultZohoEntity).loading
+                }
               />
+              {form.defaultZohoEntity && !postsToZoho(form.defaultZohoEntity) && (
+                <p className="mt-1 text-xs text-charcoal/50">
+                  {form.defaultZohoEntity} does not post to Zoho, so this card needs no
+                  paid-through account.
+                </p>
+              )}
             </div>
           </div>
           <div className="mt-3 flex flex-col gap-2">
@@ -480,7 +511,7 @@ export function PaymentMethodsSection() {
                   zohoDisabled={!pm.defaultZohoEntity || accountsFor(pm.defaultZohoEntity).loading || accountsFor(pm.defaultZohoEntity).failed}
                   zohoMismatch={rowMismatch(pm)}
                   companyLabel={pm.defaultZohoEntity ?? company}
-                  companies={zohoCompanies}
+                  companies={selectableCompanies}
                   editing={editingId === pm.id}
                   isAdmin={isAdmin}
                   users={users}
@@ -508,7 +539,7 @@ export function PaymentMethodsSection() {
                   zohoDisabled
                   zohoMismatch={false}
                   companyLabel={pm.defaultZohoEntity ?? company}
-                  companies={zohoCompanies}
+                  companies={selectableCompanies}
                   editing={editingId === pm.id}
                   isAdmin={isAdmin}
                   users={users}
@@ -549,7 +580,7 @@ export function PaymentMethodsSection() {
                   zohoDisabled={!pm.defaultZohoEntity || accountsFor(pm.defaultZohoEntity).loading || accountsFor(pm.defaultZohoEntity).failed}
                   zohoMismatch={rowMismatch(pm)}
                   companyLabel={pm.defaultZohoEntity ?? company}
-                  companies={zohoCompanies}
+                  companies={selectableCompanies}
                   editing={editingId === pm.id}
                   isAdmin={isAdmin}
                   users={users}
@@ -579,7 +610,7 @@ export function PaymentMethodsSection() {
                   zohoDisabled
                   zohoMismatch={false}
                   companyLabel={pm.defaultZohoEntity ?? company}
-                  companies={zohoCompanies}
+                  companies={selectableCompanies}
                   editing={editingId === pm.id}
                   isAdmin={isAdmin}
                   users={users}

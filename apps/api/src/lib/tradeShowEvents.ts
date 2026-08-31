@@ -184,3 +184,32 @@ export async function findSelectableEvent(
     today,
   )[0];
 }
+
+/**
+ * Run dates for an event, for the note Midas writes onto Zoho records.
+ *
+ * Best-effort by contract: an unset link, an unreachable Argo, a malformed or
+ * unknown id all return null so the note falls back to the event name alone.
+ * A Zoho push must never fail because a cosmetic lookup did.
+ */
+export async function tryEventDates(
+  eventId: string | null | undefined,
+): Promise<{ startDate: string; endDate: string } | null> {
+  if (!eventId || !isTradeShowLinkEnabled()) return null;
+  try {
+    const { rows } = await tradeShowPool().query<EventRow>(
+      `SELECT id, name, city, state, start_date, end_date FROM events WHERE id = $1`,
+      [eventId],
+    );
+    const r = rows[0];
+    if (!r) return null;
+    const startDate = dateStr(r.start_date);
+    const endDate = dateStr(r.end_date);
+    return startDate && endDate ? { startDate, endDate } : null;
+  } catch (err) {
+    // console, not lib/logger: that pulls in config/env, which this module
+    // must stay free of so it loads in unit tests without a configured env.
+    console.warn('[events] date lookup failed for', eventId, '- name only:', err);
+    return null;
+  }
+}

@@ -364,6 +364,8 @@ export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown
   const note = buildZohoNote({
     headline: description,
     event: p.source?.label ?? null,
+    eventStart: p.source?.eventStart ?? null,
+    eventEnd: p.source?.eventEnd ?? null,
     submittedBy: p.provenance?.submittedBy ?? null,
     submittedOn: p.provenance?.submittedOn ?? null,
     pushedBy: p.provenance?.pushedBy ?? null,
