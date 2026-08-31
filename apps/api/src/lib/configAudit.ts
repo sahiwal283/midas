@@ -2,7 +2,7 @@
  * Startup audit for production configuration.
  *
  * Several Midas features sit behind an adapter that no-ops when its env var is
- * unset — web push, the payroll drawer, the trade-show calendar, Telegram. That
+ * unset — web push, the payroll drawer, the trade-show calendar. That
  * is deliberate (a laptop should not need them), but it means a production box
  * missing those keys degrades *silently*: no error, no failed request, the
  * feature simply stops existing.
@@ -37,7 +37,6 @@ export const PRODUCTION_REQUIREMENTS: ConfigRequirement[] = [
   { keys: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'], feature: 'Web push notifications' },
   { keys: ['PAYROLL_DATABASE_URL'], feature: 'Cashbook payroll drawer' },
   { keys: ['TRADESHOW_DATABASE_URL'], feature: 'Trade show event calendar' },
-  { keys: ['TELEGRAM_BOT_TOKEN'], feature: 'Telegram notifications' },
   { keys: ['ZOHO_SERVICE_TOKEN', 'ZOHO_SERVICE_BASE_URL'], feature: 'Zoho Books sync' },
 ];
 
