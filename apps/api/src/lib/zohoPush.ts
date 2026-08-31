@@ -19,6 +19,7 @@ import { classifyZohoError } from './zohoErrors';
 import { syncExpenseToTransaction } from './syncExpenseTransaction';
 import { isCompanyZohoEnabled } from './companies';
 import { resolveUserNames, toDateOnly } from './userNames';
+import { tryEventDates } from './tradeShowEvents';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -78,6 +79,9 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
   const categoryEntityAccountId = await resolveCategoryEntityAccountId(expense.categoryId, expense.zohoEntity);
   // Names, not ids: the Zoho note is read by accountants in Zoho Books.
   const names = await resolveUserNames([expense.userId, actorUserId]);
+  // Event run dates live only in Argo. Best-effort: the note degrades to the
+  // event name alone rather than the push failing on a cosmetic lookup.
+  const eventDates = await tryEventDates(expense.sourceContext?.eventId);
   const payload = buildZohoServicePayload({
     ...expense,
     categoryEntityAccountId,
@@ -85,6 +89,8 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
     submittedOn: toDateOnly(expense.createdAt),
     pushedByName: names.get(actorUserId) ?? null,
     pushedOn: toDateOnly(new Date()),
+    eventStartDate: eventDates?.startDate ?? null,
+    eventEndDate: eventDates?.endDate ?? null,
   });
   // Best-effort vendor: match or create a Books vendor from the merchant so
   // the Zoho record is searchable by name. Never blocks the push.

@@ -48,6 +48,8 @@ export interface ZohoServicePayload {
     id: string | null;
     url: string | null;
     label: string | null;
+    eventStart?: string | null;
+    eventEnd?: string | null;
   };
 }
 
@@ -73,6 +75,9 @@ export interface PayloadExpense {
   sourceRefId?: string | null;
   sourceUrl?: string | null;
   sourceLabel?: string | null;
+  /** Event run dates, resolved from Argo by the pusher. */
+  eventStartDate?: string | null;
+  eventEndDate?: string | null;
   category?: { name: string; zohoAccountId?: string | null } | null;
   paymentMethod?: { label: string; zohoAccountName: string | null } | null;
   receipts?: { id: string }[];
@@ -149,6 +154,8 @@ export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePay
       id: expense.sourceRefId ?? null,
       url: expense.sourceUrl ?? null,
       label: expense.sourceLabel ?? null,
+      eventStart: expense.eventStartDate ?? null,
+      eventEnd: expense.eventEndDate ?? null,
     },
   };
 }

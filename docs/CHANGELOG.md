@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.8.0 (2026-08-31)
+
+### Zoho notes say when the event ran
+
+- **The event line now carries its dates**, so a record reads
+  `Event: Champs Summer LV 2026 (Aug 24–27, 2026)`. Naming the event was not
+  enough to tell whether a receipt fell inside the show. An event spanning
+  months reads `(Jan 28 – Feb 2, 2026)`, and a one-day event reads
+  `(Sep 14, 2026)` rather than a range against itself.
+- Dates come from the trade show app at push time, which means expenses tagged
+  before this release get them too. If that link is down the line falls back to
+  the event name alone — a push is never held up by a cosmetic lookup.
+
+### Payment methods can be added to companies that do not post to Zoho
+
+- **Summitt Labs was missing from the company dropdown.** The picker listed
+  only companies that post to Zoho, and that same list fed both the page
+  selector and the New Payment Method form, so there was no way to record a
+  Summitt Labs card at all. That flag means "does not post to Zoho", not
+  "keeps no records" — Midas still has to track the cards and keep its own
+  books straight. Every active company is now listed.
+- **For a company that does not post to Zoho, the paid-through account picker
+  is switched off** and says so, because there is no Zoho organisation to point
+  it at. Nothing else about the card changes, and its expenses still stay out
+  of the Zoho pipeline exactly as before.
+
 ## 1.7.0 (2026-08-28)
 
 ### Zoho records now say where an expense came from

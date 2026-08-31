@@ -92,6 +92,8 @@ describe('buildZohoServicePayload', () => {
     expect(p.source).toEqual({
       app: 'argo', type: 'trade_show', id: 'booth-99',
       url: 'https://argo/expense/9', label: 'Argo • Booth 99',
+      // Dates are resolved from Argo by the pusher, not carried on the expense.
+      eventStart: null, eventEnd: null,
     });
   });
 
