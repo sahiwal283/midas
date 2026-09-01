@@ -150,7 +150,8 @@ X-External-Reference-Type: expense_receipt
 X-External-Reference-ID: receipt:<receipts.id>
 ```
 
-Operational history of earlier Midas ↔ OCR probes: `docs/ocr-integration.md`.
+Operational history of the earlier Midas ↔ OCR probes lives in git history
+(`docs/ocr-integration.md`, removed 2026-08-31).
 
 ---
 

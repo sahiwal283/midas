@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.8.1 (2026-09-01)
+
+### The repo got its housekeeping — nothing about the running product changed
+
+- **A README now exists.** The repo never had a front door; newcomers landed in
+  `CLAUDE.md` or guessed. The README covers what Midas is, the workspace
+  layout, quickstart, seed credentials, and a map of every surviving document.
+- **The architecture and database docs tell the truth again.** Both were
+  written in May and silently left behind by four months of shipping.
+  They are rewritten from the current code with mermaid diagrams GitHub
+  renders: a system/deployment graph, the expense lifecycle, and the schema
+  as domain-grouped ERDs.
+- **Sixty-four stale documents are gone.** Completed migration handoffs,
+  resolved blockers, sign-off packages, and every shipped design spec read as
+  equally authoritative next to the live docs — the dangerous kind of clutter,
+  where a future reader trusts a diagnosis that was corrected months ago.
+  `docs/` now holds 18 files and every one is current. Git history keeps the
+  rest.
+- **Provably dead code is removed**: an accidentally committed curl cookie
+  file, the Telegram notifier nothing ever called (and its env wiring), and
+  eight one-off seed/sync scripts whose migrations completed months ago. The
+  three recovery tools stay and are now wired as `npm run recover:*` so they
+  can be found when needed.
+- All sixteen merged feature branches, local and remote, are deleted.
+  No user-visible behavior changed; 622 API tests pass untouched.
+
 ## 1.8.0 (2026-08-31)
 
 ### Zoho notes say when the event ran

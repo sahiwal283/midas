@@ -6,7 +6,7 @@
 > Save Capture below are historical.
 
 
-Reworked 2026-08-10 (see `docs/superpowers/specs/2026-08-10-extension-rework-design.md`).
+Reworked 2026-08-10 (extension-rework design, git history).
 The extension has **two workflows**, and both now flow through a **drag-to-crop** step:
 
 | | Save Capture | New Expense |

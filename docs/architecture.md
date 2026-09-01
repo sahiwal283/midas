@@ -2,15 +2,147 @@
 
 ## Overview
 
-Midas is the canonical Expense Engine: a standalone internal expense platform that other internal apps (Argo, Milo, Trade Show App, etc.) embed rather than each implementing their own expense tracking, OCR, or reimbursement workflow. See `docs/EMBEDDING.md` for the two supported embedding strategies (service delegation over the app-to-app API, or direct use of Midas's npm packages).
+Midas is the canonical Expense Engine: a standalone internal expense platform
+that other internal apps (the Trade Show app, Argo, Milo, …) embed rather than
+each implementing their own expense tracking, OCR, or reimbursement workflow.
+See `docs/EMBEDDING.md` for the two embedding strategies (service delegation
+over the app-to-app API, or direct use of Midas's npm packages).
 
-Midas owns the **complete** expense system end to end, including OCR — there is exactly one OCR implementation (the canonical `ocr-service` engine at `~/Work/services/ocrService`, consumed over HTTP via `@midas/ocr-client`), used identically whether Midas is standalone or embedded. See `docs/OCR_ENGINE.md`.
-
-No embedder-specific logic (e.g. anything trade-show-specific) lives in Midas. Every expense can be linked to an arbitrary external owning entity via the polymorphic `ownerType`/`ownerId` pair (`sourceApp`/`sourceRefId` columns) — see "Extensibility: polymorphic ownership" below.
+No embedder-specific logic lives in Midas. Every expense can be linked to an
+arbitrary external owning entity via the opaque `sourceApp`/`sourceRefId` pair —
+see "Extensibility: polymorphic ownership" below.
 
 ---
 
-## Repo Structure
+## System diagram
+
+```mermaid
+flowchart LR
+    subgraph Clients
+        B[Browser / PWA]
+        X[Chrome extension]
+        E[Embedder apps<br/>Trade Show, Argo, Milo]
+    end
+
+    subgraph Proxmox host 192.168.1.190
+        subgraph CT 104 npmplus
+            N[nginx proxy manager<br/>TLS termination]
+        end
+        subgraph CT 3120 midas-app-prod
+            W[midas-web-1<br/>nginx + React build]
+            A[midas-api-1<br/>Express + Drizzle]
+            U[(uploads/<br/>bind mount)]
+        end
+        subgraph CT 3220 midas-db-prod
+            P[(PostgreSQL 15)]
+        end
+        AK[CT 111 Authentik<br/>OIDC SSO]
+        TS[(Trade show DB<br/>read-only)]
+        PR[(Payroll DB<br/>read-only)]
+    end
+
+    subgraph External services
+        O[OCR engine<br/>CT 9500 :8000]
+        Z[Zoho integration service<br/>CT 9503]
+        ZB[Zoho Books]
+    end
+
+    B -->|HTTPS| N
+    X -->|HTTPS| N
+    N --> W
+    N --> A
+    E -->|/api/v1/ext + Bearer key| A
+    A --> P
+    A --> U
+    A -->|OIDC| AK
+    A -->|@midas/ocr-client| O
+    A -->|ZOHO_MODE=service| Z
+    Z --> ZB
+    A -->|event calendar| TS
+    A -->|cash drawer| PR
+```
+
+- TLS lives in npmplus (CT 104), **not** in this repo. Postgres accepts
+  connections only from CT 3120 (pg_hba.conf).
+- Midas does **not** implement Zoho OAuth or OCR internals. Those live in
+  separate services; Midas talks to them over HTTP behind adapters.
+
+---
+
+## Expense lifecycle
+
+```mermaid
+sequenceDiagram
+    actor Emp as Employee
+    actor Acc as Accountant
+    participant API as Midas API
+    participant OCR as OCR engine
+    participant Z as Zoho service
+
+    Emp->>API: POST /expenses (draft) + receipt upload
+    API->>OCR: extract (sync)
+    OCR-->>API: merchant, amount, date, confidence
+    API-->>Emp: prefilled draft
+    Emp->>API: POST /expenses/:id/submit → status=pending
+    Acc->>API: POST .../claim → in_review
+    alt info needed
+        Acc->>API: review action=request_info → awaiting_info
+        Emp->>API: reply message → auto back to in_review
+    end
+    Acc->>API: review action=approve → approved
+    Acc->>API: POST .../zoho-push
+    API->>Z: create expense + attach receipt
+    Z-->>API: zoho_expense_id
+    API->>API: integration_status=synced,<br/>audit_logs + expense_messages updated
+```
+
+### Status model
+
+Workflow status and integration status are **separate axes** on the expense:
+
+| `status` (human review) | `integration_status` (Zoho pipeline) |
+|---|---|
+| `draft → pending → in_review → awaiting_info → approved / rejected / cancelled` | `not_required → pending → queued → syncing → synced / failed` |
+
+- `zoho_sync_failed` survives as a legacy status value; new writes use
+  `approved` + `integration_status='failed'`.
+- Transitions without accountant action: employee reply to `awaiting_info`
+  auto-returns the expense to `in_review`; extension submissions skip `draft`
+  and enter `pending` directly.
+- Claim/release are atomic conditional updates that set/clear
+  `reviewedById`/`reviewedAt`.
+- `reimbursement_status` is a third independent axis
+  (`not_requested → pending → approved → paid`).
+- "Missing field" conditions (`needs_category`, `missing_receipt`,
+  `ready_for_zoho`, …) are **derived flags computed per request**
+  (`computeFlags()` in `routes/accountant.ts`), never stored.
+
+### Zoho readiness gate
+
+A push requires: `status='approved'`, a Zoho entity (company), a category, and
+a payment method. A receipt is a soft requirement (flag only). Companies with
+`zoho_enabled=false` never enter the pipeline at all — their expenses stay
+`integration_status='not_required'`.
+
+### Accountant queue
+
+Three lanes, driven by the same derived flags: **Needs Attention** (pending /
+awaiting reply), **Missing Fields** (approved but not Zoho-ready), and
+**Ready & Processing** (Zoho-ready, syncing, or failed). Bulk approve and bulk
+push operate on the visible selection.
+
+### Payment methods
+
+Company cards are catalogued in `payment_methods` (label, last four, Zoho
+paid-through account, default entity). Cards flagged `requires_reimbursement`
+mark personal/out-of-pocket spend and drive the reimbursement flow. Every
+active company appears in the payment-methods UI — including companies that do
+not post to Zoho, whose paid-through picker is disabled since there is no Zoho
+org to point at.
+
+---
+
+## Repo structure
 
 ```
 midas/
@@ -19,207 +151,135 @@ midas/
 │   └── web/             React + Vite + Tailwind frontend
 ├── extension/           Manifest V3 browser extension
 ├── packages/
-│   ├── shared/          Shared TypeScript types incl. OwnerRef (used by api + web)
-│   ├── ocr-client/      Node OCR client: preprocessing + HTTP adapter + rule-based
-│   │                     inference fallback (used by apps/api, embeddable directly)
-│   └── import/          Generic import pipeline framework (see docs/IMPORT_FRAMEWORK.md)
+│   ├── shared/          Shared types incl. OwnerRef + MIDAS_VERSION
+│   ├── ocr-client/      OCR preprocessing + HTTP adapter + rule-based fallback
+│   └── import/          Generic import pipeline (docs/IMPORT_FRAMEWORK.md)
 ├── docs/
-├── docker-compose.yml
-├── .env.example
-└── package.json         npm workspaces root
+├── docker-compose.yml         base (dev api behavior)
+├── docker-compose.local.yml   local Postgres container
+├── docker-compose.prod.yml    prod build + migrator service
+└── package.json               npm workspaces root
 ```
 
 ---
 
 ## Backend
 
-- **Framework:** Express 4 + TypeScript 5, strict mode, CommonJS output
-- **ORM / Migrations:** Drizzle ORM + drizzle-kit
-  - Schema defined in TypeScript (`src/db/schema.ts`)
-  - Migrations as raw SQL (generated by `drizzle-kit generate`, committed to `drizzle/`)
-  - `drizzle-kit push` used for local dev (direct schema sync)
-  - `drizzle-kit migrate` used in production
-- **Database:** PostgreSQL 16
-- **Auth:** JWT in httpOnly cookie (`token`). Never in localStorage.
-- **Middleware chain:** helmet → cors → body-parser → cookie-parser → rate-limit → routes → error-handler
-- **Port:** 4000 (configurable via PORT env)
+- **Framework:** Express 4 + TypeScript 5, strict mode
+- **ORM / migrations:** Drizzle ORM + drizzle-kit — schema in
+  `src/db/schema.ts`, SQL migrations committed to `drizzle/`
+  (see `docs/DATABASE_DESIGN.md`)
+- **Auth:** JWT in an httpOnly cookie — never localStorage. Two modes:
+  `AUTH_MODE=local` (password) and `AUTH_MODE=authentik` (OIDC SSO, see
+  `docs/AUTHENTIK_SETUP.md`)
+- **Middleware chain:** helmet → cors → body-parser → cookie-parser →
+  rate-limit → routes → error handler
+- **Startup config audit:** in production the API logs loudly at boot when a
+  feature-gating env var (VAPID keys, payroll DB, trade-show DB, Zoho) is
+  missing, because those features otherwise degrade silently
+  (`lib/configAudit.ts`)
 
-### Integration Boundaries (adapter pattern)
+### Integration boundaries (adapter pattern)
 
-All external integrations are behind interfaces with a `mock` and `service` implementation, toggled by env vars:
+Integrations sit behind interfaces with `mock` and `service` implementations,
+toggled by env:
 
-| Service | Env var | Default |
-|---------|---------|---------|
-| OCR | `OCR_MODE=mock\|service` | `service` (live; mock only for offline tests) |
-| Zoho | `ZOHO_MODE=mock\|service` | `mock` |
-| Storage | `STORAGE_MODE=local\|s3` | `local` |
-| Telegram | `TELEGRAM_BOT_TOKEN` | disabled if unset |
+| Service | Env var | Notes |
+|---------|---------|-------|
+| OCR | `OCR_MODE=mock\|service` | live engine at CT 9500, via `@midas/ocr-client` |
+| Zoho | `ZOHO_MODE=mock\|service` | via the Zoho integration service, `docs/ZOHO_INTEGRATION.md` |
+| Storage | `STORAGE_MODE=local\|s3` | prod uses the local bind mount |
+| Web push | `VAPID_*` keys | disabled if unset |
+| Payroll drawer | `PAYROLL_DATABASE_URL` | read-only, at request time |
+| Event calendar | `TRADESHOW_DATABASE_URL` | read-only, at push/filter time |
 
-**Midas does NOT implement Zoho OAuth directly** (belongs in a separate service). **Midas DOES own OCR** — the canonical `ocr-service` engine (Python) lives in its own repo, `~/Work/services/ocrService` (v0.17.0+), called through `@midas/ocr-client` (`OCR_MODE=mock|service`). See `docs/OCR_ENGINE.md` for the full subsystem writeup; the `mock`/`service` toggle here is about whether the real engine is called, not about whether Midas "owns" OCR — it always does.
+**Sync model:** Midas is **sync-primary** — expense/receipt/OCR responses
+include completed OCR. Offline clients use a client-side upload queue as a
+safety net (`docs/SYNC_AND_OFFLINE.md`). Do not treat Midas as async-only.
 
-**Sync model:** Midas is **sync-primary** for expense/receipt/OCR APIs (response includes completed OCR). Offline / flaky-network clients use a client-side **To upload** queue as a safety net — see `docs/SYNC_AND_OFFLINE.md`. Do not treat Midas as async-only.
+### API surface
 
-**Trade Show cutover:** Full bilateral contract in `docs/TRADE_SHOW_MIGRATION_CONTRACT.md`. No merge of expense paths until Midas and Trade Show contracts are aligned.
+Mounted under `/api/v1/` (see `server.ts` for the authoritative list):
 
-### App-to-App API
+`auth` (+ OIDC), `expenses`, `transactions` (purchase orders),
+`…/receipts`, `…/messages`, `captures`, `files` (authenticated streaming — no
+public /uploads), `accountant`, `cashbook`, `admin`, `payment-methods`,
+`partner-expenses`, `reports`, `budgets`, `companies`, `events`, `vendors`,
+`zoho`, `notifications`, `meta`, `health`, and the two machine surfaces below.
 
-External apps authenticate with a Bearer API key (SHA-256 hash stored in `app_connections` table). Keys are issued by an admin via `POST /api/v1/admin/connections` — the plain key is shown only once.
+Full request/response contracts: `docs/API_CONTRACTS.md`.
+
+### Machine surfaces
+
+- **`/api/v1/ext/*`** — app-to-app API. Bearer API keys issued by an admin;
+  only the SHA-256 hash is stored (`app_connections`). Scoped permissions per
+  connection; contract frozen in `docs/EXT_API_MERGE_LOCK.md`.
+- **`/api/v1/extension/*`** — browser extension. Session cookie auth. Creates
+  expense + receipt + capture atomically at `status='pending'`; never
+  approves, never calls Zoho (`docs/EXTENSION_DESIGN.md`).
 
 ---
 
 ## Frontend
 
-- **Stack:** React 18 + Vite + TypeScript + Tailwind CSS
-- **Routing:** React Router v6
-- **Server state:** TanStack Query (React Query v5)
-- **Auth state:** React Context (in memory only, populated from `/api/v1/auth/me` on mount)
-- **API calls:** Axios with `withCredentials: true` — cookie is sent automatically
-- **Port:** 5173 (Vite dev server)
-- Vite proxies `/api/*` and `/uploads/*` to the API at port 4000 in development
+- React 18 + Vite + TypeScript + Tailwind; React Router v6; TanStack Query
+- Auth state in React Context, populated from `/api/v1/auth/me` on mount
+- Axios with `withCredentials: true`
+- PWA: installable, web-push notifications (iOS requires Add to Home Screen)
+- Vite dev server proxies `/api/*` to port 4000
 
-### Pages
-
-| Path | Access | Description |
-|------|--------|-------------|
-| `/login` | Public | Login |
-| `/dashboard` | User | Overview + recent expenses |
-| `/expenses` | User | Full expense list |
-| `/expenses/new` | User | Create draft |
-| `/expenses/:id` | Owner + Accountant | Detail, receipts, messages |
-| `/captures` | User | Extension captures |
-| `/accountant` | Accountant + Admin | Review queue |
-| `/admin` | Admin | Users, categories, connections |
+Main surfaces: Dashboard, My Expenses, New Expense (mobile capture +
+inline OCR), Expense detail (receipts, conversation, audit), Accountant queue
+(three lanes + bulk actions), Purchase orders, Cashbook, Reports,
+Partner expenses, Settings (users, categories, payment methods, chart of
+accounts, connections, companies), Admin.
 
 ---
 
-## Database Schema
+## Conversation & audit
 
-| Table | Purpose |
-|-------|---------|
-| `users` | Users with roles: user / accountant / admin |
-| `expense_categories` | Configurable categories |
-| `expenses` | Core expense records — decoupled from any event or app |
-| `receipts` | Attached receipt files + OCR state |
-| `expense_messages` | In-app conversation thread per expense (owns the audit trail) |
-| `captures` | Browser extension captures, linked to expenses after review |
-| `audit_logs` | Immutable audit trail for all state changes |
-| `app_connections` | API keys for app-to-app integration |
-
-**Key design decisions:**
-- `expenses.source_app` and `expenses.source_ref_id` are nullable — null means direct Midas entry
-- No `event_id` on expenses — Midas is not coupled to Argo's event model
-- `expense_messages` is the canonical conversation; Telegram is notify-only
-- All statuses are PostgreSQL enums (not VARCHAR CHECK) for type safety
-
----
-
-## Browser Extension
-
-See `docs/EXTENSION_DESIGN.md` for the full design, testing instructions, and deferred items.
-
-- Manifest V3, WebExtension compatible (Chrome + Firefox 121+)
-- Built with Vite, outputs to `extension/dist/`
-- **Two workflows:**
-  - **Save Capture** — screenshot → `POST /api/v1/captures` (draft, no expense)
-  - **Submit Expense** — screenshot + form → `POST /api/v1/extension/expenses` (creates expense + receipt + capture atomically, status=`pending`)
-- Never approves expenses, never calls Zoho, never bypasses accountant review
-- Auth: browser session cookie (`credentials: 'include'`) — user must be logged in to Midas
-- CORS: API allows `chrome-extension://` and `moz-extension://` origins in addition to configured `CORS_ORIGIN`
-- Options page: configure `midasUrl` (web UI) and `midasApiUrl` (API) separately
-
----
-
-## API Routes
-
-```
-GET  /api/v1/health
-
-POST /api/v1/auth/login
-POST /api/v1/auth/logout
-GET  /api/v1/auth/me
-
-GET    /api/v1/expenses                           (own; accountant/admin sees all)
-POST   /api/v1/expenses
-GET    /api/v1/expenses/categories/list
-GET    /api/v1/expenses/:id
-PATCH  /api/v1/expenses/:id
-POST   /api/v1/expenses/:id/submit
-DELETE /api/v1/expenses/:id                       (draft only)
-
-POST   /api/v1/expenses/:id/receipts              (upload)
-GET    /api/v1/expenses/:id/receipts
-DELETE /api/v1/expenses/:id/receipts/:receiptId
-
-GET    /api/v1/expenses/:id/messages
-POST   /api/v1/expenses/:id/messages
-
-GET    /api/v1/captures
-POST   /api/v1/captures                           (Save Capture — passive, no expense)
-PATCH  /api/v1/captures/:id
-
-POST   /api/v1/extension/expenses                 (Submit Expense from extension — creates expense+receipt+capture atomically)
-
-GET    /api/v1/accountant/queue
-GET    /api/v1/accountant/expenses
-PATCH  /api/v1/accountant/expenses/:id/review
-PATCH  /api/v1/accountant/expenses/:id/reimbursement
-POST   /api/v1/accountant/expenses/:id/zoho-push
-
-GET    /api/v1/admin/users
-PATCH  /api/v1/admin/users/:id
-GET    /api/v1/admin/categories
-POST   /api/v1/admin/categories
-PATCH  /api/v1/admin/categories/:id
-GET    /api/v1/admin/connections
-POST   /api/v1/admin/connections
-PATCH  /api/v1/admin/connections/:id
-
-POST   /api/v1/ext/expenses                       (app-to-app, Bearer API key)
-GET    /api/v1/ext/expenses/:id                   (app-to-app)
-```
-
----
-
-## Anti-Patterns Avoided (from trade-show-app audit)
-
-| Problem in Argo | How Midas avoids it |
-|-----------------|---------------------|
-| `event_id` required on all expenses | No event coupling; `source_app` + `source_ref_id` are nullable |
-| JWT in localStorage | httpOnly cookie only |
-| Hardcoded Zoho service IP | `ZOHO_SERVICE_URL` in env |
-| OCR embedded directly | Shared live engine + `@midas/ocr-client` pipeline (prep + inference) |
-| Per-route `new PrismaClient()` | Singleton Drizzle/pg pool |
-| String CHECK enums | PostgreSQL pgEnum |
-| No transaction on file upload | Storage save + DB insert in a single flow with cleanup on failure |
-| Accountant workflow as one giant filtered table | Dedicated queue view separate from all-expenses view |
-| Telegram owns conversation | `expense_messages` owns it; Telegram is notify-only |
+- `expense_messages` is the **canonical conversation record** per expense —
+  user/accountant messages, system entries, and accountant info-requests with
+  resolution state. External channels are notify-only, never authoritative.
+- `audit_logs` is append-only (DB trigger rejects UPDATE/DELETE) and records
+  before/after snapshots for every state change. Its `user_id` is a historical
+  snapshot, deliberately not a foreign key.
+- In-app `notifications` + web push (VAPID) + best-effort email mirror the
+  events; none of them owns the record.
 
 ---
 
 ## Extensibility: polymorphic ownership
 
 Every expense can optionally belong to an entity owned by another application
-(a trade show booth, a payroll run, a project, ...) via `sourceApp` +
-`sourceRefId` on the `expenses` table — Midas's `OwnerRef` concept
-(`packages/shared/src/types/index.ts`):
+(a trade-show event, a payroll run, …) via `sourceApp` + `sourceRefId` —
+Midas's `OwnerRef` concept (`packages/shared`):
 
 ```ts
 interface OwnerRef {
-  ownerType: string; // opaque, e.g. 'trade_show', 'argo', 'milo' — chosen by the caller
-  ownerId: string;   // opaque identifier for the specific owning record
+  ownerType: string; // opaque, e.g. 'trade_show' — chosen by the caller
+  ownerId: string;   // opaque id of the owning record
 }
 ```
 
-- `ownerType`/`ownerId` are opaque strings — Midas never special-cases a
-  value or hardcodes an embedder's name anywhere in its source.
-- `null`/`null` means the expense was entered directly in Midas, with no
-  owning application.
-- `expenses_source_unique_idx` (unique index on `(sourceApp, sourceRefId)`)
-  both prevents duplicate expenses per owning record and is what the import
-  framework (`@midas/import`) uses for idempotent re-runs.
-- `toOwnerRef`/`fromOwnerRef` in `@midas/shared` convert between the
-  `OwnerRef` shape and the `sourceApp`/`sourceRefId` column pair.
+- Opaque strings; Midas never special-cases an embedder's name.
+- `null`/`null` = entered directly in Midas.
+- The unique index on `(sourceApp, sourceRefId)` prevents duplicate imports
+  and is what `@midas/import` relies on for idempotent re-runs.
+- `sourceContext` (jsonb) carries embedder context (eventId, location,
+  cardUsed) without app-specific columns.
 
-See `docs/EMBEDDING.md` for how an embedding application uses this in
-practice, and `docs/IMPORT_FRAMEWORK.md` for bulk-importing pre-existing data
-against a given `ownerType`.
+---
+
+## Design invariants
+
+| Invariant | Why |
+|---|---|
+| No `event_id` on expenses | Midas is not coupled to any embedder's domain model |
+| JWT in httpOnly cookie only | XSS cannot read it |
+| No hardcoded service IPs | Every integration endpoint comes from env |
+| PostgreSQL enums, not VARCHAR CHECKs | Type safety end to end |
+| Receipt owner XOR (expense/transaction) enforced by DB check | Polymorphic ambiguity impossible by construction |
+| Audit log append-only at the DB level | Trust in history doesn't depend on application discipline |
+| Money in cashbook = integer cents | No float drift in ledgers |
+| Extension never approves / never pushes | Capture is not review |

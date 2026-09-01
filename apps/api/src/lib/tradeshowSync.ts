@@ -1,5 +1,5 @@
 // Pure helpers for the one-off Trade Show → Midas reconciliation
-// (scripts/sync-tradeshow-data.ts). Kept separate so they're unit-testable.
+// Kept separate from any caller so they stay unit-testable.
 
 const ROLE_MAP: Record<string, 'user' | 'accountant' | 'admin' | 'partner' | 'developer'> = {
   developer: 'developer',

@@ -396,24 +396,27 @@ pct exec 3220 -- psql -U midas midas -c "SELECT pg_size_pretty(pg_database_size(
 
 ## OCR mode
 
-Current mode: **`mock`** (safe pilot default — no calls to CT 9500, no cost).  
-Stage 3 completed 2026-05-14: one real call verified (`job_id=208b79a4`, $0.1015), reverted to mock immediately.  
-OCR ledger admin API mismatch (seen during Stage 3) resolved in OCR service v0.11.0 — job lookup by `external_reference_id` now works correctly.
+Current mode: **`service`** (live since 2026-08-03) — receipt uploads call the
+shared engine on CT 9500 (`http://192.168.1.195:8000`, RapidOCR primary,
+Document AI fallback — metered, roughly $0.10/receipt when the fallback runs).
+`mock` exists for offline tests only. See `docs/OCR_ENGINE.md` for the full
+pipeline.
 
 Check active mode:
 ```bash
 ssh root@192.168.1.190 "pct exec 3120 -- docker logs --tail 5 midas-api-1 | grep 'OCR mode'"
-# Expected: OCR mode: mock | Zoho mode: mock | Storage: local
+# Expected: OCR mode: service | Zoho mode: service | Storage: local
 ```
 
-**Do not switch to `OCR_MODE=service` without explicit operator approval.** Any receipt uploaded while in service mode triggers a real paid OCR call (~$0.10/receipt via document_ai). See `docs/ocr-integration.md` for the exact switching procedure and cost data from Stage 3.
-
-Verify a specific Midas OCR job via OCR admin API (v0.11.0+):
+Switch modes (requires container **recreation** — `restart` alone does not
+reload the env file):
 ```bash
-# Look up Stage 3 job by external_reference_id (secrets redacted)
-curl -s -H "X-Admin-Token: <OCR_ADMIN_TOKEN>" \
-  "http://192.168.1.195:8000/admin/ledger/job-lookup?external_reference_id=receipt:8ef0e789"
-# Or list all Midas jobs:
+ssh root@192.168.1.190 "pct exec 3120 -- sed -i 's/^OCR_MODE=.*/OCR_MODE=mock/' /opt/midas/.env"
+ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && docker compose up -d api'"
+```
+
+Verify a specific Midas OCR job via the OCR admin API:
+```bash
 curl -s -H "X-Admin-Token: <OCR_ADMIN_TOKEN>" \
   "http://192.168.1.195:8000/admin/ledger/jobs?client_app=midas"
 ```

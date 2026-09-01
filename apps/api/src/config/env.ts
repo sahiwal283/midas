@@ -68,7 +68,6 @@ const schema = z.object({
   // Contact URI sent to push services (mailto: or https:).
   VAPID_SUBJECT: z.string().default('mailto:admin@midas.local'),
   // Optional integrations
-  TELEGRAM_BOT_TOKEN: z.string().optional(),
   // Auth rate limiting — max login attempts per 15-minute window per IP.
   // Default 20 is appropriate for production; set 200 in .env for dev/LAN.
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),

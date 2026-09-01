@@ -60,7 +60,7 @@ app.use(cors({
 }));
 
 // ── Body parsing + cookies ────────────────────────────────────────────────────
-// Import batches with base64 receipts need a large limit (see docs/TRADE_SHOW_MIGRATION_REPLY.md).
+// Import batches with base64 receipts need a large limit (Trade Show migration, 2026-08).
 app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: env.JSON_BODY_LIMIT }));
 app.use(cookieParser());

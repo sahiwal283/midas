@@ -10,7 +10,6 @@ const fullProdConfig = {
   VAPID_PRIVATE_KEY: 'priv',
   PAYROLL_DATABASE_URL: 'postgresql://payroll@host/payroll',
   TRADESHOW_DATABASE_URL: 'postgresql://midas_ro@host/expense_app_production',
-  TELEGRAM_BOT_TOKEN: 'token',
   ZOHO_SERVICE_TOKEN: 'token',
   ZOHO_SERVICE_BASE_URL: 'http://zoho:8000',
 };
@@ -32,7 +31,7 @@ describe('auditProductionConfig', () => {
     const rolledBack = { ...fullProdConfig };
     for (const k of [
       'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY',
-      'PAYROLL_DATABASE_URL', 'TRADESHOW_DATABASE_URL', 'TELEGRAM_BOT_TOKEN',
+      'PAYROLL_DATABASE_URL', 'TRADESHOW_DATABASE_URL',
     ]) delete (rolledBack as Record<string, unknown>)[k];
 
     const result = auditProductionConfig(rolledBack, { production: true });
@@ -41,7 +40,6 @@ describe('auditProductionConfig', () => {
       'Web push notifications',
       'Cashbook payroll drawer',
       'Trade show event calendar',
-      'Telegram notifications',
     ]);
   });
 
@@ -55,10 +53,10 @@ describe('auditProductionConfig', () => {
 
   it('treats whitespace-only values as missing', () => {
     const result = auditProductionConfig(
-      { ...fullProdConfig, TELEGRAM_BOT_TOKEN: '   ' },
+      { ...fullProdConfig, TRADESHOW_DATABASE_URL: '   ' },
       { production: true },
     );
-    expect(result.missing.map((m) => m.feature)).toEqual(['Telegram notifications']);
+    expect(result.missing.map((m) => m.feature)).toEqual(['Trade show event calendar']);
   });
 
   it('covers every documented requirement when nothing is set', () => {

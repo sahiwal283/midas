@@ -23,7 +23,7 @@ Midas authenticates to the service with a per-app credential (`ZOHO_SERVICE_TOKE
 | Service ↔ Zoho | ✅ `organizations/list` + `chartofaccounts/list` succeed with Bearer |
 | Accountant push payload | Full `buildZohoServicePayload` (idempotency key, paid-through, source provenance) |
 
-**Note:** An earlier Midas diagnosis treated `ZOHO_AUTH_INVALID` as Zoho OAuth failure. That was wrong — it was the inbound header bug (`X-Internal-Token` with the app secret). See [`docs/ZOHO_AUTH_BLOCKER.md`](./ZOHO_AUTH_BLOCKER.md) (corrected).
+**Note:** An earlier Midas diagnosis treated `ZOHO_AUTH_INVALID` as Zoho OAuth failure. That was wrong — it was the inbound header bug (`X-Internal-Token` with the app secret). (Corrected diagnosis 2026-08-03; full write-up in git history.)
 
 ### Service contract
 
@@ -142,7 +142,7 @@ This endpoint is read-only and never triggers a Zoho write.
 ## Settled accounting policies (2026-08-07)
 
 Canonical decisions for the previously open mapping questions (full rationale in
-`docs/superpowers/specs/2026-08-07-zoho-pipeline-design.md`):
+the 2026-08-07 zoho-pipeline design, git history):
 
 - **Record type:** Zoho Books expense records via `create_books`. No other record types.
 - **Category → COA:** daily = live COA pick in the wizard (OCR suggestion preselects,

@@ -1,11 +1,11 @@
 # Ext API Merge Lock (Trade Show ↔ Midas)
 
-**Status:** LOCKED — alignment COMPLETE; Midas Required surface **implemented** (see `docs/TRADE_SHOW_AGENT_HANDOVER.md`)  
+**Status:** LOCKED — alignment COMPLETE; Midas Required surface **implemented**  
 **Base:** `/api/v1/ext`  
 **Auth:** `Authorization: Bearer <app_connection_key>` + scopes (§ Auth)  
 **Errors:** `{ "error": { "code": "SNAKE_CASE", "message": "..." } }`
 
-Do not change paths or required fields without updating `CONTRACT_ALIGNMENT.md` first.
+Do not change paths or required fields without re-aligning with the Trade Show app first.
 
 ---
 
@@ -216,7 +216,7 @@ Company-wide active cards (Trade Show `cardOptions` SoR in Midas):
 }
 ```
 
-See `docs/TRADE_SHOW_PAYMENT_METHODS.md`.
+The card catalog was seeded from Trade Show prod `app_settings.cardOptions` (2026-08-03; details in git history).
 
 ### 12. `GET /expenses/:id/messages` — scope `messages:read`
 
@@ -428,5 +428,5 @@ curl -sS -X POST "$MIDAS/api/v1/ext/expenses/import" \
 - [x] Category seed + mappings + `GET /categories`
 - [x] Status + reimbursement maps (incl. `rejected`)
 - [x] Receipt content stream
-- [x] Sandbox connection key with B4 scopes *(local: `npm run ext:create-connection`; see `docs/EXT_SANDBOX_HANDOFF.md`)*
+- [x] Sandbox connection key with B4 scopes *(local: `npm run ext:create-connection`)*
 - [x] Expense message thread (`messages:read`/`messages:write`) + cross-expense polling feed; `sender.email` widening documented above

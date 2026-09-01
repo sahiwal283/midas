@@ -138,7 +138,7 @@ See `.env.example`. Critical ones:
 
 ## Proxmox Deployment
 
-See `docs/deployment-proxmox.md`. No code changes are needed — only `.env` values and nginx config change between local and Proxmox.
+See `docs/PROXMOX_DEPLOYMENT.md` and `docs/OPERATIONS.md`. No code changes are needed — only `.env` values and proxy config change between local and Proxmox.
 
 ---
 

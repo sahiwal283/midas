@@ -11,8 +11,7 @@ See also: `docs/architecture.md` (overall system design),
 `docs/OCR_ENGINE.md` (OCR subsystem), `docs/SYNC_AND_OFFLINE.md` (**sync-primary
 + offline To upload safety net** — read this before assuming Midas is async),
 `docs/IMPORT_FRAMEWORK.md` (bulk import),
-`docs/MIGRATION_PLAN.md` (the concrete trade-show-app → Midas field mapping),
-`docs/CONTRACT_ALIGNMENT.md` + `docs/EXT_API_MERGE_LOCK.md` (Trade Show Ext
+`docs/EXT_API_MERGE_LOCK.md` (Trade Show Ext
 cutover — implement only when alignment COMPLETE on both sides).
 
 ---
@@ -127,7 +126,7 @@ for import idempotency).
 
 - **Bulk/one-time migration:** `@midas/import` + `DrizzleImportTargetPort` +
   `npm run import:run` — see `docs/IMPORT_FRAMEWORK.md`.
-- **Field mapping reference:** `docs/MIGRATION_PLAN.md` documents the
+- **Field mapping reference:** git history (`docs/MIGRATION_PLAN.md`, removed 2026-08-31) documents the
   specific old-system → Midas field mapping used for the trade-show-app
   cutover; reuse its structure (status/reimbursement enum tables, migration
   order, duplicate-prevention notes) as a template for mapping any other
