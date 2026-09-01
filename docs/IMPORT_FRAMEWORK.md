@@ -5,7 +5,7 @@ bringing expense data from an external system into Midas — whether that's a
 one-time cutover migration (e.g. an app adopting Midas as its expense engine)
 or a recurring bulk import.
 
-This is distinct from `docs/MIGRATION_PLAN.md`, which is the specific
+This is distinct from the 2026 trade-show migration plan (git history), which was the specific
 field-mapping plan for one migration (trade-show-app → Midas). This document
 describes the reusable framework itself, which any future embedder can reuse
 for its own migration without touching Midas internals.
@@ -93,7 +93,7 @@ needed.
 - **Validation failures** (missing required fields) are reported as `failed`
   with a `reason` and never reach the database.
 - **Unresolvable submitter email** fails the record — Midas requires a real
-  user to own every expense (see `docs/MIGRATION_PLAN.md` for creating users
+  user to own every expense (see git history — `docs/MIGRATION_PLAN.md` — for creating users
   ahead of a migration).
 - **Unresolvable category name** does not fail the record — the expense is
   imported with `categoryId = null`.

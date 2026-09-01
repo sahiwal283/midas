@@ -57,7 +57,7 @@ The API allows `chrome-extension://` and `moz-extension://` origins (see `apps/a
 
 ### History scan (2026-08-10)
 
-Git history search for `AUTHENTIK_CLIENT_SECRET`, `JWT_SECRET`, `ZOHO_SERVICE_TOKEN`, and password/API key patterns found documentation references (prefix `L4Dq` in `docs/SECURITY.md` / `docs/MIDAS_AUTHENTIK_APP_SIDE_DEBUG_REPORT.md`) but **no full secret values committed** in the current tree. Treat the Authentik client secret as compromised anyway and rotate before any external exposure. Do not paste live secrets into docs or agent transcripts.
+Git history search for `AUTHENTIK_CLIENT_SECRET`, `JWT_SECRET`, `ZOHO_SERVICE_TOKEN`, and password/API key patterns found documentation references (prefix `L4Dq` in `docs/SECURITY.md` and a since-removed debug report) but **no full secret values committed** in the current tree. Treat the Authentik client secret as compromised anyway and rotate before any external exposure. Do not paste live secrets into docs or agent transcripts.
 
 ### Session policy (cookie JWT)
 

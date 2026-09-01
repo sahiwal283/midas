@@ -642,7 +642,7 @@ Keys are SHA-256 hashed in `app_connections` and issued by admin (`POST /api/v1/
 `ocr:process`, `expenses:create`, `expenses:read`, `expenses:update`, `expenses:delete`, `receipts:create`, `expenses:import`
 
 **Normative lock for Trade Show:** `docs/EXT_API_MERGE_LOCK.md`  
-**Local sandbox handoff:** `docs/EXT_SANDBOX_HANDOFF.md`
+**Local sandbox setup:** `npm run ext:create-connection` in `apps/api` issues a scoped key.
 
 Actor headers on mutating calls: `X-Actor-Email` / body `submitterEmail`, `X-Actor-External-User-Id`, optional `X-Actor-Name`.
 

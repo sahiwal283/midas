@@ -91,7 +91,7 @@ multi-page/paid providers — not the app-to-app expense contract.
 3. **Do not** design the merge around polling OCR status as the primary UX.
 4. Migration of historical data uses `@midas/import` (batch), which is separate from this live sync model — see `docs/IMPORT_FRAMEWORK.md`.
 5. The full bilateral cutover (ownership, APIs, OCR, import, UI) is
-   `docs/TRADE_SHOW_MIGRATION_CONTRACT.md` — sync/offline alone is not enough to merge.
+   the migration contract (git history: `docs/TRADE_SHOW_MIGRATION_CONTRACT.md`) — sync/offline alone is not enough to merge.
 
 ---
 

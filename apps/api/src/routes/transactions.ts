@@ -358,7 +358,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   // po_number is not writable here — it is not user input any more. Zoho
   // assigns it, so whoever wires up the write-back should do it in
   // lib/zohoPoPush.ts alongside the existing zohoRecordId write, not through
-  // this route. See docs/superpowers/specs/2026-08-26-po-receipts-design.md.
+  // this route (po-receipts design, 2026-08-26).
   if (body.zohoVendorId !== undefined || body.deliveryDate !== undefined || body.notes !== undefined) {
     await db.update(purchaseOrders)
       .set({
