@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.9.0 (2026-09-03)
+
+### Accountants can edit notes without a round-trip
+
+- **The "Correct details" card now has a Notes field.** The review page showed
+  an expense's notes but gave the accountant no way to fix or extend them —
+  the only fields they could correct were merchant, amount, date, payment
+  method and event. The editor now opens with the current notes prefilled, so
+  appending a clarification is a matter of typing at the end; clearing the
+  box removes the note entirely.
+- The same rules that guard the rest of the card apply unchanged: an expense
+  already pushed to Zoho Books stays locked, closed accounting periods refuse
+  the edit, an untouched note writes nothing, and every change lands in the
+  audit log as `details.corrected`.
+
 ## 1.8.1 (2026-09-01)
 
 ### The repo got its housekeeping — nothing about the running product changed
