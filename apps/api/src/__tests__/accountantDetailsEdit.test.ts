@@ -6,6 +6,7 @@ const base: DetailsEditTarget = {
   amount: '948.00',
   date: '2026-05-05',
   paymentMethodId: null,
+  description: null,
   zohoExpenseId: null,
   sourceApp: null,
   sourceRefId: null,
@@ -122,10 +123,64 @@ describe('planAccountantDetailsEdit', () => {
   });
 });
 
+describe('planAccountantDetailsEdit — notes', () => {
+  const withNotes = { ...base, description: 'Setup day -dinner with Haute team' };
+
+  it('writes an edited note', () => {
+    const result = planAccountantDetailsEdit(
+      withNotes,
+      { description: 'Setup day -dinner with Haute team, 8 attendees' },
+      [],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: 'Setup day -dinner with Haute team, 8 attendees' });
+  });
+
+  it('adds a note to an expense that had none', () => {
+    const result = planAccountantDetailsEdit(base, { description: 'Client dinner' }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: 'Client dinner' });
+  });
+
+  it('trims the note and ignores a whitespace-only difference', () => {
+    const result = planAccountantDetailsEdit(
+      withNotes,
+      { description: '  Setup day -dinner with Haute team  ' },
+      [],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({});
+  });
+
+  it('clears the note to null on an empty string', () => {
+    const result = planAccountantDetailsEdit(withNotes, { description: '' }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: null });
+  });
+
+  it('clears the note to null on a whitespace-only string', () => {
+    const result = planAccountantDetailsEdit(withNotes, { description: '   ' }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: null });
+  });
+
+  it('writes nothing when clearing an expense that has no note', () => {
+    const result = planAccountantDetailsEdit(base, { description: '' }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({});
+  });
+});
+
 describe('planAccountantDetailsEdit — event re-tag', () => {
   const midasOwned = {
     merchant: 'SPEEDEE MART', amount: '10.46', date: '2026-08-25',
-    paymentMethodId: null, zohoExpenseId: null,
+    paymentMethodId: null, description: null, zohoExpenseId: null,
     sourceApp: null, sourceRefId: null, sourceContext: {},
   };
 

@@ -15,14 +15,14 @@ const inputCls = 'w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text
 
 /**
  * Accountant correction for the push blockers that had no control of their own:
- * payment method, merchant, amount and date. Category, company, reference
+ * payment method, merchant, amount, date and notes. Category, company, reference
  * number and reimbursement each have their own component already.
  */
 export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ merchant: '', amount: '', date: '', paymentMethodId: '', eventId: '' });
+  const [form, setForm] = useState({ merchant: '', amount: '', date: '', paymentMethodId: '', eventId: '', description: '' });
   const locked = Boolean(expense.zohoExpenseId);
   // The picker hides itself when the trade show link is off; its label has to
   // go with it, or the form shows an "Event" heading over nothing.
@@ -39,13 +39,16 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
     mutationFn: () => {
       // Send only what the accountant actually touched — the server treats an
       // absent key as "leave alone", so a no-op patch stays a no-op.
-      const patch: { merchant?: string; amount?: number; date?: string; paymentMethodId?: string; eventId?: string | null } = {};
+      const patch: { merchant?: string; amount?: number; date?: string; paymentMethodId?: string; description?: string; eventId?: string | null } = {};
       const merchant = form.merchant.trim();
       if (merchant && merchant !== (expense.merchant ?? '').trim()) patch.merchant = merchant;
       if (form.amount && Number(form.amount) !== Number(expense.amount)) patch.amount = Number(form.amount);
       if (form.date && form.date !== expense.date) patch.date = form.date;
       if (form.paymentMethodId && form.paymentMethodId !== expense.paymentMethodId) {
         patch.paymentMethodId = form.paymentMethodId;
+      }
+      if (form.description.trim() !== (expense.description ?? '').trim()) {
+        patch.description = form.description.trim();
       }
       const currentEventId = (expense.sourceContext as { eventId?: string } | null)?.eventId ?? '';
       if (form.eventId !== currentEventId) patch.eventId = form.eventId || null;
@@ -78,6 +81,7 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
       date: expense.date ?? '',
       paymentMethodId: expense.paymentMethodId ?? '',
       eventId: (expense.sourceContext as { eventId?: string } | null)?.eventId ?? '',
+      description: expense.description ?? '',
     });
     setError('');
     setEditing(true);
@@ -109,8 +113,8 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
         </p>
       ) : !editing ? (
         <p className="mt-2 text-xs text-charcoal/40">
-          Fix the merchant, amount, date
-          {eventsAvailable ? ', payment method or event' : ' or payment method'}
+          Fix the merchant, amount, date, payment method
+          {eventsAvailable ? ', event or notes' : ' or notes'}
           {' '}without sending it back to the submitter.
         </p>
       ) : (
@@ -172,6 +176,16 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
               />
             </div>
           )}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-charcoal/70">Notes</label>
+            <textarea
+              rows={3}
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="Add or amend the notes"
+              className={inputCls}
+            />
+          </div>
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-danger">
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />

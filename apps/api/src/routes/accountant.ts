@@ -935,13 +935,16 @@ router.patch('/expenses/:id/reference-number', asyncHandler(async (req, res) => 
 
 // ── Correct the fields an accountant can see blocking a Zoho push ────────────
 // Category, company, reference number and reimbursement already have their own
-// endpoints above. This covers the rest: payment method, merchant, amount, date.
+// endpoints above. This covers the rest: payment method, merchant, amount,
+// date and notes.
 
 const detailsSchema = z.object({
   merchant: z.string().min(1).optional(),
   amount: z.coerce.number().positive().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   paymentMethodId: z.string().uuid().optional(),
+  /** Notes; an empty string clears them. */
+  description: z.string().optional(),
   /** Argo event id; null clears the event. */
   eventId: z.string().min(1).nullable().optional(),
 });

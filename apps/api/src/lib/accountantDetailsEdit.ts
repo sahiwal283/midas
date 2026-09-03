@@ -19,6 +19,8 @@ export interface DetailsEditTarget {
   amount: string | null;
   date: string;
   paymentMethodId: string | null;
+  /** The expense's notes, shown as "Notes" in the UI. */
+  description: string | null;
   zohoExpenseId: string | null;
   /** Which app created this row — read alongside sourceRefId for the refusal message. */
   sourceApp: string | null;
@@ -33,6 +35,8 @@ export interface DetailsEditPatch {
   amount?: number;
   date?: string;
   paymentMethodId?: string;
+  /** Notes text; an empty (or whitespace-only) string clears the note. */
+  description?: string;
   /** Attach an event, or null to clear it. Absent leaves it alone. */
   event?: { id: string; name: string } | null;
 }
@@ -43,6 +47,7 @@ export interface DetailsEditChanges {
   amount?: string;
   date?: string;
   paymentMethodId?: string;
+  description?: string | null;
   sourceApp?: string | null;
   sourceType?: string | null;
   sourceLabel?: string | null;
@@ -113,6 +118,10 @@ export function planAccountantDetailsEdit(
   }
   if (patch.paymentMethodId !== undefined && patch.paymentMethodId !== expense.paymentMethodId) {
     changes.paymentMethodId = patch.paymentMethodId;
+  }
+  if (patch.description !== undefined) {
+    const description = patch.description.trim() || null;
+    if (description !== (expense.description?.trim() || null)) changes.description = description;
   }
   if (patch.event !== undefined) {
     // Shared with the owner's own PATCH path, so a no-op event edit writes
