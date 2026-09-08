@@ -39,7 +39,8 @@ These are load-bearing. Each one changed a decision.
 | `_format_llm_fields` whitelists 8 scalar fields, discards the rest | `llm_enhancement.py:238` | Line items would be dropped even if the LLM returned them |
 | `X-Workflow` reaches the job row but not the pipeline | `ocr.py:104`, `ocr_pipeline.py:80` | PO mode needs plumbing; the header already arrives |
 | Prompts come from an external Model Training service, one active prompt for all callers | `prompt_service.py:90` | PO instructions cannot live in the prompt store without affecting every caller |
-| Envelope parity gate does subset checks (`EXPECTED - set(keys)`) | `verify_image.py:342` | Adding `lineItems` is additive-safe |
+| Envelope parity gate does subset checks (`EXPECTED - set(keys)`) | `verify_image.py:342` | Adding a top-level key is additive-safe |
+| But every `fields.*` entry must be a `{value, confidence, source}` dict | `verify_image.py:369` | Line items must be a **separate top-level key**, never inside `fields` |
 | Document AI line items are raw `{text, confidence}` blobs, no qty/price split | `document_ai_processor.py:212` | Not a usable structured source; LLM path only for v1 |
 | The full `OcrResult` is persisted to `receipts.ocr_data` (jsonb) | `runReceiptOcr.ts:38` | Line items are stored and readable with no migration |
 | Receipt upload requires an existing owner id | `receipts.ts:96` | Nothing to OCR against until the PO exists |
@@ -112,13 +113,20 @@ photo taken
    `workflow == 'purchase-order'`. This lives in-repo rather than in the prompt
    store because there is exactly one active prompt shared by every caller.
 
-3. **Stop dropping line items.** Add a `lineItems` pass-through to
-   `_format_llm_fields`, normalizing each entry to
-   `{description, quantity, unit, unitPrice, tax, total, confidence}`. Unparseable
-   values become `null`; a malformed entry is skipped, never raised.
+3. **Stop dropping line items — on a separate channel.** They must *not* join
+   `_format_llm_fields`' return value: that dict becomes the response's `fields`, and
+   `verify_image.py:369` requires every `fields.*` entry to be a
+   `{value, confidence, source}` dict, so a `lineItems` key there fails the release
+   gate. Instead add `_format_llm_line_items`, normalizing each entry to
+   `{description, quantity, unit, unitPrice, tax, total, confidence}`, and a new
+   `extract_fields_and_lines()` returning `(fields, line_items)`.
+   `extract_fields_directly()` stays as a wrapper returning only fields, so its
+   existing tests are untouched. Unparseable values become `null`; a malformed entry
+   is skipped, never raised.
 
-4. **Envelope.** Add top-level `line_items` to the pipeline response dict. Additive,
-   so the frozen-envelope gate cannot break.
+4. **Envelope.** Add top-level `line_items` to the pipeline response dict — a sibling
+   of `fields`, not a member of it. Additive at the top level, so the frozen-envelope
+   gate cannot break.
 
 5. **Version.** `app/config.py:15` → `0.18.0`, and `EXPECTED_VERSION` in
    `scripts/verify_image.py:44` in the same commit — they are gated against each other.
