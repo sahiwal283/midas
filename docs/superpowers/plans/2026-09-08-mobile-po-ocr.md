@@ -959,9 +959,17 @@ describe('matchZohoItem', () => {
   });
 
   it('matches a near-miss above the threshold', () => {
-    const match = matchZohoItem('Booth carpet 10 x 10 grey', CATALOGUE);
+    const match = matchZohoItem('Booth Carpet 10x10 - grey', CATALOGUE);
     expect(match?.itemId).toBe('i1');
     expect(match!.score).toBeGreaterThanOrEqual(ZOHO_ITEM_MATCH_THRESHOLD);
+  });
+
+  it('leaves a spaced dimension string unmatched rather than guessing', () => {
+    // 'Booth Carpet 10x10' tokenizes to [booth, carpet, 10x10]; the spaced form
+    // tokenizes to [booth, carpet, 10, x, 10, grey] and scores 0.567 — below the
+    // threshold. Unmatched is the safe answer: the user picks, and no wrong item
+    // reaches a Zoho purchase order silently.
+    expect(matchZohoItem('Booth carpet 10 x 10 grey', CATALOGUE)).toBeNull();
   });
 
   it('prefers the closer of two candidates sharing a word', () => {
@@ -1096,7 +1104,7 @@ export function matchZohoItem(
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd ~/Work/midas && npx vitest run --root packages/shared src/types/zohoItemMatch.test.ts`
-Expected: PASS — 10 tests
+Expected: PASS — 11 tests
 
 - [ ] **Step 5: Export it**
 
@@ -1364,7 +1372,7 @@ export function poSubmitBlocker(input: PoSubmitInput): PoSubmitBlocker | null {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd ~/Work/midas && npx vitest run --root apps/api src/__tests__/poSubmitGate.test.ts`
-Expected: PASS — 10 tests
+Expected: PASS — 11 tests
 
 - [ ] **Step 5: Write the failing draft-schema test**
 
