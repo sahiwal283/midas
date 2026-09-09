@@ -22,6 +22,11 @@ export {
   resolveZohoAccountId,
   isZohoAccountId,
 } from './zohoAccountId';
+export {
+  ZOHO_ITEM_MATCH_THRESHOLD,
+  matchZohoItem,
+} from './zohoItemMatch';
+export type { MatchableZohoItem, ZohoItemMatch } from './zohoItemMatch';
 
 // ── Roles ────────────────────────────────────────────────────────────────────
 
