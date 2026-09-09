@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createPoSchema } from '../routes/transactions';
+import { createPoSchema } from '../lib/poSchemas';
 
 const BASE = { transactionDate: '2026-09-08' };
 

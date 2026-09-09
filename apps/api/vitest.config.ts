@@ -4,7 +4,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    setupFiles: ['./src/testSetup.ts'],
     include: ['src/__tests__/**/*.test.ts'],
     coverage: {
       reporter: ['text'],
