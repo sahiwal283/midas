@@ -21,6 +21,9 @@ export function MobileNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
+  // A photo has been taken but not yet routed: the sheet asks which document
+  // kind it is before handing it to a form.
+  const [kindPick, setKindPick] = useState<File | null>(null);
   // Both scoped review pages share one bottom-bar tab, so match either instead
   // of relying on NavLink's own (single-path) active check.
   const queueActive = location.pathname.startsWith('/accountant');
@@ -37,6 +40,14 @@ export function MobileNav() {
   const isDeveloper = role === 'developer';
   const isPrivileged = role === 'accountant' || role === 'admin' || isDeveloper;
   const isPartner = role === 'partner' || isDeveloper;
+
+  // Tapping the backdrop chooses Expense, so the common case is never trapped
+  // behind a decision.
+  function routeCapture(file: File, to: string) {
+    setPendingCapture(file);
+    setKindPick(null);
+    navigate(to);
+  }
 
   return (
     <>
@@ -72,6 +83,40 @@ export function MobileNav() {
             <p className="border-t border-ink/5 px-4 pb-1 pt-2 text-center text-[11px] text-charcoal/35">
               Midas {version}
             </p>
+          </div>
+        </div>
+      )}
+
+      {kindPick && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          onClick={() => routeCapture(kindPick, '/expenses/new?mode=scan')}
+        >
+          <div className="absolute inset-0 bg-ink/30" />
+          <div
+            className="absolute bottom-16 left-3 right-3 rounded-2xl border border-ink/10 bg-white p-4 shadow-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-1 text-sm font-semibold text-ink">What is this receipt?</p>
+            <p className="mb-3 text-xs text-charcoal/55">
+              A purchase order has vendor line items. Everything else is an expense.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => routeCapture(kindPick, '/expenses/new?mode=scan')}
+                className="min-h-11 flex-1 rounded-xl bg-brand-700 px-4 text-sm font-semibold text-cream"
+              >
+                Expense
+              </button>
+              <button
+                type="button"
+                onClick={() => routeCapture(kindPick, '/transactions/po/new?mode=scan')}
+                className="min-h-11 flex-1 rounded-xl border border-brand-200 px-4 text-sm font-semibold text-brand-700"
+              >
+                Purchase order
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -112,10 +157,9 @@ export function MobileNav() {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = '';
-                if (file) {
-                  setPendingCapture(file);
-                  navigate('/expenses/new?mode=scan');
-                }
+                // Ask what kind of document this is before routing: the PO form
+                // and the expense form need the same photo but nothing else.
+                if (file) setKindPick(file);
               }}
             />
           </label>
