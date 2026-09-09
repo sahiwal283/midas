@@ -22,6 +22,7 @@ import { assertActiveCompany } from '../lib/companies';
 import { normalizeSourceType } from '../lib/sourceTypes';
 import { listItemsWithCache, listVendorsWithCache } from '../lib/zohoCatalog';
 import { roleAllowed } from '../lib/roles';
+import { poSubmitBlocker } from '../lib/poSubmitGate';
 
 const router = Router();
 router.use(authenticate);
@@ -39,8 +40,11 @@ const lineItemSchema = z.object({
   needsReview: z.boolean().optional(),
 });
 
-const createPoSchema = z.object({
-  vendorName: z.string().min(1),
+// vendorName may be empty: a draft is created the moment a receipt is picked,
+// before OCR has read the vendor off it. poSubmitBlocker holds the real line —
+// nothing reaches Zoho without a vendor.
+export const createPoSchema = z.object({
+  vendorName: z.string().default(''),
   transactionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   currency: z.string().length(3).default('USD'),
   taxTotal: z.coerce.number().nonnegative().optional().default(0),
@@ -385,6 +389,15 @@ router.patch('/:id', asyncHandler(async (req, res) => {
         needsReview: li.needsReview ?? false,
       })),
     );
+
+    // Line items were just confirmed by a human, so the receipt no longer needs
+    // an OCR review pass. Mirrors what the removed ocr-line-items route did.
+    await db.update(receipts)
+      .set({ ocrNeedsReview: false })
+      .where(and(
+        eq(receipts.transactionId, existing.id),
+        eq(receipts.ocrNeedsReview, true),
+      ));
   }
 
   const full = await db.query.transactions.findFirst({
@@ -397,15 +410,25 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 router.post('/:id/submit', asyncHandler(async (req, res) => {
   const existing = await db.query.transactions.findFirst({
     where: eq(transactions.id, req.params.id),
-    with: { lineItems: true },
+    with: { lineItems: true, purchaseOrder: true },
   });
   if (!existing) throw notFound('Transaction not found');
   if (existing.userId !== req.user!.id) throw forbidden();
   if (existing.status !== 'draft') {
     throw createError('Only drafts can be submitted', 409, 'CONFLICT');
   }
-  if (existing.type === 'purchase_order' && (!existing.lineItems || existing.lineItems.length === 0)) {
-    throw createError('Add at least one line item before submitting', 409, 'MISSING_LINE_ITEMS');
+
+  if (existing.type === 'purchase_order') {
+    const gateCompany = existing.zohoEntity
+      ? await db.query.companies.findFirst({ where: eq(companies.name, existing.zohoEntity) })
+      : undefined;
+    const blocker = poSubmitBlocker({
+      vendorName: existing.vendorName,
+      zohoEnabled: gateCompany?.zohoEnabled !== false && !!existing.zohoEntity,
+      zohoVendorId: existing.purchaseOrder?.zohoVendorId ?? null,
+      lineItems: existing.lineItems ?? [],
+    });
+    if (blocker) throw createError(blocker.message, blocker.status, blocker.code);
   }
 
   // Purchase orders skip accountant review entirely: the purchasing employee
@@ -593,70 +616,6 @@ router.post('/:id/zoho-push', requireRole('accountant', 'admin'), asyncHandler(a
   res.status(502).json({
     error: { code: outcome.code, message: outcome.message, requestId: outcome.requestId },
   });
-}));
-
-/** Persist OCR-derived line items onto a PO transaction (Phase 1 foundation). */
-router.post('/:id/ocr-line-items', asyncHandler(async (req, res) => {
-  const body = z.object({
-    lineItems: z.array(lineItemSchema).min(1),
-    taxTotal: z.coerce.number().nonnegative().optional(),
-    total: z.coerce.number().nonnegative().optional(),
-    vendorName: z.string().optional(),
-  }).parse(req.body);
-
-  const existing = await db.query.transactions.findFirst({
-    where: eq(transactions.id, req.params.id),
-  });
-  if (!existing) throw notFound('Transaction not found');
-  if (existing.userId !== req.user!.id && req.user!.role !== 'accountant' && req.user!.role !== 'admin') {
-    throw forbidden();
-  }
-  if (existing.type !== 'purchase_order') {
-    throw createError('OCR line items apply to purchase orders', 400, 'WRONG_TYPE');
-  }
-
-  await replaceLineItems(
-    existing.id,
-    body.lineItems.map((li) => ({
-      lineNumber: li.lineNumber,
-      description: li.description,
-      quantity: String(li.quantity),
-      unit: li.unit ?? null,
-      unitPrice: String(li.unitPrice),
-      tax: String(li.tax ?? 0),
-      total: String(li.total),
-      zohoItemId: li.zohoItemId ?? null,
-      ocrConfidence: li.ocrConfidence != null ? String(li.ocrConfidence) : null,
-      needsReview: li.needsReview ?? (li.ocrConfidence != null && li.ocrConfidence < 0.7),
-    })),
-  );
-
-  const total = body.total ?? sumLineTotals(body.lineItems);
-  const [updated] = await db.update(transactions)
-    .set({
-      vendorName: body.vendorName ?? existing.vendorName,
-      taxTotal: body.taxTotal !== undefined ? String(body.taxTotal) : existing.taxTotal,
-      total: String(total),
-      updatedAt: new Date(),
-    })
-    .where(eq(transactions.id, existing.id))
-    .returning();
-
-  // Touch receipts so callers know OCR confirmation happened. This route is
-  // guarded to type === 'purchase_order', and a PO's receipts hang off
-  // transaction_id — filtering on expense_id here matched nothing at all.
-  await db.update(receipts)
-    .set({ ocrNeedsReview: false })
-    .where(and(
-      eq(receipts.transactionId, existing.id),
-      eq(receipts.ocrNeedsReview, true),
-    ));
-
-  const full = await db.query.transactions.findFirst({
-    where: eq(transactions.id, existing.id),
-    with: { lineItems: true, purchaseOrder: true },
-  });
-  res.json({ transaction: full ?? updated });
 }));
 
 export default router;
