@@ -123,8 +123,12 @@ export function PurchaseOrderNew() {
         setDraftId(id);
       }
       const { receipt: uploaded } = await transactionReceiptApi.upload(id, await compressReceiptImage(file));
-      // The file is on the draft whatever happens to the OCR result below.
-      setReceiptAttached(true);
+      // This file is on the draft whatever happens to the OCR result below, so
+      // record it even when the user has abandoned OCR — Save must not upload it
+      // a second time. But only for the newest scan: a slower earlier upload
+      // must not vouch for a photo the user has since replaced, or Save would
+      // skip the replacement and silently drop it.
+      if (ocrRun.current === run) setReceiptAttached(true);
       if (superseded()) return;
 
       const header = poHeaderFromOcr(uploaded.ocrData);
@@ -223,10 +227,20 @@ export function PurchaseOrderNew() {
   });
 
   const subtotal = lines.reduce((acc, l) => acc + (Number(l.total) || 0), 0);
-  const canSave = !!vendorName.trim() && lines.some((l) => l.description.trim());
+  const unmappedLines = lines.some((l) => l.description.trim() && !l.zohoItemId);
+  // A description is what makes a line real: the save filter drops lines without
+  // one, and the API requires it. OCR can hand back a line whose amounts read
+  // fine but whose text did not, so it shows on screen with numbers filled in
+  // and would then disappear at save without a word. Say so, and hold Save until
+  // the line is either named or removed — Save is also the approval here, so a
+  // line the user saw must not be missing from what reaches Zoho.
+  const droppedLines = lines.some(
+    (l) => !l.description.trim() && (Number(l.total) || Number(l.unitPrice) || Number(l.tax)),
+  );
+  const canSave = !!vendorName.trim() && lines.some((l) => l.description.trim()) && !droppedLines;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 pb-28 sm:pb-8">
+    <div className="mx-auto max-w-3xl px-4 py-8 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-8">
       <h1 className="page-title mb-6">New Purchase Order</h1>
       {error && <p className="mb-4 text-sm text-danger bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
       {(vendorsQ.isError || itemsQ.isError) && (
@@ -371,16 +385,25 @@ export function PurchaseOrderNew() {
         </div>
       </div>
 
-      {lines.some((l) => l.description.trim() && !l.zohoItemId) && (
+      {droppedLines && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          A line has amounts but no description, so it would not be saved. Describe it or remove it to continue.
+        </p>
+      )}
+
+      {unmappedLines && (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           Some lines have no Zoho item yet. You can save this draft now, but every line needs one before you can submit it.
         </p>
       )}
 
-      {/* Sticky so Save is always reachable on a phone. It stops at bottom-20
-          rather than bottom-0 because the bottom nav is fixed over the last
-          ~74px of the viewport (nav plus the camera FAB that overhangs it). */}
-      <div className="sticky bottom-20 -mx-4 flex flex-col gap-3 border-t border-ink/10 bg-cream px-4 py-3 sm:static sm:mx-0 sm:flex-row sm:border-0 sm:bg-transparent sm:px-0">
+      {/* Sticky so Save is always reachable on a phone, but not at bottom-0:
+          MobileNav is fixed over the foot of the viewport and its camera FAB
+          overhangs it by 20px, reaching 5rem up on a device with no home
+          indicator. env(safe-area-inset-bottom) pads the nav from underneath and
+          so pushes the FAB up by the same amount, which is why the inset is
+          added rather than relied on for clearance. */}
+      <div className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] -mx-4 flex flex-col gap-3 border-t border-ink/10 bg-cream px-4 py-3 sm:static sm:mx-0 sm:flex-row sm:border-0 sm:bg-transparent sm:px-0">
         <button
           type="button"
           disabled={!canSave || create.isPending}
