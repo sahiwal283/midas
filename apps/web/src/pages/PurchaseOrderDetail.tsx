@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, ChangeEvent } from 'react';
+import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { Paperclip, Upload } from 'lucide-react';
 import api from '../api/client';
 import { transactionReceiptApi } from '../api/expenses';
@@ -15,6 +15,12 @@ import { roleAllowed } from '../lib/roles';
 type ZohoVendor = { vendorId: string; vendorName: string; companyName?: string | null };
 type ZohoItem = { itemId: string; name: string; unit?: string | null };
 
+/** The API's own message for a failed call, when it sent one worth showing. */
+function apiMessage(err: unknown): string | null {
+  return (err as { response?: { data?: { error?: { message?: string } } } })
+    ?.response?.data?.error?.message ?? null;
+}
+
 export function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -27,7 +33,19 @@ export function PurchaseOrderDetail() {
   // expected first outcome of the mobile flow (OCR fills the vendor name but
   // never the Zoho vendor id), so the reason has to be on screen — without it
   // the button does nothing visible and the user has no way to learn why.
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Cancel shares this banner: both live in the bottom action row, and cancel
+  // has its own 409 (a synced purchase order is not deletable).
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Picking a vendor or a Zoho item is the correction the submit gate asks
+  // for. If that PATCH fails the control silently snaps back on refetch, so
+  // the fix for a visible error would itself fail invisibly.
+  const [editError, setEditError] = useState<string | null>(null);
+  // The banner sits above the line-item list, so an edit that fails on a lower
+  // row would otherwise report itself off-screen. Bring it into view.
+  const editErrorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (editError) editErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [editError]);
   // The create form uploads the receipt once the PO exists. If that upload
   // failed it still sends the user here — the purchase order is real — and
   // carries the reason so it lands in this page's banner, beside the Upload
@@ -67,21 +85,22 @@ export function PurchaseOrderDetail() {
   const submit = useMutation({
     mutationFn: async () => (await api.post<{ transaction: Transaction }>(`/transactions/${id}/submit`)).data.transaction,
     onSuccess: () => {
-      setSubmitError(null);
+      setActionError(null);
       void qc.invalidateQueries({ queryKey: ['transaction', id] });
     },
     onError: (err: unknown) => {
       // The API's messages are already written for the user ("Every line item
       // needs a Zoho item before submitting"), so show them as they come.
-      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
-        ?.response?.data?.error?.message;
-      setSubmitError(msg || 'This purchase order could not be submitted. Please try again.');
+      setActionError(apiMessage(err) || 'This purchase order could not be submitted. Please try again.');
     },
   });
 
   const cancel = useMutation({
     mutationFn: async () => (await api.post(`/transactions/${id}/cancel`)).data,
     onSuccess: () => navigate('/expenses/new'),
+    onError: (err: unknown) => {
+      setActionError(apiMessage(err) || 'This purchase order could not be cancelled. Please try again.');
+    },
   });
 
   const patch = useMutation({
@@ -90,8 +109,12 @@ export function PurchaseOrderDetail() {
     onSuccess: () => {
       // Picking the vendor or item the submit gate asked for is the fix for
       // that error, so the message should not outlive the edit.
-      setSubmitError(null);
+      setActionError(null);
+      setEditError(null);
       void qc.invalidateQueries({ queryKey: ['transaction', id] });
+    },
+    onError: (err: unknown) => {
+      setEditError(apiMessage(err) || 'That change could not be saved. Please try again.');
     },
   });
 
@@ -113,9 +136,7 @@ export function PurchaseOrderDetail() {
     onError: (err: unknown) => {
       // Without this the button just flips back to "Upload" and the list still
       // reads "No receipts attached" — a silent loss the user cannot see.
-      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
-        ?.response?.data?.error?.message;
-      setUploadError(msg || 'Receipt upload failed. Please try again.');
+      setUploadError(apiMessage(err) || 'Receipt upload failed. Please try again.');
     },
   });
 
@@ -133,8 +154,7 @@ export function PurchaseOrderDetail() {
       void qc.invalidateQueries({ queryKey: ['transaction', id] });
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
-      setPushError(msg || 'Zoho PO push failed');
+      setPushError(apiMessage(err) || 'Zoho PO push failed');
     },
   });
 
@@ -233,6 +253,16 @@ export function PurchaseOrderDetail() {
 
       {pushError && (
         <p className="mb-4 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">{pushError}</p>
+      )}
+
+      {editable && editError && (
+        <p
+          ref={editErrorRef}
+          role="alert"
+          className="mb-4 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger"
+        >
+          {editError}
+        </p>
       )}
 
       {editable && (
@@ -420,12 +450,12 @@ export function PurchaseOrderDetail() {
         )}
       </div>
 
-      {submitError && (
+      {actionError && (
         <p
           role="alert"
           className="mb-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger"
         >
-          {submitError}
+          {actionError}
         </p>
       )}
 

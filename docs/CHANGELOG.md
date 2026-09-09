@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.10.1 (2026-09-09)
+
+### Fixed
+- Purchase-order detail: editing a purchase order no longer fails silently.
+  Picking a Zoho vendor or a Zoho item is the correction the submit gate asks
+  for, but if that save failed the control simply snapped back on refetch — so
+  the fix for a visible error failed invisibly. The reason is now shown, and
+  scrolled into view when the failure comes from a line far down the list.
+- Cancelling a purchase order now reports why it could not be cancelled. A
+  synced purchase order is not deletable, and that 409 previously produced no
+  feedback at all.
+
 ## 1.10.0 (2026-09-09)
 
 ### Added
