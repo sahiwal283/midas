@@ -129,14 +129,18 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
     ? () => maybeAutoPushPending(owner.id, req.user!.id)
     : async () => undefined;
 
+  // A purchase-order receipt is an itemized vendor document, so ask the engine
+  // for line items. Expenses stay on the default receipt workflow.
+  const ocrOpts = owner.kind === 'expense' ? undefined : { workflow: 'purchase-order' };
+
   if (runAsync) {
     // Escape hatch only — see docs/SYNC_AND_OFFLINE.md
-    void runReceiptOcr(receipt.id, stored.storagePath).then(autoPush);
+    void runReceiptOcr(receipt.id, stored.storagePath, ocrOpts).then(autoPush);
     res.status(201).json({ receipt, ocrMode: 'async' });
     return;
   }
 
-  const withOcr = await runReceiptOcr(receipt.id, stored.storagePath);
+  const withOcr = await runReceiptOcr(receipt.id, stored.storagePath, ocrOpts);
   const completion = await autoPush();
   res.status(201).json({ receipt: withOcr, ocrMode: 'sync', autoPushed: completion?.autoPushed });
 }));
