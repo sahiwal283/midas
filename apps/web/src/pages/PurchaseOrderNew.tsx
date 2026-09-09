@@ -385,45 +385,53 @@ export function PurchaseOrderNew() {
         </div>
       </div>
 
-      {droppedLines && (
-        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          A line has amounts but no description, so it would not be saved. Describe it or remove it to continue.
-        </p>
-      )}
-
-      {unmappedLines && (
-        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Some lines have no Zoho item yet. You can save this draft now, but every line needs one before you can submit it.
-        </p>
-      )}
-
       {/* Sticky so Save is always reachable on a phone, but not at bottom-0:
           MobileNav is fixed over the foot of the viewport and its camera FAB
           overhangs it by 20px, reaching 5rem up on a device with no home
           indicator. env(safe-area-inset-bottom) pads the nav from underneath and
           so pushes the FAB up by the same amount, which is why the inset is
-          added rather than relied on for clearance. */}
-      <div className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] -mx-4 flex flex-col gap-3 border-t border-ink/10 bg-cream px-4 py-3 sm:static sm:mx-0 sm:flex-row sm:border-0 sm:bg-transparent sm:px-0">
-        <button
-          type="button"
-          disabled={!canSave || create.isPending}
-          onClick={() => create.mutate()}
-          className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg bg-brand-700 text-cream px-4 py-2 text-sm font-medium disabled:opacity-50"
-        >
-          {create.isPending ? 'Saving…' : 'Save draft'}
-        </button>
-        <button
-          type="button"
-          onClick={async () => {
-            // An abandoned draft has a real row and a stored file behind it.
-            // Cancel hard-deletes both for the owner's own unsynced draft.
-            if (draftId) await api.post(`/transactions/${draftId}/cancel`).catch(() => undefined);
-            navigate(-1);
-          }}
-          className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-brand-200 px-4 py-2 text-sm"
-        >
-          Cancel
-        </button>
+          added rather than relied on for clearance. The offset pins the bottom
+          edge, so the notices below can grow the bar upward without eating it.
+
+          The notices live inside the bar rather than above it: one of them
+          explains why Save is disabled, and in normal flow it would scroll off
+          the top while the bar stayed pinned, leaving a greyed button with no
+          stated cause. They travel with the button they explain. */}
+      <div className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] -mx-4 border-t border-ink/10 bg-cream px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0">
+        {droppedLines && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            A line has amounts but no description, so it would not be saved. Describe it or remove it to continue.
+          </p>
+        )}
+
+        {unmappedLines && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Some lines have no Zoho item yet. You can save this draft now, but every line needs one before you can submit it.
+          </p>
+        )}
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            disabled={!canSave || create.isPending}
+            onClick={() => create.mutate()}
+            className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg bg-brand-700 text-cream px-4 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            {create.isPending ? 'Saving…' : 'Save draft'}
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              // An abandoned draft has a real row and a stored file behind it.
+              // Cancel hard-deletes both for the owner's own unsynced draft.
+              if (draftId) await api.post(`/transactions/${draftId}/cancel`).catch(() => undefined);
+              navigate(-1);
+            }}
+            className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-brand-200 px-4 py-2 text-sm"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );
