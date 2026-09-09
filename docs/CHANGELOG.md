@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.10.0 (2026-09-09)
+
+### Added
+- Mobile purchase-order capture: the camera button now asks whether a photo is an
+  expense or a purchase order, and routes to the PO form with the receipt attached.
+  Previously the PO form was unreachable on a phone.
+- OCR extracts purchase-order line items. Each line is matched against the Zoho item
+  catalogue and preselected when the match is confident; weak matches and
+  low-confidence lines are flagged for the user to confirm.
+- Shared line-item editor used by both the create and detail pages — a table on
+  desktop, cards on mobile.
+
+### Changed
+- Purchase-order submit now validates before approving. A PO missing a vendor, a Zoho
+  vendor, or a Zoho item on any line is rejected with a correctable error instead of
+  being approved and then failing its Zoho push.
+- Picking a receipt on the PO form creates the draft immediately, so OCR can run
+  against it. Cancelling discards the draft and its file.
+- Numeric PO inputs open a numeric keypad on mobile.
+
+### Removed
+- `POST /api/v1/transactions/:id/ocr-line-items`, which had no callers. `PATCH
+  /api/v1/transactions/:id` covers it.
+
+### Requires
+- ocrService `0.18.0` for line-item extraction. Older versions degrade to no line
+  items — the flow still works, the user types the lines.
+
+### Known limitations
+- Picking a receipt on the purchase-order form creates the draft immediately, so
+  abandoning the page without saving or cancelling leaves an empty draft behind.
+  Such drafts are invisible to accountants and harmless, but with no purchase-order
+  list UI the owner cannot see them either. Cancelling the form removes them.
+
 ## 1.9.0 (2026-09-03)
 
 ### Accountants can edit notes without a round-trip
