@@ -1,25 +1,27 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import { transactionReceiptApi } from '../api/expenses';
 import { compressReceiptImage } from '../lib/receiptCompress';
+import { LineItemReview, LOW_CONFIDENCE } from '../components/LineItemReview';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { VendorCombobox } from '../components/VendorCombobox';
+import { lineDraftsFromOcr, poHeaderFromOcr, type LineDraft } from '../lib/ocrLineItems';
+import { takePendingCapture } from '../lib/pendingCapture';
 import type { Transaction } from '@midas/shared';
 
 type ZohoVendor = { vendorId: string; vendorName: string; companyName?: string | null };
 type ZohoItem = { itemId: string; name: string; sku?: string | null; unit?: string | null };
 
-type LineDraft = {
-  lineNumber: number;
-  description: string;
-  quantity: string;
-  unit: string;
-  unitPrice: string;
-  tax: string;
-  total: string;
-  zohoItemId: string;
+// Shared so the OCR handoff can `ensureQueryData` the same cache entry the
+// form renders from: OCR finishes while the catalogue may still be in flight,
+// and matching against an empty catalogue would silently preselect nothing.
+const itemsQueryOptions = {
+  queryKey: ['zoho-items'],
+  queryFn: async () => (await api.get<{ items: ZohoItem[] }>('/transactions/meta/items')).data.items,
+  staleTime: 60_000,
+  retry: 1,
 };
 
 function blankLine(n: number): LineDraft {
@@ -32,18 +34,15 @@ function blankLine(n: number): LineDraft {
     tax: '0',
     total: '0',
     zohoItemId: '',
+    ocrConfidence: null,
+    matchScore: null,
   };
-}
-
-function recalc(line: LineDraft): LineDraft {
-  const qty = Number(line.quantity) || 0;
-  const price = Number(line.unitPrice) || 0;
-  const tax = Number(line.tax) || 0;
-  return { ...line, total: (qty * price + tax).toFixed(2) };
 }
 
 export function PurchaseOrderNew() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const queryClient = useQueryClient();
   const companies = useQuery({
     queryKey: ['companies'],
     queryFn: async () => (await api.get<{ companies: Array<{ name: string }> }>('/companies')).data.companies,
@@ -54,12 +53,7 @@ export function PurchaseOrderNew() {
     staleTime: 60_000,
     retry: 1,
   });
-  const itemsQ = useQuery({
-    queryKey: ['zoho-items'],
-    queryFn: async () => (await api.get<{ items: ZohoItem[] }>('/transactions/meta/items')).data.items,
-    staleTime: 60_000,
-    retry: 1,
-  });
+  const itemsQ = useQuery(itemsQueryOptions);
 
   const [vendorName, setVendorName] = useState('');
   const [zohoVendorId, setZohoVendorId] = useState('');
@@ -68,9 +62,20 @@ export function PurchaseOrderNew() {
   const [taxTotal, setTaxTotal] = useState('0');
   const [lines, setLines] = useState<LineDraft[]>([blankLine(1)]);
   const [error, setError] = useState<string | null>(null);
-  // Held until the PO exists: a receipt needs a transaction id, so it can only
-  // be uploaded after the draft saves. Picking it here keeps that invisible.
   const [receipt, setReceipt] = useState<File | null>(null);
+  // The draft this photo belongs to. Held in state so a retaken photo reuses
+  // the same purchase order instead of leaving an orphan behind.
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [ocrPhase, setOcrPhase] = useState<'idle' | 'working' | 'done' | 'failed'>('idle');
+  // The photo is on the draft already. False after a failed upload, so Save
+  // retries it instead of quietly dropping the receipt.
+  const [receiptAttached, setReceiptAttached] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Set when the user takes the escape hatch: a late OCR response must not
+  // overwrite what they have since typed.
+  const abandonedOcr = useRef(false);
+  // Identifies the newest scan, so a slower earlier one cannot land on top of it.
+  const ocrRun = useRef(0);
 
   const items = itemsQ.data ?? [];
   const vendors = vendorsQ.data ?? [];
@@ -80,7 +85,9 @@ export function PurchaseOrderNew() {
     [vendors],
   );
   const itemOptions = useMemo(
-    () => [...items].sort((a, b) => a.name.localeCompare(b.name)),
+    () => [...items]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((it) => ({ value: it.itemId, label: it.name, hint: it.sku || it.itemId, unit: it.unit })),
     [items],
   );
 
@@ -90,18 +97,76 @@ export function PurchaseOrderNew() {
     if (v) setVendorName(v.companyName || v.vendorName);
   }
 
-  function pickItem(idx: number, itemId: string) {
-    const item = items.find((x) => x.itemId === itemId);
-    const next = [...lines];
-    const line = next[idx];
-    next[idx] = recalc({
-      ...line,
-      zohoItemId: itemId,
-      description: line.description || item?.name || '',
-      unit: line.unit || item?.unit || '',
-    });
-    setLines(next);
+  /**
+   * A picked receipt starts the purchase order rather than waiting for Save:
+   * the file needs an owner id to attach to, and OCR runs as part of that
+   * upload. Everything OCR reads lands in the form for the user to confirm.
+   */
+  async function startWithReceipt(file: File) {
+    const run = ocrRun.current + 1;
+    ocrRun.current = run;
+    abandonedOcr.current = false;
+    const superseded = () => abandonedOcr.current || ocrRun.current !== run;
+    setError(null);
+    setReceipt(file);
+    setReceiptAttached(false);
+    setOcrPhase('working');
+    try {
+      let id = draftId;
+      if (!id) {
+        const { data } = await api.post<{ transaction: Transaction }>('/transactions/purchase-orders', {
+          vendorName: '',
+          transactionDate,
+          lineItems: [],
+        });
+        id = data.transaction.id;
+        setDraftId(id);
+      }
+      const { receipt: uploaded } = await transactionReceiptApi.upload(id, await compressReceiptImage(file));
+      // The file is on the draft whatever happens to the OCR result below.
+      setReceiptAttached(true);
+      if (superseded()) return;
+
+      const header = poHeaderFromOcr(uploaded.ocrData);
+      if (header.vendorName) setVendorName(header.vendorName);
+      if (header.transactionDate) setTransactionDate(header.transactionDate);
+      if (header.taxTotal) setTaxTotal(header.taxTotal);
+      // The catalogue drives item matching, so wait for it rather than matching
+      // against whatever happened to be cached when the upload started. A
+      // catalogue that will not load is not worth failing the scan over.
+      const catalogue = await queryClient.ensureQueryData(itemsQueryOptions).catch(() => [] as ZohoItem[]);
+      if (superseded()) return;
+      const drafts = lineDraftsFromOcr(uploaded.ocrData, catalogue);
+      if (drafts.length) setLines(drafts);
+      setOcrPhase('done');
+    } catch (err) {
+      if (superseded()) return;
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      setError(msg || 'The receipt could not be read. Enter the details by hand — the photo is saved.');
+      setOcrPhase('failed');
+    }
   }
+
+  // ?mode=scan: the mobile nav takes the photo inside the tap gesture (a
+  // programmatic click after navigation is blocked on mobile) and hands it over.
+  const consumedCapture = useRef(false);
+  useEffect(() => {
+    if (params.get('mode') !== 'scan' || consumedCapture.current) return;
+    const captured = takePendingCapture();
+    if (captured) {
+      consumedCapture.current = true;
+      void startWithReceipt(captured);
+    }
+  }, [params]);
+
+  useEffect(() => {
+    if (receipt && receipt.type.startsWith('image/')) {
+      const url = URL.createObjectURL(receipt);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    setPreviewUrl(null);
+  }, [receipt]);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -116,35 +181,44 @@ export function PurchaseOrderNew() {
           tax: Number(l.tax) || 0,
           total: Number(l.total),
           zohoItemId: l.zohoItemId || null,
+          ocrConfidence: l.ocrConfidence,
+          needsReview: l.ocrConfidence != null && l.ocrConfidence < LOW_CONFIDENCE,
         }));
-      const { data } = await api.post<{ transaction: Transaction }>('/transactions/purchase-orders', {
+      const body = {
         vendorName,
         zohoVendorId: zohoVendorId || null,
         transactionDate,
         zohoEntity: zohoEntity || null,
         taxTotal: Number(taxTotal) || 0,
         lineItems,
-      });
-      if (!receipt) return { tx: data.transaction, receiptError: null };
+      };
+
+      // A draft already exists whenever a receipt was picked — patch it rather
+      // than creating a second purchase order for the same photo.
+      const { data } = draftId
+        ? await api.patch<{ transaction: Transaction }>(`/transactions/${draftId}`, body)
+        : await api.post<{ transaction: Transaction }>('/transactions/purchase-orders', body);
+      const tx = data.transaction;
+      if (!receipt || receiptAttached) return { tx, receiptError: null };
 
       // The purchase order now exists, so a failed upload must not fail the
       // save — losing a filled-in PO to a network blip is far worse than
       // landing on it with the receipt still missing. Carry the reason to the
       // detail page instead, where the Upload button is waiting.
       try {
-        await transactionReceiptApi.upload(data.transaction.id, await compressReceiptImage(receipt));
-        return { tx: data.transaction, receiptError: null };
+        await transactionReceiptApi.upload(tx.id, await compressReceiptImage(receipt));
+        return { tx, receiptError: null };
       } catch (err) {
         const msg = (err as { response?: { data?: { error?: { message?: string } } } })
           ?.response?.data?.error?.message;
-        return { tx: data.transaction, receiptError: msg || 'The receipt could not be uploaded.' };
+        return { tx, receiptError: msg || 'The receipt could not be uploaded.' };
       }
     },
     onSuccess: ({ tx, receiptError }) =>
       navigate(`/transactions/${tx.id}`, { state: receiptError ? { receiptUploadFailed: receiptError } : undefined }),
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
-      setError(msg || 'Failed to create purchase order');
+      setError(msg || 'Failed to save purchase order');
     },
   });
 
@@ -152,13 +226,45 @@ export function PurchaseOrderNew() {
   const canSave = !!vendorName.trim() && lines.some((l) => l.description.trim());
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="mx-auto max-w-3xl px-4 py-8 pb-28 sm:pb-8">
       <h1 className="page-title mb-6">New Purchase Order</h1>
       {error && <p className="mb-4 text-sm text-danger bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
       {(vendorsQ.isError || itemsQ.isError) && (
         <p className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
           Could not load Zoho vendors/items. You can still draft the PO and map IDs later — push will require them.
         </p>
+      )}
+
+      {ocrPhase !== 'idle' && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
+          {previewUrl && (
+            <img src={previewUrl} alt="Receipt" className="h-20 w-20 shrink-0 rounded-md border border-ink/10 object-cover" />
+          )}
+          <div className="min-w-0 flex-1">
+            {ocrPhase === 'working' ? (
+              <>
+                <p className="flex items-center gap-2 text-sm text-charcoal/70">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+                  Reading the receipt…
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { abandonedOcr.current = true; setOcrPhase('idle'); }}
+                  className="mt-2 min-h-11 text-sm font-medium text-brand-700"
+                >
+                  Enter manually instead
+                </button>
+              </>
+            ) : (
+              <p className="text-sm text-charcoal/70">
+                {ocrPhase === 'done' && 'Receipt attached. Check the lines below before saving.'}
+                {ocrPhase !== 'done' && (receiptAttached
+                  ? 'Receipt attached.'
+                  : 'The photo will be attached when you save.')}
+              </p>
+            )}
+          </div>
+        </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 mb-6">
@@ -215,217 +321,28 @@ export function PurchaseOrderNew() {
             type="file"
             accept="image/*,.pdf,.heic,.heif"
             className="mt-1 w-full rounded border border-brand-200 px-3 py-3 text-sm file:mr-3 file:rounded file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:text-brand-700 lg:py-2"
-            onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void startWithReceipt(file);
+            }}
           />
           <span className="mt-1 block text-xs text-charcoal/50">
             {receipt
-              ? `${receipt.name} — uploads when you save.`
-              : 'Attached when you save. You can also add or replace it afterwards.'}
+              ? `${receipt.name} — ${receiptAttached ? 'attached to this draft.' : 'uploads when you save.'}`
+              : 'Attached as soon as you pick it, and read for vendor and line items.'}
           </span>
         </label>
       </div>
 
       <h2 className="text-sm font-semibold text-ink mb-2">Line items</h2>
 
-      {/* Mobile: stacked line-item cards */}
-      <div className="md:hidden space-y-3 mb-4">
-        {lines.map((line, idx) => (
-          <div key={line.lineNumber} className="rounded-lg border border-brand-100 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wide text-charcoal/60">Line {idx + 1}</span>
-              {lines.length > 1 && (
-                <button
-                  type="button"
-                  aria-label={`Remove line ${idx + 1}`}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-xs text-danger"
-                  onClick={() => setLines(lines.filter((_, i) => i !== idx))}
-                >
-                  ✕ Remove
-                </button>
-              )}
-            </div>
-            <label className="block text-sm">
-              <span className="text-charcoal/80">Zoho item</span>
-              <SearchableSelect
-                className="mt-1"
-                disabled={itemsQ.isLoading}
-                placeholder="Search item…"
-                value={line.zohoItemId}
-                onChange={(id) => pickItem(idx, id)}
-                options={itemOptions.map((it) => ({
-                  value: it.itemId,
-                  label: it.name,
-                  hint: it.sku || it.itemId,
-                }))}
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-charcoal/80">Description</span>
-              <input
-                className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
-                value={line.description}
-                onChange={(e) => {
-                  const next = [...lines];
-                  next[idx] = { ...line, description: e.target.value };
-                  setLines(next);
-                }}
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm">
-                <span className="text-charcoal/80">Qty</span>
-                <input
-                  className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
-                  value={line.quantity}
-                  onChange={(e) => {
-                    const next = [...lines];
-                    next[idx] = recalc({ ...line, quantity: e.target.value });
-                    setLines(next);
-                  }}
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-charcoal/80">Unit</span>
-                <input
-                  className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
-                  value={line.unit}
-                  onChange={(e) => {
-                    const next = [...lines];
-                    next[idx] = { ...line, unit: e.target.value };
-                    setLines(next);
-                  }}
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-charcoal/80">Price</span>
-                <input
-                  className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
-                  value={line.unitPrice}
-                  onChange={(e) => {
-                    const next = [...lines];
-                    next[idx] = recalc({ ...line, unitPrice: e.target.value });
-                    setLines(next);
-                  }}
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-charcoal/80">Tax</span>
-                <input
-                  className="mt-1 w-full rounded border border-brand-200 px-3 py-3"
-                  value={line.tax}
-                  onChange={(e) => {
-                    const next = [...lines];
-                    next[idx] = recalc({ ...line, tax: e.target.value });
-                    setLines(next);
-                  }}
-                />
-              </label>
-            </div>
-            <div className="flex items-center justify-between border-t border-brand-100 pt-2 text-sm">
-              <span className="text-charcoal/60">Amount</span>
-              <span className="font-mono text-xs">{line.total}</span>
-            </div>
-          </div>
-        ))}
-      </div>
+      <LineItemReview
+        lines={lines}
+        onChange={setLines}
+        itemOptions={itemOptions}
+        itemsLoading={itemsQ.isLoading}
+      />
 
-      {/* Desktop: editable table */}
-      <div className="hidden md:block overflow-x-auto border border-brand-100 rounded-lg mb-4">
-        <table className="min-w-full text-sm">
-          <thead className="bg-brand-50/60 text-left">
-            <tr>
-              <th className="px-2 py-2">Zoho item</th>
-              <th className="px-2 py-2">Description</th>
-              <th className="px-2 py-2 w-20">Qty</th>
-              <th className="px-2 py-2 w-24">Unit</th>
-              <th className="px-2 py-2 w-24">Price</th>
-              <th className="px-2 py-2 w-20">Tax</th>
-              <th className="px-2 py-2 w-24">Total</th>
-              <th className="px-2 py-2 w-10" />
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((line, idx) => (
-              <tr key={line.lineNumber} className="border-t border-brand-100">
-                <td className="px-2 py-1 min-w-[12rem]">
-                  <SearchableSelect
-                    disabled={itemsQ.isLoading}
-                    placeholder="Search item…"
-                    value={line.zohoItemId}
-                    onChange={(id) => pickItem(idx, id)}
-                    options={itemOptions.map((it) => ({
-                      value: it.itemId,
-                      label: it.name,
-                      hint: it.sku || it.itemId,
-                    }))}
-                  />
-                </td>
-                <td className="px-2 py-1">
-                  <input
-                    className="w-full rounded border border-brand-200 px-2 py-1"
-                    value={line.description}
-                    onChange={(e) => {
-                      const next = [...lines];
-                      next[idx] = { ...line, description: e.target.value };
-                      setLines(next);
-                    }}
-                  />
-                </td>
-                <td className="px-2 py-1">
-                  <input
-                    className="w-full rounded border border-brand-200 px-2 py-1"
-                    value={line.quantity}
-                    onChange={(e) => {
-                      const next = [...lines];
-                      next[idx] = recalc({ ...line, quantity: e.target.value });
-                      setLines(next);
-                    }}
-                  />
-                </td>
-                <td className="px-2 py-1">
-                  <input
-                    className="w-full rounded border border-brand-200 px-2 py-1"
-                    value={line.unit}
-                    onChange={(e) => {
-                      const next = [...lines];
-                      next[idx] = { ...line, unit: e.target.value };
-                      setLines(next);
-                    }}
-                  />
-                </td>
-                <td className="px-2 py-1">
-                  <input
-                    className="w-full rounded border border-brand-200 px-2 py-1"
-                    value={line.unitPrice}
-                    onChange={(e) => {
-                      const next = [...lines];
-                      next[idx] = recalc({ ...line, unitPrice: e.target.value });
-                      setLines(next);
-                    }}
-                  />
-                </td>
-                <td className="px-2 py-1">
-                  <input
-                    className="w-full rounded border border-brand-200 px-2 py-1"
-                    value={line.tax}
-                    onChange={(e) => {
-                      const next = [...lines];
-                      next[idx] = recalc({ ...line, tax: e.target.value });
-                      setLines(next);
-                    }}
-                  />
-                </td>
-                <td className="px-2 py-1 font-mono text-xs">{line.total}</td>
-                <td className="px-2 py-1">
-                  {lines.length > 1 && (
-                    <button type="button" className="text-danger text-xs" onClick={() => setLines(lines.filter((_, i) => i !== idx))}>✕</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
       <button
         type="button"
         className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-brand-200 sm:border-0 text-sm text-brand-700 mb-6"
@@ -437,7 +354,12 @@ export function PurchaseOrderNew() {
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end mb-8">
         <label className="block text-sm">
           <span className="text-charcoal/80">Tax total</span>
-          <input className="mt-1 w-full sm:w-32 rounded border border-brand-200 px-3 py-3 lg:py-2" value={taxTotal} onChange={(e) => setTaxTotal(e.target.value)} />
+          <input
+            inputMode="decimal"
+            className="mt-1 w-full sm:w-32 rounded border border-brand-200 px-3 py-3 lg:py-2"
+            value={taxTotal}
+            onChange={(e) => setTaxTotal(e.target.value)}
+          />
         </label>
         <div className="text-sm">
           <div className="text-charcoal/60">Subtotal</div>
@@ -449,7 +371,16 @@ export function PurchaseOrderNew() {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
+      {lines.some((l) => l.description.trim() && !l.zohoItemId) && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Some lines have no Zoho item yet. You can save this draft now, but every line needs one before you can submit it.
+        </p>
+      )}
+
+      {/* Sticky so Save is always reachable on a phone. It stops at bottom-20
+          rather than bottom-0 because the bottom nav is fixed over the last
+          ~74px of the viewport (nav plus the camera FAB that overhangs it). */}
+      <div className="sticky bottom-20 -mx-4 flex flex-col gap-3 border-t border-ink/10 bg-cream px-4 py-3 sm:static sm:mx-0 sm:flex-row sm:border-0 sm:bg-transparent sm:px-0">
         <button
           type="button"
           disabled={!canSave || create.isPending}
@@ -458,7 +389,16 @@ export function PurchaseOrderNew() {
         >
           {create.isPending ? 'Saving…' : 'Save draft'}
         </button>
-        <button type="button" onClick={() => navigate(-1)} className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-brand-200 px-4 py-2 text-sm">
+        <button
+          type="button"
+          onClick={async () => {
+            // An abandoned draft has a real row and a stored file behind it.
+            // Cancel hard-deletes both for the owner's own unsynced draft.
+            if (draftId) await api.post(`/transactions/${draftId}/cancel`).catch(() => undefined);
+            navigate(-1);
+          }}
+          className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-brand-200 px-4 py-2 text-sm"
+        >
           Cancel
         </button>
       </div>
