@@ -64,7 +64,11 @@ export function lineDraftsFromOcr(
   if (!Array.isArray(raw)) return [];
 
   return raw.map((entry, index) => {
-    const li = entry as Record<string, unknown>;
+    // entry can be anything an untrusted OCR payload contains, including null
+    // or undefined array holes — guard before destructuring rather than
+    // casting, so a malformed line degrades to an empty draft instead of
+    // throwing. Mirrors the same guard in ocr-client's serviceAdapter.
+    const li = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
     const description = typeof li.description === 'string' ? li.description : '';
     const quantity = numberString(li.quantity, '1');
     const unitPrice = numberString(li.unitPrice, '0');

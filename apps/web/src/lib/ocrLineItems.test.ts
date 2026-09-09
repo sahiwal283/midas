@@ -74,6 +74,20 @@ describe('lineDraftsFromOcr', () => {
   it('matches against an empty catalogue without throwing', () => {
     expect(lineDraftsFromOcr(OCR, [])[0].zohoItemId).toBe('');
   });
+
+  it('treats a null entry in lineItems as an empty line rather than throwing', () => {
+    expect(() => lineDraftsFromOcr({ lineItems: [null] }, CATALOGUE)).not.toThrow();
+    const [first] = lineDraftsFromOcr({ lineItems: [null] }, CATALOGUE);
+    expect(first.description).toBe('');
+    expect(first.zohoItemId).toBe('');
+  });
+
+  it('treats an undefined entry in lineItems as an empty line rather than throwing', () => {
+    expect(() => lineDraftsFromOcr({ lineItems: [undefined] }, CATALOGUE)).not.toThrow();
+    const [first] = lineDraftsFromOcr({ lineItems: [undefined] }, CATALOGUE);
+    expect(first.description).toBe('');
+    expect(first.zohoItemId).toBe('');
+  });
 });
 
 describe('poHeaderFromOcr', () => {
