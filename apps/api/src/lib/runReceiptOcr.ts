@@ -10,7 +10,11 @@ import { pickReferenceNumber } from '@midas/shared';
  * Runs OCR for a receipt and persists the result.
  * Used by the sync-primary upload path so the HTTP response includes OCR state.
  */
-export async function runReceiptOcr(receiptId: string, storagePath: string): Promise<typeof receipts.$inferSelect> {
+export async function runReceiptOcr(
+  receiptId: string,
+  storagePath: string,
+  opts?: { workflow?: string },
+): Promise<typeof receipts.$inferSelect> {
   const submittedAt = new Date();
   await db.update(receipts)
     .set({ ocrStatus: 'processing', ocrSubmittedAt: submittedAt })
@@ -18,7 +22,7 @@ export async function runReceiptOcr(receiptId: string, storagePath: string): Pro
 
   try {
     const fullPath = path.join(env.UPLOADS_DIR, storagePath);
-    const result = await ocr.process(fullPath, receiptId);
+    const result = await ocr.process(fullPath, receiptId, opts);
     const picked = pickReferenceNumber({
       field: result.fields.referenceNumber?.value,
       text: result.text,

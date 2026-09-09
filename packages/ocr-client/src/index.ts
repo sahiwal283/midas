@@ -1,6 +1,8 @@
 export type {
   OcrField,
   OcrResult,
+  OcrLineItem,
+  OcrProcessOptions,
   OcrAdapter,
   FieldValue,
   FieldInference,

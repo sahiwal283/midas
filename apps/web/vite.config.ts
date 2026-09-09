@@ -9,6 +9,10 @@ export default defineConfig({
       '@midas/shared': path.resolve(__dirname, '../../packages/shared/src/types/index.ts'),
     },
   },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

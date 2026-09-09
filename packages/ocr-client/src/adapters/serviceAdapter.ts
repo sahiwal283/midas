@@ -10,7 +10,7 @@ import {
 } from '../errors';
 import { cleanupPreparedFiles, prepareReceiptImageForOcr } from '../preprocessing';
 import { RuleBasedInferenceEngine } from '../inference/ruleBasedInferenceEngine';
-import type { CategoryKeywordMap, OcrAdapter, OcrField, OcrResult } from '../types';
+import type { CategoryKeywordMap, OcrAdapter, OcrField, OcrLineItem, OcrProcessOptions, OcrResult } from '../types';
 
 export interface ServiceOcrAdapterConfig {
   baseUrl: string;
@@ -79,6 +79,40 @@ function nullField(source: OcrField['source'] = 'llm'): OcrField {
   return { value: null, confidence: 0, source };
 }
 
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Map the engine's `line_items` onto OcrResult.lineItems.
+ *
+ * Defensive by design: the engine is a separate service on its own release
+ * cadence, so anything unexpected degrades to "no line items" rather than
+ * throwing and costing the caller a receipt they already paid to OCR.
+ */
+export function normalizeLineItems(raw: unknown): OcrLineItem[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+
+  const mapped: OcrLineItem[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    const description = typeof e.description === 'string' ? e.description.trim() : '';
+    if (!description) continue;
+    mapped.push({
+      description,
+      quantity: numberOrNull(e.quantity),
+      unit: typeof e.unit === 'string' && e.unit.trim() ? e.unit.trim() : null,
+      unitPrice: numberOrNull(e.unitPrice),
+      tax: numberOrNull(e.tax),
+      total: numberOrNull(e.total),
+      confidence: numberOrNull(e.confidence) ?? 0,
+    });
+  }
+
+  return mapped.length ? mapped : undefined;
+}
+
 /**
  * Talks to the ocr-service engine (canonical source: ~/Work/services/ocrService,
  * shared by Midas and the Trade Show App). Every consumer — standalone Midas,
@@ -97,14 +131,14 @@ export class ServiceOcrAdapter implements OcrAdapter {
     this.inferenceEngine = new RuleBasedInferenceEngine(config.categoryKeywords);
   }
 
-  async process(filePath: string, receiptId: string): Promise<OcrResult> {
+  async process(filePath: string, receiptId: string, opts?: OcrProcessOptions): Promise<OcrResult> {
     // Reject clearly invalid inputs before paying for / hitting upstream OCR.
     // Upstream currently returns 500 for corrupt/minimal PDFs; map those here as 4xx-class errors.
     await assertReadableReceiptFile(filePath);
 
     const { pathForRequest, cleanup } = await prepareReceiptImageForOcr(filePath);
     try {
-      const raw = await this.postFile(pathForRequest, receiptId);
+      const raw = await this.postFile(pathForRequest, receiptId, opts);
       const result = mapResponse(raw);
       return this.enableRuleInferenceFallback ? await this.enrichWithRuleInference(result) : result;
     } finally {
@@ -112,8 +146,9 @@ export class ServiceOcrAdapter implements OcrAdapter {
     }
   }
 
-  private async postFile(filePath: string, receiptId: string): Promise<unknown> {
-    const { baseUrl, internalToken, timeoutMs = 120000, clientApp = 'midas', workflow = 'receipt-ocr', externalRefType = 'expense_receipt' } = this.config;
+  private async postFile(filePath: string, receiptId: string, opts?: OcrProcessOptions): Promise<unknown> {
+    const { baseUrl, internalToken, timeoutMs = 120000, clientApp = 'midas', workflow: configuredWorkflow = 'receipt-ocr', externalRefType = 'expense_receipt' } = this.config;
+    const workflow = opts?.workflow ?? configuredWorkflow;
 
     const fileBuffer = await readFile(filePath);
     const blob = new Blob([fileBuffer], { type: inferMimeType(filePath) });
@@ -317,6 +352,7 @@ function mapResponse(raw: unknown): OcrResult {
       tipAmount: rawFields.tipAmount != null ? field('tipAmount') : undefined,
       referenceNumber: rawFields.referenceNumber != null ? field('referenceNumber') : undefined,
     },
+    lineItems: normalizeLineItems(r.line_items),
     categories,
     costEstimateUsd: typeof cost.estimated_usd === 'number' ? cost.estimated_usd : null,
     ledgerRecorded: cost.ledger_recorded === true,
