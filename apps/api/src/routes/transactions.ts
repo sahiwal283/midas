@@ -382,27 +382,24 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
     throw createError('Only drafts can be submitted', 409, 'CONFLICT');
   }
 
-  if (existing.type === 'purchase_order') {
-    const gateCompany = existing.zohoEntity
-      ? await db.query.companies.findFirst({ where: eq(companies.name, existing.zohoEntity) })
-      : undefined;
-    const blocker = poSubmitBlocker({
-      vendorName: existing.vendorName,
-      zohoEnabled: gateCompany?.zohoEnabled !== false && !!existing.zohoEntity,
-      zohoVendorId: existing.purchaseOrder?.zohoVendorId ?? null,
-      lineItems: existing.lineItems ?? [],
-    });
-    if (blocker) throw createError(blocker.message, blocker.status, blocker.code);
-  }
-
   // Purchase orders skip accountant review entirely: the purchasing employee
   // is the authority. Submit = approve + push to Zoho immediately (unless the
-  // company has Zoho disabled — then it just becomes approved).
+  // company has Zoho disabled — then it just becomes approved). The gate runs
+  // first, before anything mutates, using the same zohoOn the push below
+  // relies on — one lookup, one formula, so the two can never drift apart.
   if (existing.type === 'purchase_order') {
     const company = existing.zohoEntity
       ? await db.query.companies.findFirst({ where: eq(companies.name, existing.zohoEntity) })
       : undefined;
     const zohoOn = company?.zohoEnabled !== false && !!existing.zohoEntity;
+
+    const blocker = poSubmitBlocker({
+      vendorName: existing.vendorName,
+      zohoEnabled: zohoOn,
+      zohoVendorId: existing.purchaseOrder?.zohoVendorId ?? null,
+      lineItems: existing.lineItems ?? [],
+    });
+    if (blocker) throw createError(blocker.message, blocker.status, blocker.code);
 
     const [approved] = await db.update(transactions)
       .set({
