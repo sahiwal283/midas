@@ -1,12 +1,23 @@
-import type { OcrAdapter, OcrField, OcrResult } from '../types';
+import type { OcrAdapter, OcrField, OcrLineItem, OcrProcessOptions, OcrResult } from '../types';
 
 function nullField(source: OcrField['source'] = 'llm'): OcrField {
   return { value: null, confidence: 0, source };
 }
 
+/** Fixed sample lines, so mock-mode dev and tests exercise the PO path. */
+const MOCK_PO_LINE_ITEMS: OcrLineItem[] = [
+  { description: 'Booth carpet 10x10', quantity: 1, unit: 'ea', unitPrice: 420, tax: 0, total: 420, confidence: 0.94 },
+  { description: 'Electrical drop 500w', quantity: 2, unit: 'ea', unitPrice: 90, tax: 0, total: 180, confidence: 0.88 },
+  { description: 'Drayage handling', quantity: 1, unit: 'ea', unitPrice: 275, tax: 0, total: 275, confidence: 0.61 },
+];
+
 /** Returns fixed synthetic data — no network calls, no cost, safe as the default everywhere. */
 export class MockOcrAdapter implements OcrAdapter {
-  async process(_filePath: string, _receiptId: string): Promise<OcrResult> {
+  async process(
+    _filePath: string,
+    _receiptId: string,
+    opts?: OcrProcessOptions,
+  ): Promise<OcrResult> {
     return {
       requestId: '00000000-0000-0000-0000-000000000001',
       jobId: null,
@@ -23,6 +34,7 @@ export class MockOcrAdapter implements OcrAdapter {
         cardLastFour: nullField(),
         category: { value: 'Other', confidence: 0.6, source: 'rule_based' },
       },
+      lineItems: opts?.workflow === 'purchase-order' ? MOCK_PO_LINE_ITEMS : undefined,
       categories: [{ name: 'Other', score: 0.6 }],
       costEstimateUsd: null,
       ledgerRecorded: false,

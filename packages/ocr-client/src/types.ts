@@ -46,8 +46,17 @@ export interface OcrResult {
   ledgerRecorded: boolean;
 }
 
+/** Per-call overrides for a single OCR request. */
+export interface OcrProcessOptions {
+  /**
+   * Overrides the adapter's configured workflow for this call only.
+   * `purchase-order` asks the engine for line items.
+   */
+  workflow?: string;
+}
+
 export interface OcrAdapter {
-  process(filePath: string, receiptId: string): Promise<OcrResult>;
+  process(filePath: string, receiptId: string, opts?: OcrProcessOptions): Promise<OcrResult>;
 }
 
 // ── Rule-based field inference (client-side enrichment) ─────────────────────
