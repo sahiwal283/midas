@@ -60,6 +60,16 @@ export function PurchaseOrderDetail() {
     enabled: !!id,
   });
 
+  // A message describes the record as it was. Once the server moves it to a new
+  // status — the awaiting_info round trip is a supported transition — the old
+  // reason no longer describes anything, and leaving it in state lets it
+  // reappear later looking current.
+  const status = q.data?.status;
+  useEffect(() => {
+    setActionError(null);
+    setEditError(null);
+  }, [id, status]);
+
   const vendorsQ = useQuery({
     queryKey: ['zoho-vendors'],
     queryFn: async () => (await api.get<{ vendors: ZohoVendor[] }>('/transactions/meta/vendors')).data.vendors,
@@ -255,7 +265,10 @@ export function PurchaseOrderDetail() {
         <p className="mb-4 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">{pushError}</p>
       )}
 
-      {editable && editError && (
+      {/* Not gated on `editable`: a patch that errors just as a refetch flips
+          the record out of an editable state would otherwise be captured and
+          never shown — the same silent failure this banner exists to end. */}
+      {editError && (
         <p
           ref={editErrorRef}
           role="alert"
