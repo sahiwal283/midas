@@ -71,6 +71,56 @@ describe('lineDraftsFromOcr', () => {
     expect(drafts[0].tax).toBe('0');
   });
 
+  it('derives the unit price from a lump-sum line rather than zeroing its total', () => {
+    const [line] = lineDraftsFromOcr({
+      lineItems: [{ description: 'Drayage handling', quantity: null, unitPrice: null, tax: null, total: 275.0 }],
+    }, CATALOGUE);
+    expect(line.quantity).toBe('1');
+    expect(line.unitPrice).toBe('275');
+    expect(line.total).toBe('275.00');
+  });
+
+  it('splits a total across the quantity when deriving the unit price', () => {
+    const [line] = lineDraftsFromOcr({
+      lineItems: [{ description: 'Booth carpet 10x10', quantity: 4, unitPrice: null, total: 300 }],
+    }, CATALOGUE);
+    expect(line.unitPrice).toBe('75');
+    expect(line.total).toBe('300.00');
+  });
+
+  it('takes tax out of the total before deriving the unit price', () => {
+    const [line] = lineDraftsFromOcr({
+      lineItems: [{ description: 'Drayage handling', quantity: 2, unitPrice: null, tax: 20, total: 220 }],
+    }, CATALOGUE);
+    expect(line.unitPrice).toBe('100');
+    expect(line.total).toBe('220.00');
+  });
+
+  it('keeps the derived total agreeing with its own line when the split is uneven', () => {
+    const [line] = lineDraftsFromOcr({
+      lineItems: [{ description: 'Drayage handling', quantity: 3, unitPrice: null, total: 275 }],
+    }, CATALOGUE);
+    // Rounded to the four decimals unit_price stores; the recomputed total
+    // still reads back as the 275.00 OCR saw.
+    expect(line.unitPrice).toBe('91.6667');
+    expect(line.total).toBe('275.00');
+  });
+
+  it('still recomputes from the price when OCR gave both a price and a total', () => {
+    const [line] = lineDraftsFromOcr({
+      lineItems: [{ description: 'Carpet', quantity: 2, unitPrice: 100, tax: 0, total: 999 }],
+    }, CATALOGUE);
+    expect(line.unitPrice).toBe('100');
+    expect(line.total).toBe('200.00');
+  });
+
+  it('falls back to a zero price when a total is quoted against no quantity', () => {
+    const [line] = lineDraftsFromOcr({
+      lineItems: [{ description: 'Mystery', quantity: 0, unitPrice: null, total: 275 }],
+    }, CATALOGUE);
+    expect(line.unitPrice).toBe('0');
+  });
+
   it('matches against an empty catalogue without throwing', () => {
     expect(lineDraftsFromOcr(OCR, [])[0].zohoItemId).toBe('');
   });

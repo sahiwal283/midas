@@ -137,6 +137,48 @@ changing the default changes OCR results vs Trade Show.
 
 ---
 
+## Workflows (`X-Workflow`)
+
+`X-Workflow` tells the engine which extraction to run, and is also the label
+spend is attributed under in the cost ledger. Midas sends two values:
+
+| Value | Sent for | Response |
+|---|---|---|
+| `receipt-ocr` | Expense receipts. The adapter default (`OCR_WORKFLOW`, `apps/api/src/lib/ocr.ts`). | `line_items` is present and `null`. |
+| `purchase-order` | Purchase-order receipts, per call from `apps/api/src/routes/receipts.ts`. | `line_items` is a list, or `null` when the engine read none. |
+
+Per-call override, rather than a second configured adapter:
+
+```ts
+ocr.process(filePath, receiptId, { workflow: 'purchase-order' })
+```
+
+### `line_items` (response)
+
+A **top-level sibling of `fields`**, never nested inside it. Each entry:
+
+```jsonc
+{
+  "description": "Booth carpet 10x10",  // string; the engine drops an undescribed line
+  "quantity": 1,                         // number | null
+  "unit": "ea",                          // string | null
+  "unitPrice": 420.0,                    // number | null   (camelCase in the envelope)
+  "tax": 0.0,                            // number | null
+  "total": 420.0,                        // number | null
+  "confidence": 0.94                     // number
+}
+```
+
+Any numeric field can be `null` — the engine returns what it read and nothing
+more. Midas maps these to `OcrResult.lineItems` (`packages/ocr-client/src/types.ts`)
+and derives the form's line drafts in `apps/web/src/lib/ocrLineItems.ts`.
+
+The key requires ocrService **0.18.0+**. Against an older engine the key is
+absent, `lineItems` comes back `undefined`, and the PO form simply starts with
+one empty line for the user to fill — no failure.
+
+---
+
 ## Cost / safety (live engine)
 
 CT 9500’s fallback is **Document AI** (paid). Every live receipt can incur
@@ -145,7 +187,7 @@ attributes spend via:
 
 ```
 X-Client-App: midas
-X-Workflow: receipt-ocr
+X-Workflow: receipt-ocr        # or purchase-order — see "Workflows" above
 X-External-Reference-Type: expense_receipt
 X-External-Reference-ID: receipt:<receipts.id>
 ```

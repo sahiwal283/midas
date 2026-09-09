@@ -62,6 +62,43 @@ describe('matchZohoItem', () => {
     expect(match?.itemId).toBe('x1');
   });
 
+  it('does not treat a short SKU as a match just because it appears mid-word', () => {
+    // 'DR' sits inside 'Dry', which used to score a full 1 and preselect a
+    // completely unrelated catalogue item as "matched 100%".
+    expect(matchZohoItem('Dry ice pellets', [
+      { itemId: 'x', name: 'Totally Unrelated Item', sku: 'DR' },
+    ])).toBeNull();
+  });
+
+  it('does not match a SKU that is only part of a longer word', () => {
+    expect(matchZohoItem('Carpeting underlay', [
+      { itemId: 'x', name: 'Totally Unrelated Item', sku: 'CARPET' },
+    ])).toBeNull();
+  });
+
+  it('still matches a real SKU carried as its own token', () => {
+    const match = matchZohoItem('CARPET-1010', CATALOGUE);
+    expect(match?.itemId).toBe('i1');
+    expect(match?.score).toBe(1);
+  });
+
+  it('matches a real SKU embedded in a longer description', () => {
+    expect(matchZohoItem('1x DRAY-01 inbound', CATALOGUE)?.itemId).toBe('i3');
+  });
+
+  it('never scores above 1, even when the item name repeats a word', () => {
+    const match = matchZohoItem('carpet', [{ itemId: 'r1', name: 'Carpet carpet carpet' }]);
+    expect(match?.score).toBeLessThanOrEqual(1);
+  });
+
+  it('does not let a repeated-word name outrank an exact match', () => {
+    const match = matchZohoItem('carpet', [
+      { itemId: 'exact', name: 'Carpet' },
+      { itemId: 'repeat', name: 'Carpet carpet carpet' },
+    ]);
+    expect(match?.itemId).toBe('exact');
+  });
+
   it('never returns a score below the threshold', () => {
     const match = matchZohoItem('carpet', CATALOGUE);
     if (match) expect(match.score).toBeGreaterThanOrEqual(ZOHO_ITEM_MATCH_THRESHOLD);

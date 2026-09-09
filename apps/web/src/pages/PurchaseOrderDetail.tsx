@@ -22,6 +22,12 @@ export function PurchaseOrderDetail() {
   const { user } = useAuth();
   const isPrivileged = roleAllowed(user?.role, ['accountant', 'admin']);
   const [pushError, setPushError] = useState<string | null>(null);
+  // Submit is the approval here, and it now rejects a PO that is missing a
+  // vendor, a Zoho vendor, or a Zoho item on any line. Those 409s are the
+  // expected first outcome of the mobile flow (OCR fills the vendor name but
+  // never the Zoho vendor id), so the reason has to be on screen — without it
+  // the button does nothing visible and the user has no way to learn why.
+  const [submitError, setSubmitError] = useState<string | null>(null);
   // The create form uploads the receipt once the PO exists. If that upload
   // failed it still sends the user here — the purchase order is real — and
   // carries the reason so it lands in this page's banner, beside the Upload
@@ -60,7 +66,17 @@ export function PurchaseOrderDetail() {
 
   const submit = useMutation({
     mutationFn: async () => (await api.post<{ transaction: Transaction }>(`/transactions/${id}/submit`)).data.transaction,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['transaction', id] }),
+    onSuccess: () => {
+      setSubmitError(null);
+      void qc.invalidateQueries({ queryKey: ['transaction', id] });
+    },
+    onError: (err: unknown) => {
+      // The API's messages are already written for the user ("Every line item
+      // needs a Zoho item before submitting"), so show them as they come.
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      setSubmitError(msg || 'This purchase order could not be submitted. Please try again.');
+    },
   });
 
   const cancel = useMutation({
@@ -71,7 +87,12 @@ export function PurchaseOrderDetail() {
   const patch = useMutation({
     mutationFn: async (body: Record<string, unknown>) =>
       (await api.patch<{ transaction: Transaction }>(`/transactions/${id}`, body)).data.transaction,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['transaction', id] }),
+    onSuccess: () => {
+      // Picking the vendor or item the submit gate asked for is the fix for
+      // that error, so the message should not outlive the edit.
+      setSubmitError(null);
+      void qc.invalidateQueries({ queryKey: ['transaction', id] });
+    },
   });
 
   const receiptsQ = useQuery({
@@ -398,6 +419,15 @@ export function PurchaseOrderDetail() {
           </p>
         )}
       </div>
+
+      {submitError && (
+        <p
+          role="alert"
+          className="mb-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger"
+        >
+          {submitError}
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-3">
         {tx.status === 'draft' && (

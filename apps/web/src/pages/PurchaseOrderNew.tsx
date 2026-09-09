@@ -70,6 +70,12 @@ export function PurchaseOrderNew() {
   // The photo is on the draft already. False after a failed upload, so Save
   // retries it instead of quietly dropping the receipt.
   const [receiptAttached, setReceiptAttached] = useState(false);
+  // The upload that is still on the wire, resolving to whether the file landed.
+  // Save has to await this rather than read receiptAttached alone: taking the
+  // "Enter manually instead" escape hatch does not stop the upload, so a user
+  // who fills the form and saves before it resolves would otherwise upload the
+  // same photo a second time — two receipts, two OCR jobs, two charges.
+  const uploadInFlight = useRef<Promise<boolean> | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   // Set when the user takes the escape hatch: a late OCR response must not
   // overwrite what they have since typed.
@@ -111,6 +117,9 @@ export function PurchaseOrderNew() {
     setReceipt(file);
     setReceiptAttached(false);
     setOcrPhase('working');
+    // Tracked locally as well as in state: the catch below runs before React has
+    // re-rendered, so the state value there would still read false.
+    let attached = false;
     try {
       let id = draftId;
       if (!id) {
@@ -122,13 +131,24 @@ export function PurchaseOrderNew() {
         id = data.transaction.id;
         setDraftId(id);
       }
-      const { receipt: uploaded } = await transactionReceiptApi.upload(id, await compressReceiptImage(file));
+      const draft = id;
       // This file is on the draft whatever happens to the OCR result below, so
       // record it even when the user has abandoned OCR — Save must not upload it
       // a second time. But only for the newest scan: a slower earlier upload
       // must not vouch for a photo the user has since replaced, or Save would
       // skip the replacement and silently drop it.
-      if (ocrRun.current === run) setReceiptAttached(true);
+      const upload = (async () => {
+        const res = await transactionReceiptApi.upload(draft, await compressReceiptImage(file));
+        if (ocrRun.current === run) {
+          attached = true;
+          setReceiptAttached(true);
+        }
+        return res;
+      })();
+      // Never rejects: Save reads it as "did the file land", and a false sends
+      // Save down its own retry path rather than throwing there.
+      uploadInFlight.current = upload.then(() => ocrRun.current === run, () => false);
+      const { receipt: uploaded } = await upload;
       if (superseded()) return;
 
       const header = poHeaderFromOcr(uploaded.ocrData);
@@ -146,7 +166,12 @@ export function PurchaseOrderNew() {
     } catch (err) {
       if (superseded()) return;
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
-      setError(msg || 'The receipt could not be read. Enter the details by hand — the photo is saved.');
+      // Only promise the photo is saved when it actually is. When the upload
+      // itself is what failed this banner would otherwise contradict the status
+      // card two elements away, which says it will be attached on save.
+      setError(msg || (attached
+        ? 'The receipt could not be read. Enter the details by hand — the photo is saved.'
+        : 'The receipt could not be read. Enter the details by hand — the photo will be attached when you save.'));
       setOcrPhase('failed');
     }
   }
@@ -203,7 +228,13 @@ export function PurchaseOrderNew() {
         ? await api.patch<{ transaction: Transaction }>(`/transactions/${draftId}`, body)
         : await api.post<{ transaction: Transaction }>('/transactions/purchase-orders', body);
       const tx = data.transaction;
-      if (!receipt || receiptAttached) return { tx, receiptError: null };
+      if (!receipt) return { tx, receiptError: null };
+      // The photo uploads as soon as it is picked. If that upload has not
+      // settled yet, wait for it — starting a second upload of the same file
+      // would attach it twice and bill a second OCR job.
+      const alreadyAttached = receiptAttached
+        || (uploadInFlight.current ? await uploadInFlight.current : false);
+      if (alreadyAttached) return { tx, receiptError: null };
 
       // The purchase order now exists, so a failed upload must not fail the
       // save — losing a filled-in PO to a network blip is far worse than
@@ -237,7 +268,13 @@ export function PurchaseOrderNew() {
   const droppedLines = lines.some(
     (l) => !l.description.trim() && (Number(l.total) || Number(l.unitPrice) || Number(l.tax)),
   );
-  const canSave = !!vendorName.trim() && lines.some((l) => l.description.trim()) && !droppedLines;
+  // The company is required, not optional. Save is also the approval here, and
+  // with no company the submit gate reads the PO as "Zoho not applicable": it
+  // skips every Zoho check, approves, and never pushes. The detail page has no
+  // company field and there is no PO list, so such a record can be neither
+  // fixed nor found afterwards. Cheaper to insist up front.
+  const canSave = !!vendorName.trim() && !!zohoEntity
+    && lines.some((l) => l.description.trim()) && !droppedLines;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-8">
@@ -321,9 +358,14 @@ export function PurchaseOrderNew() {
           />
         </label>
         <label className="block text-sm sm:col-span-2">
-          <span className="text-charcoal/80">Company</span>
-          <select className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2" value={zohoEntity} onChange={(e) => setZohoEntity(e.target.value)}>
-            <option value="">—</option>
+          <span className="text-charcoal/80">Company *</span>
+          <select
+            required
+            className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2"
+            value={zohoEntity}
+            onChange={(e) => setZohoEntity(e.target.value)}
+          >
+            <option value="">Select a company…</option>
             {(companies.data ?? []).map((c: { name: string }) => (
               <option key={c.name} value={c.name}>{c.name}</option>
             ))}

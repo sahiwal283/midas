@@ -26,6 +26,26 @@ function numberString(value: unknown, fallback: string): string {
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : fallback;
 }
 
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * The unit price implied by a line that quotes only a total — the common shape
+ * for a lump-sum PO line ('Drayage handling ... 275.00'). Rounded to the four
+ * decimals the `unit_price` column stores, which keeps the field readable and
+ * keeps the recomputed total agreeing with it to the cent.
+ *
+ * Returns null when there is nothing to derive from, or when the quantity is
+ * zero or negative and the division would be meaningless — the caller then
+ * falls back to 0, as before.
+ */
+function unitPriceFromTotal(total: number | null, tax: number, quantity: number): string | null {
+  if (total === null) return null;
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+  return String(Math.round(((total - tax) / quantity) * 10_000) / 10_000);
+}
+
 /**
  * Header values OCR could read off a purchase order.
  * Anything unreadable comes back as '' so the form shows an empty field the user
@@ -55,6 +75,12 @@ export function poHeaderFromOcr(ocrData: unknown): {
  * OCR: the arithmetic has to agree with what the form shows the user, and a
  * misread total that silently disagrees with its own line is worse than one the
  * user can see and correct.
+ *
+ * That argument only bites when there is a unit price for the total to disagree
+ * with. A line quoted as a lump sum — a total and nothing else, which is how
+ * most PO lines read — has no such conflict, so its unit price is derived from
+ * the total instead of defaulting to zero. Defaulting there would recompute the
+ * total as 0.00 and throw away the one number OCR actually read.
  */
 export function lineDraftsFromOcr(
   ocrData: unknown,
@@ -71,8 +97,10 @@ export function lineDraftsFromOcr(
     const li = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
     const description = typeof li.description === 'string' ? li.description : '';
     const quantity = numberString(li.quantity, '1');
-    const unitPrice = numberString(li.unitPrice, '0');
     const tax = numberString(li.tax, '0');
+    const unitPrice = finiteNumber(li.unitPrice) !== null
+      ? numberString(li.unitPrice, '0')
+      : unitPriceFromTotal(finiteNumber(li.total), Number(tax) || 0, Number(quantity)) ?? '0';
     const match = description ? matchZohoItem(description, items) : null;
 
     return {
