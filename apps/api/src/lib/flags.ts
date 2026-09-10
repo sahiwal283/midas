@@ -58,7 +58,9 @@ export function computeFlags(row: FlagsInput): Flag[] {
   }
 
   const integrationFailed = (row as FlagsInput & { integrationStatus?: string }).integrationStatus === 'failed';
-  // See lib/zohoReadiness.ts and lib/queueLane.ts — the same rule, three ways.
+  // One rule, three expressions: lib/zohoReadiness.ts (evaluateZohoReadiness)
+  // and lib/queueLane.ts (SQL) must agree with this. The SQL one is unreachable
+  // from the DB-free test suite — change all three together.
   const hasWaiver = !!row.receiptWaiverReason?.trim();
   const zohoReady =
     (row.status === 'approved' || row.status === 'zoho_sync_failed' || integrationFailed) &&
