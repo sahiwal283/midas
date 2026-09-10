@@ -89,9 +89,9 @@ function actorLine(name: string | null | undefined, on: string | null | undefine
 
 /**
  * Shortens one line by up to `n` characters, ellipsizing what remains. Never
- * keeps fewer than `floor` characters before the ellipsis — for the event
- * line that floor is 0 (it may shrink to a bare "…"), but the waiver line is
- * floored at its own "Receipt waived[ by X]: " prefix, because shrinking
+ * keeps fewer than `floor` characters before the ellipsis — for the event and
+ * Source lines that floor is 0 (they may shrink to a bare "…"), but the
+ * waiver line is floored at its own "Receipt waived[ by X]: " prefix, because shrinking
  * past that would drop the word "waived" itself: a line that still exists
  * but no longer says anything is the same failure as the line vanishing.
  * Reports how much was actually removed, since a line at its floor may not
@@ -160,17 +160,24 @@ export function buildZohoNote(input: ZohoNoteInput): string {
     `Origin: ${originName(input.origin)}`,
     `Midas: ${input.midasUrl || input.midasId}`,
   ];
-  if (input.sourceUrl) lines.push(`Source: ${input.sourceUrl}`);
+  const sourceLineText = input.sourceUrl ? `Source: ${input.sourceUrl}` : null;
+  if (sourceLineText) lines.push(sourceLineText);
 
   const rawBlock = lines.join('\n');
   let block = rawBlock.slice(0, max);
 
-  // The waiver line is the record, in Zoho, that a control was bypassed — it
-  // must survive truncation, headline or no headline. This runs whenever a
-  // waiver line exists, not only when a headline does: gating it on a
-  // headline (as an earlier version of this did) let the line vanish with no
-  // ellipsis and no trace whenever the block alone — e.g. a very long event
-  // name, with no headline to reserve space for — already overflowed `max`.
+  // The waiver line is the record, in Zoho, that a control was bypassed, so
+  // everything that is merely display context gives way to it first: the
+  // headline, the event line and the Source url. It is NOT unconditionally
+  // safe — the actor lines are unbounded, and a submitter or pusher name of a
+  // few hundred characters can still crowd it out of `max` entirely. What this
+  // guarantees is that the reason outranks those three, and that it
+  // is ellipsized rather than silently sliced away when it does have to shrink.
+  // This runs whenever a waiver line exists, not only when a headline does:
+  // gating it on a headline (as an earlier version of this did) let the line
+  // vanish with no ellipsis and no trace whenever the block alone — e.g. a very
+  // long event name, with no headline to reserve space for — already
+  // overflowed `max`.
   //
   // Measure the overrun against `rawBlock`, NOT the already-sliced `block`:
   // once the raw block exceeds `max`, the sliced length is pinned at `max` and
@@ -181,20 +188,26 @@ export function buildZohoNote(input: ZohoNoteInput): string {
     const headlineSeparator = headline ? 2 : 0;
     let overrun = rawBlock.length + headlineSeparator + reserve - max;
     if (overrun > 0) {
-      // The event name is display context that also lives in Midas, so it
-      // gives way first; the waiver line is the only copy of this evidence
-      // that lives in Zoho at all, so it gives way only if the event line
-      // shrinking to a single "…" still isn't enough — and even then it
-      // keeps its own "Receipt waived[ by X]: " prefix, so "waived" itself
-      // is never among the characters that get cut.
+      // The event name and the capture url are display context that also live
+      // in Midas, so they give way first — event, then Source. The waiver line
+      // is the only copy of this evidence that lives in Zoho at all, so it
+      // gives way only if both of those shrinking to a single "…" still isn't
+      // enough — and even then it keeps its own "Receipt waived[ by X]: "
+      // prefix, so "waived" itself is never among the characters that get cut.
+      // Source is in this chain deliberately: an extension capture url can run
+      // to hundreds of characters, and preserving a tracking link in full while
+      // truncating the reason inverts which of the two Zoho actually needs.
       const shortEvent = shortenBy(eventLineText, overrun);
       overrun -= shortEvent.removed;
+      const shortSource = sourceLineText ? shortenBy(sourceLineText, overrun) : null;
+      if (shortSource) overrun -= shortSource.removed;
       const waiverPrefix = waiverLine.slice(0, waiverLine.length - waiverReason!.length);
       const shortWaiver = shortenBy(waiverLine, overrun, waiverPrefix.length);
 
       block = lines
         .map((l) => {
           if (l === eventLineText) return shortEvent.line;
+          if (shortSource && l === sourceLineText) return shortSource.line;
           if (l === waiverLine) return shortWaiver.line;
           return l;
         })

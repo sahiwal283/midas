@@ -20,7 +20,7 @@ import { syncExpenseToTransaction } from './syncExpenseTransaction';
 import { isCompanyZohoEnabled } from './companies';
 import { resolveUserNames, toDateOnly } from './userNames';
 import { tryEventDates } from './tradeShowEvents';
-import { receiptPushBlocker, normalizeWaiverReason } from './receiptPushBlocker';
+import { receiptPushBlocker, normalizeWaiverReason, shouldRecordWaiver } from './receiptPushBlocker';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -97,8 +97,9 @@ export async function pushExpenseToZoho(
   // inherits it — four call sites reach this function, and a rule remembered
   // four times is a rule that drifts.
   const suppliedReason = normalizeWaiverReason(opts?.receiptWaiver?.reason) ?? undefined;
+  const hasReceipt = (expense.receipts?.length ?? 0) > 0;
   const receiptBlocker = receiptPushBlocker({
-    hasReceipt: (expense.receipts?.length ?? 0) > 0,
+    hasReceipt,
     storedWaiverReason: expense.receiptWaiverReason ?? null,
     suppliedReason: opts?.receiptWaiver ? (suppliedReason ?? opts.receiptWaiver.reason) : undefined,
   });
@@ -114,10 +115,20 @@ export async function pushExpenseToZoho(
   // Written before the push, not after: a push that fails still leaves the
   // justification on the record, so the retry reads it back instead of asking
   // the accountant to type it again. A row that is already waived keeps its
-  // original reason — the first justification is the one that was reviewed.
+  // original reason — the first justification is the one that was reviewed,
+  // and an expense that HAS a receipt is never waived at all, however the
+  // caller filled the body. `shouldRecordWaiver` is the single expression of
+  // that: it decides both the write below and the attribution further down,
+  // so the row, the audit entry and the Zoho note can never disagree about
+  // whether this push waived anything.
   const storedWaiver = normalizeWaiverReason(expense.receiptWaiverReason);
+  const recordingWaiver = shouldRecordWaiver({
+    hasReceipt,
+    storedWaiverReason: expense.receiptWaiverReason ?? null,
+    suppliedReason,
+  });
   let waiverReason = storedWaiver;
-  if (suppliedReason && !storedWaiver) {
+  if (recordingWaiver && suppliedReason) {
     const waivedAt = new Date();
     await db.update(expenses)
       .set({
@@ -144,7 +155,13 @@ export async function pushExpenseToZoho(
   // Event run dates live only in Argo. Best-effort: the note degrades to the
   // event name alone rather than the push failing on a cosmetic lookup.
   const eventDates = await tryEventDates(expense.sourceContext?.eventId);
-  const waivedById = expense.receiptWaivedById ?? (waiverReason ? actorUserId : null);
+  // Only a waiver this push actually recorded may name this actor. A stored
+  // reason whose `receipt_waived_by_id` is NULL — the waiving accountant was
+  // deleted, and the FK is ON DELETE SET NULL so the reason outlives them —
+  // must fall through to buildZohoNote's unnamed "Receipt waived: <reason>"
+  // form. Naming the retrying accountant there would put a false name on the
+  // one line in Zoho that records who bypassed the control.
+  const waivedById = expense.receiptWaivedById ?? (recordingWaiver ? actorUserId : null);
   const payload = buildZohoServicePayload({
     ...expense,
     categoryEntityAccountId,

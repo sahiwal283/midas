@@ -58,9 +58,11 @@ export function computeFlags(row: FlagsInput): Flag[] {
   }
 
   const integrationFailed = (row as FlagsInput & { integrationStatus?: string }).integrationStatus === 'failed';
-  // One rule, three expressions: lib/zohoReadiness.ts (evaluateZohoReadiness)
-  // and lib/queueLane.ts (SQL) must agree with this. The SQL one is unreachable
-  // from the DB-free test suite — change all three together.
+  // One rule, four expressions: lib/zohoReadiness.ts (evaluateZohoReadiness),
+  // lib/queueLane.ts (SQL) and apps/web/src/pages/AccountantReview.tsx
+  // (ZohoReadinessCard) must agree with this. The SQL one is unreachable from the
+  // DB-free test suite, and the web one is user-visible — that term decides
+  // whether the waiver button is offered. Change all four together.
   const hasWaiver = !!row.receiptWaiverReason?.trim();
   const zohoReady =
     (row.status === 'approved' || row.status === 'zoho_sync_failed' || integrationFailed) &&

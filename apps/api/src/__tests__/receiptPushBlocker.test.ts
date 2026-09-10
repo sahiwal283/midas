@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_WAIVER_REASON } from '@midas/shared';
-import { receiptPushBlocker, normalizeWaiverReason } from '../lib/receiptPushBlocker';
+import { receiptPushBlocker, normalizeWaiverReason, shouldRecordWaiver } from '../lib/receiptPushBlocker';
 
 const WITH_RECEIPT = { hasReceipt: true, storedWaiverReason: null };
 const BARE = { hasReceipt: false, storedWaiverReason: null };
@@ -28,6 +28,11 @@ describe('receiptPushBlocker', () => {
   it('passes on a reason already stored, so a retry needs no retyping', () => {
     expect(receiptPushBlocker({ hasReceipt: false, storedWaiverReason: 'lost, verified on statement' }))
       .toBeNull();
+  });
+
+  it('blocks on a stored reason that is only whitespace — a corrupted row is not a waiver', () => {
+    const blocker = receiptPushBlocker({ hasReceipt: false, storedWaiverReason: '   ' });
+    expect(blocker?.code).toBe('MISSING_RECEIPT');
   });
 
   it('rejects a whitespace-only reason rather than storing an empty justification', () => {
@@ -64,5 +69,45 @@ describe('normalizeWaiverReason', () => {
 
   it('trims surrounding whitespace', () => {
     expect(normalizeWaiverReason('  lost the receipt  ')).toBe('lost the receipt');
+  });
+});
+
+describe('shouldRecordWaiver', () => {
+  it('records a waiver for a receipt-less expense with a fresh reason', () => {
+    expect(shouldRecordWaiver({ ...BARE, suppliedReason: 'submitter lost it' })).toBe(true);
+  });
+
+  it('records NOTHING when the expense has a receipt, even if a reason is supplied', () => {
+    // The regression this guards: receiptPushBlocker returns null on
+    // hasReceipt without ever looking at suppliedReason, so deciding the write
+    // from that null stamped `receipt_waiver_reason` and an immutable
+    // `expense.receipt_waived` audit entry onto an expense whose receipt was
+    // attached to the same Zoho record moments later. Reachable by any
+    // accountant posting the field with curl.
+    expect(shouldRecordWaiver({ ...WITH_RECEIPT, suppliedReason: 'submitter lost it' })).toBe(false);
+  });
+
+  it('records nothing when a waiver is already stored — the first reason stands', () => {
+    expect(shouldRecordWaiver({
+      hasReceipt: false,
+      storedWaiverReason: 'lost, verified on statement',
+      suppliedReason: 'a second, different reason',
+    })).toBe(false);
+  });
+
+  it('records nothing when no reason was supplied', () => {
+    expect(shouldRecordWaiver(BARE)).toBe(false);
+  });
+
+  it('records nothing for a whitespace-only reason', () => {
+    expect(shouldRecordWaiver({ ...BARE, suppliedReason: '  \n ' })).toBe(false);
+  });
+
+  it('treats a whitespace-only STORED reason as absent, so a real reason replaces it', () => {
+    expect(shouldRecordWaiver({
+      hasReceipt: false,
+      storedWaiverReason: '   ',
+      suppliedReason: 'submitter lost it',
+    })).toBe(true);
   });
 });

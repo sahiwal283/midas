@@ -12,14 +12,19 @@ export function readyForZohoCondition() {
     isNotNull(expenses.zohoEntity),
     isNotNull(expenses.paymentMethodId),
     or(isNotNull(expenses.categoryId), isNotNull(expenses.zohoExpenseAccountId)),
-    // See lib/flags.ts and lib/zohoReadiness.ts — the same rule, three ways.
-    // The blank-guard here mirrors the TypeScript `.trim()` checks in those two
-    // files: a blank or whitespace-only reason is not a waiver. No test reaches
-    // this one: the API suite never touches a database, so this clause is
-    // verified by review and by the post-deploy lane check.
+    // See lib/flags.ts, lib/zohoReadiness.ts and apps/web/src/pages/
+    // AccountantReview.tsx — the same rule, four ways.
+    // The blank-guard here mirrors the TypeScript `.trim()` checks in those
+    // files: a blank or whitespace-only reason is not a waiver. `btrim` with no
+    // character argument strips ASCII spaces ONLY, so the set is spelled out to
+    // match what `.trim()` removes; that leaves only exotic Unicode whitespace
+    // (NBSP and friends) between the two, and in that direction the SQL is the
+    // permissive one, so the push still refuses. No test reaches this clause:
+    // the API suite never touches a database, so it is verified by review and
+    // by the post-deploy lane check.
     or(
       sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id})`,
-      sql`coalesce(btrim(${expenses.receiptWaiverReason}), '') <> ''`,
+      sql`coalesce(btrim(${expenses.receiptWaiverReason}, E' \\t\\n\\r\\f\\v'), '') <> ''`,
     ),
     // An unmapped card fails the push with MISSING_ZOHO_PAID_THROUGH — not ready.
     // Only a numeric Zoho account id counts; a free-text label is not a mapping.

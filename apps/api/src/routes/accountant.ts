@@ -784,9 +784,12 @@ router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
     res.json({ expense: outcome.expense, zoho: outcome.zoho });
     return;
   }
-  // 400 (bad waiver reason) and 409 (blocked) are both the caller's to fix;
-  // only a genuine integration failure is a 502.
-  if (outcome.status === 400 || outcome.status === 409) {
+  // Only a genuine integration failure is a 502; everything else (400 for a
+  // bad waiver reason, 409 for a blocked push) is the caller's to fix. Written
+  // as "not 502" rather than as a list of the known client statuses so any
+  // future member of the outcome union is reported as itself instead of being
+  // relabelled a Zoho outage.
+  if (outcome.status !== 502) {
     throw createError(outcome.message, outcome.status, outcome.code);
   }
   res.status(502).json({

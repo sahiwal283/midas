@@ -34,6 +34,31 @@ export function normalizeWaiverReason(raw: string | undefined | null): string | 
   return trimmed ? trimmed : null;
 }
 
+/**
+ * Whether this push should record a NEW waiver on the expense.
+ *
+ * Separate from `receiptPushBlocker` because the two answer different
+ * questions: the blocker says "may this push proceed", and short-circuits on
+ * `hasReceipt` — so it never inspects a stray `suppliedReason` on a receipted
+ * expense. Deciding the write from the blocker's `null` therefore wrote a
+ * waiver reason, and an immutable `expense.receipt_waived` audit entry, onto
+ * an expense that HAS a receipt: a Zoho note reading "Receipt waived by X"
+ * on a record whose receipt is attached moments later. The waiver line is the
+ * only record in Zoho that a financial control was bypassed, so it must never
+ * appear where no control was bypassed.
+ *
+ * Lives here, beside the blocker, so `zohoPush` (which imports the database,
+ * and so is unreachable from the DB-free test suite) states this rule once and
+ * the suite can assert it.
+ */
+export function shouldRecordWaiver(input: ReceiptPushInput): boolean {
+  // A receipt means nothing was waived, whatever the caller sent.
+  if (input.hasReceipt) return false;
+  // A row already waived keeps its first justification — the one that was reviewed.
+  if (normalizeWaiverReason(input.storedWaiverReason)) return false;
+  return !!normalizeWaiverReason(input.suppliedReason);
+}
+
 export function receiptPushBlocker(input: ReceiptPushInput): ReceiptPushBlocker | null {
   // A receipt settles it. Checked first so a malformed reason cannot block a
   // push that never needed a waiver.

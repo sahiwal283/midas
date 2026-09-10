@@ -149,7 +149,9 @@ function ZohoReadinessCard({
 }) {
   if (expense.zohoExpenseId) return null;
 
-  // Mirrors lib/zohoReadiness.ts and lib/flags.ts: a recorded waiver satisfies
+  // The fourth expression of one rule: apps/api/src/lib/zohoReadiness.ts,
+  // apps/api/src/lib/flags.ts and apps/api/src/lib/queueLane.ts (SQL) carry the
+  // other three, and all four must change together. A recorded waiver satisfies
   // the receipt check. Without this, a waived-then-failed push asks the
   // accountant to justify it again and throws that second reason away.
   const hasWaiver = !!expense.receiptWaiverReason?.trim();
@@ -515,7 +517,7 @@ export function AccountantReview() {
             open={waiverOpen}
             onClose={() => setWaiverOpen(false)}
             onConfirm={(reason) => zohoRetryMutation.mutate(reason)}
-            subtitle={`${expense.merchant} · $${expense.amount} · ${expense.user?.name ?? 'Unknown'}`}
+            subtitle={`${expense.merchant} · ${fmtMoney(Number(expense.amount || 0))} · ${expense.user?.name ?? 'Unknown'}`}
             pending={zohoRetryMutation.isPending}
             error={zohoPushError || null}
           />

@@ -21,6 +21,12 @@ const REFERENCES: Array<{ table: string; column: string }> = [
   { table: 'expense_messages', column: 'resolved_by_id' },
   { table: 'expenses', column: 'user_id' },
   { table: 'expenses', column: 'reviewed_by_id' },
+  // The waiver attribution: expenses.receipt_waived_by_id is ON DELETE SET NULL,
+  // so leaving it out of this list does not fail the delete — it silently erases
+  // who bypassed the receipt control, and the Zoho note for any later re-push
+  // falls back to the unnamed form. Merging a person must move that name, not
+  // drop it.
+  { table: 'expenses', column: 'receipt_waived_by_id' },
   { table: 'notifications', column: 'user_id' },
   { table: 'payment_methods', column: 'assigned_user_id' },
   { table: 'sso_links', column: 'user_id' },

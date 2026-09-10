@@ -59,9 +59,11 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   const warnings: string[] = [];
 
   const isApproved = expense.status === 'approved' || expense.status === 'zoho_sync_failed';
-  // One rule, three expressions: lib/flags.ts (computeFlags) and
-  // lib/queueLane.ts (SQL) must agree with this. The SQL one is unreachable
-  // from the DB-free test suite — change all three together.
+  // One rule, four expressions: lib/flags.ts (computeFlags), lib/queueLane.ts
+  // (SQL) and apps/web/src/pages/AccountantReview.tsx (ZohoReadinessCard) must
+  // agree with this. The SQL one is unreachable from the DB-free test suite,
+  // and the web one is user-visible — that term decides whether the waiver
+  // button is offered. Change all four together.
   // A waiver is an accountant's written justification, stored on the row. It
   // satisfies this check so a waived-then-failed push stays retryable; the
   // `missing_receipt` flag still fires, because the receipt really is missing.

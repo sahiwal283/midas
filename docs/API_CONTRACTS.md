@@ -476,10 +476,33 @@ Pushes an expense to Zoho. Expense must be `approved` or `zoho_sync_failed`.
 - `zohoEntity` must be set
 - `categoryId` must be set
 - `paymentMethodId` must be set
+- A receipt must be attached — **or** the expense must carry a recorded receipt waiver
+  (`receiptWaiverReason`), either already stored on the row or supplied on this call.
+
+**Request (optional body):**
+```json
+{ "receiptWaiverReason": "string (optional, 1-200 chars after trimming)" }
+```
+
+An accountant supplies `receiptWaiverReason` to push an expense whose submitter lost
+the receipt. It is stored on the expense with the acting user and timestamp, written to
+an immutable `expense.receipt_waived` audit entry, and carried into the Zoho Books note
+(`Receipt waived by <name>: <reason>`) — the only record in Zoho that the receipt
+control was bypassed. It is recorded **only** when the expense has no receipt and no
+waiver is already stored; on a receipted expense the field is ignored, and on an
+already-waived expense the first justification stands. Submitters cannot self-waive:
+`POST /expenses/:id/submit` never reads the field.
 
 ```json
 // Response 200 (mock — Zoho mode is 'mock' in non-production)
 { "expense": { ...expense }, "zoho": { "zohoExpenseId": "Z-mock-xxx", "syncedAt": "ISO8601" } }
+
+// Response 409 — no receipt and no waiver
+{ "error": { "code": "MISSING_RECEIPT", "message": "This expense has no receipt. Push it with a written reason, or ask the submitter to attach one." } }
+
+// Response 400 — a receiptWaiverReason that is blank/whitespace-only or over the 200-char maximum
+// (the route's schema rejects most such bodies first, with a generic validation 400)
+{ "error": { "code": "INVALID_WAIVER_REASON", "message": "Write a reason for pushing without a receipt." } }
 
 // Response 502
 { "error": { "code": "ZOHO_SYNC_FAILED", "message": "Zoho push failed — expense marked for retry." } }
@@ -514,7 +537,7 @@ Read-only server-side evaluation of whether an expense meets all Zoho push requi
 // When ready=true, mappedPayload contains the preview of what would be sent to Zoho
 ```
 
-**Evaluated fields (11 total):** approved status, not already synced, merchant, amount > 0, date, submitter, category, payment method, zohoEntity, receipt attached, no unresolved requests.
+**Evaluated fields (11 total):** approved status, not already synced, merchant, amount > 0, date, submitter, category, payment method, zohoEntity, receipt attached (or waived), no unresolved requests.
 
 ---
 

@@ -205,6 +205,22 @@ describe('buildZohoNote — receipt waiver', () => {
     expect(note).toContain('Urth Cafe');
   });
 
+  it('truncates the capture url before the waiver line — the reason is the only copy in Zoho', () => {
+    const reason = 'z'.repeat(200);
+    const note = buildZohoNote({
+      ...BASE,
+      headline: null,
+      receiptWaivedBy: 'Digi',
+      receiptWaiverReason: reason,
+      sourceUrl: `https://example.com/${'s'.repeat(230)}`,
+    });
+    const sourceLine = note.split('\n').find((l) => l.startsWith('Source:') || l === '…');
+    const waiverLine = note.split('\n').find((l) => l.startsWith('Receipt waived'));
+    expect(note.length).toBeLessThanOrEqual(ZOHO_NOTE_MAX);
+    expect(waiverLine).toBe(`Receipt waived by Digi: ${reason}`);
+    expect(sourceLine).toContain('…');
+  });
+
   it('truncates the event line before the waiver line when both are over budget', () => {
     const note = buildZohoNote({
       ...BASE,
