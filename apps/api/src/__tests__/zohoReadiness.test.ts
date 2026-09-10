@@ -219,3 +219,30 @@ describe('MIDAS_VERSION', () => {
     expect(MIDAS_VERSION).toMatch(/^\d+\.\d+\.\d+(-[a-z0-9.]+)?$/);
   });
 });
+
+describe('evaluateZohoReadiness — receipt waiver', () => {
+  // Build on whatever complete fixture this file already uses; the only
+  // difference between these two cases is the waiver.
+  function waivable(overrides: Record<string, unknown> = {}) {
+    return { ...base, receipts: [], ...overrides };
+  }
+
+  it('is not ready with no receipt and no waiver', () => {
+    const result = evaluateZohoReadiness(waivable() as never);
+    expect(result.ready).toBe(false);
+    expect(result.missing).toContain('receipt attachment');
+  });
+
+  it('is ready with no receipt when a waiver is recorded', () => {
+    const result = evaluateZohoReadiness(waivable({ receiptWaiverReason: 'lost; verified' }) as never);
+    expect(result.ready).toBe(true);
+    expect(result.missing).not.toContain('receipt attachment');
+  });
+
+  it('labels the check so an accountant can tell a waiver from a receipt', () => {
+    const result = evaluateZohoReadiness(waivable({ receiptWaiverReason: 'lost' }) as never);
+    const check = result.checks.find((c) => c.label.startsWith('Receipt'));
+    expect(check?.label).toBe('Receipt attached (or waived)');
+    expect(check?.pass).toBe(true);
+  });
+});

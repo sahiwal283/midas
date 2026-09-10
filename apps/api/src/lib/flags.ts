@@ -25,6 +25,7 @@ export interface FlagsInput {
    * behaviour, exactly like companyZohoEnabled.
    */
   paymentMethod?: { zohoAccountName: string | null } | null;
+  receiptWaiverReason?: string | null;
 }
 
 export type Flag =
@@ -57,6 +58,8 @@ export function computeFlags(row: FlagsInput): Flag[] {
   }
 
   const integrationFailed = (row as FlagsInput & { integrationStatus?: string }).integrationStatus === 'failed';
+  // See lib/zohoReadiness.ts and lib/queueLane.ts — the same rule, three ways.
+  const hasWaiver = !!row.receiptWaiverReason?.trim();
   const zohoReady =
     (row.status === 'approved' || row.status === 'zoho_sync_failed' || integrationFailed) &&
     row.companyZohoEnabled !== false &&
@@ -67,7 +70,7 @@ export function computeFlags(row: FlagsInput): Flag[] {
     // A label in zoho_account_name is not a usable paid-through mapping — the push
     // would fail MISSING_ZOHO_PAID_THROUGH, so it must not read as ready here.
     (row.paymentMethod === undefined || isZohoAccountId(row.paymentMethod?.zohoAccountName)) &&
-    (row.receipts?.length ?? 0) > 0;
+    ((row.receipts?.length ?? 0) > 0 || hasWaiver);
   if (zohoReady) flags.push('ready_for_zoho');
 
   return flags;

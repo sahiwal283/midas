@@ -44,6 +44,7 @@ interface ReadinessExpense extends PayloadExpense {
   status: string;
   zohoExpenseId: string | null;
   messages?: { requestType: string | null; isResolved: boolean }[];
+  receiptWaiverReason?: string | null;
 }
 
 function resolveZohoMode(): 'mock' | 'dry-run' | 'live' {
@@ -58,7 +59,14 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   const warnings: string[] = [];
 
   const isApproved = expense.status === 'approved' || expense.status === 'zoho_sync_failed';
-  const hasReceipt = (expense.receipts?.length ?? 0) > 0;
+  // One rule, three expressions: lib/flags.ts (computeFlags) and
+  // lib/queueLane.ts (SQL) must agree with this. The SQL one is unreachable
+  // from the DB-free test suite — change all three together.
+  // A waiver is an accountant's written justification, stored on the row. It
+  // satisfies this check so a waived-then-failed push stays retryable; the
+  // `missing_receipt` flag still fires, because the receipt really is missing.
+  const hasWaiver = !!expense.receiptWaiverReason?.trim();
+  const hasReceipt = (expense.receipts?.length ?? 0) > 0 || hasWaiver;
   const hasExpenseAccount = !!(expense.categoryId || expense.zohoExpenseAccountId);
   const hasPaymentMethod = !!expense.paymentMethodId;
   // Push refuses unmapped cards (MISSING_ZOHO_PAID_THROUGH) — surface it here.
@@ -85,7 +93,7 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
     { label: 'Payment method set', pass: hasPaymentMethod },
     { label: 'Payment method mapped to Zoho account', pass: hasPaidThrough },
     { label: 'Accounting entity (Zoho brand)', pass: hasZohoEntity },
-    { label: 'Receipt attached', pass: hasReceipt },
+    { label: 'Receipt attached (or waived)', pass: hasReceipt },
     { label: 'No open accountant requests', pass: !hasOpenRequests },
   ];
 
