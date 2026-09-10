@@ -526,14 +526,20 @@ In `buildZohoNote`, replace the `lines` array construction and the block/headlin
   ];
   if (input.sourceUrl) lines.push(`Source: ${input.sourceUrl}`);
 
-  let block = lines.join('\n').slice(0, max);
+  const rawBlock = lines.join('\n');
+  let block = rawBlock.slice(0, max);
 
   // The waiver line is the one that gives way. Everything else in this block
   // exists only in Zoho; the full reason is still on the Midas record and the
   // note carries the link to it.
+  //
+  // Measure the overrun against `rawBlock`, NOT the already-sliced `block`:
+  // once the raw block exceeds `max`, the sliced length is pinned at `max` and
+  // the correction under-shoots, leaving the headline below its floor.
   const headline = input.headline?.trim();
   if (waiverLine && headline) {
-    const overrun = block.length + 2 + Math.min(headline.length, HEADLINE_FLOOR) - max;
+    const reserve = Math.min(headline.length, HEADLINE_FLOOR);
+    const overrun = rawBlock.length + 2 + reserve - max;
     if (overrun > 0) {
       const keep = Math.max(0, waiverLine.length - overrun - 1);
       const shortened = `${waiverLine.slice(0, keep)}…`;
@@ -1208,16 +1214,40 @@ function ReceiptPane({ expense }: { expense: Expense }) {
 
 Leave the rest of the function unchanged.
 
-- [ ] **Step 4: Add the override button to the readiness card**
+- [ ] **Step 4: Teach the card about waivers, then add the override button**
 
-In `ZohoReadinessCard`, after `failed` is built, add:
+The card computes its own readiness in the browser. It must mirror the server
+rule from Task 7, or a waived expense whose push then *failed* would render
+"Not ready" and prompt for a justification a second time — and that second
+reason would be silently discarded, because the push deliberately keeps the
+first one.
+
+Change the receipt determination near the top of `ZohoReadinessCard`:
 
 ```tsx
-  // Offered only when the receipt is the single problem. Waiving does not help
-  // a missing account id — the push would still fail at the payload guard, so a
-  // button that then errors is worse than no button.
-  const receiptIsOnlyBlocker = !hasReceipt && failed.length === 1 && failed[0] === 'Receipt attached';
+  // Mirrors lib/zohoReadiness.ts and lib/flags.ts: a recorded waiver satisfies
+  // the receipt check. Without this, a waived-then-failed push asks the
+  // accountant to justify it again and throws that second reason away.
+  const hasWaiver = !!expense.receiptWaiverReason?.trim();
+  const hasReceipt = (expense.receipts?.length ?? 0) > 0 || hasWaiver;
 ```
+
+Then, after `failed` is built, add:
+
+```tsx
+  // Offered only when a missing receipt is the single problem and no waiver
+  // exists yet. Waiving does not help a missing account id — the push would
+  // still fail at the payload guard, so a button that then errors is worse
+  // than no button.
+  const receiptIsOnlyBlocker = !hasWaiver && failed.length === 1;
+```
+
+Leave `if (!hasReceipt) failed.push('Receipt attached');` exactly as it is. With
+`hasReceipt` now including waivers, the two cases fall out cleanly: an un-waived,
+receipt-less, otherwise-complete expense produces exactly one failing check, and a
+waived one produces none. So `failed.length === 1` combined with `!hasWaiver`
+identifies the override case without comparing against the label text — never
+string-match `failed[0]`, since the label is display copy and will drift.
 
 Extend the props with `onWaivePush: () => void`, and in the not-ready branch — after the failed checklist — render:
 
