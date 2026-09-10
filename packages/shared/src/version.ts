@@ -1,1 +1,1 @@
-export const MIDAS_VERSION = '1.10.1';
+export const MIDAS_VERSION = '1.11.0';
