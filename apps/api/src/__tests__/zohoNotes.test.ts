@@ -180,4 +180,42 @@ describe('buildZohoNote — receipt waiver', () => {
     });
     expect(note.length).toBeLessThanOrEqual(ZOHO_NOTE_MAX);
   });
+
+  it('keeps the waiver line even with no headline and a huge event name', () => {
+    const note = buildZohoNote({
+      ...BASE,
+      headline: null,
+      event: 'E'.repeat(450),
+      receiptWaivedBy: 'Digi',
+      receiptWaiverReason: 'lost the receipt at the airport',
+    });
+    expect(note.length).toBeLessThanOrEqual(ZOHO_NOTE_MAX);
+    expect(note).toMatch(/waived/i);
+  });
+
+  it('keeps the waiver line with a huge event name and a headline present, honouring the headline floor', () => {
+    const note = buildZohoNote({
+      ...BASE,
+      event: 'E'.repeat(450),
+      receiptWaivedBy: 'Digi',
+      receiptWaiverReason: 'lost the receipt at the airport',
+    });
+    expect(note.length).toBeLessThanOrEqual(ZOHO_NOTE_MAX);
+    expect(note).toMatch(/waived/i);
+    expect(note).toContain('Urth Cafe');
+  });
+
+  it('truncates the event line before the waiver line when both are over budget', () => {
+    const note = buildZohoNote({
+      ...BASE,
+      headline: null,
+      event: 'E'.repeat(450),
+      receiptWaivedBy: 'Digi',
+      receiptWaiverReason: 'lost the receipt at the airport',
+    });
+    const eventLine = note.split('\n').find((l) => l.startsWith('Event:'));
+    const waiverLine = note.split('\n').find((l) => l.startsWith('Receipt waived'));
+    expect(eventLine).toContain('…');
+    expect(waiverLine).toBe('Receipt waived by Digi: lost the receipt at the airport');
+  });
 });

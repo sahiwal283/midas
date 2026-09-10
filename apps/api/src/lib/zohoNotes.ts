@@ -87,6 +87,23 @@ function actorLine(name: string | null | undefined, on: string | null | undefine
   return on ? `${name} on ${on}` : name;
 }
 
+/**
+ * Shortens one line by up to `n` characters, ellipsizing what remains. Never
+ * keeps fewer than `floor` characters before the ellipsis — for the event
+ * line that floor is 0 (it may shrink to a bare "…"), but the waiver line is
+ * floored at its own "Receipt waived[ by X]: " prefix, because shrinking
+ * past that would drop the word "waived" itself: a line that still exists
+ * but no longer says anything is the same failure as the line vanishing.
+ * Reports how much was actually removed, since a line at its floor may not
+ * have `n` to give.
+ */
+function shortenBy(line: string, n: number, floor = 0): { line: string; removed: number } {
+  if (n <= 0) return { line, removed: 0 };
+  const keep = Math.max(floor, line.length - n - 1);
+  const shortened = keep >= line.length ? line : `${line.slice(0, keep)}…`;
+  return { line: shortened, removed: line.length - shortened.length };
+}
+
 export interface ZohoNoteInput {
   /** The human sentence — "merchant — description". Null when there is none. */
   headline: string | null;
@@ -134,8 +151,9 @@ export function buildZohoNote(input: ZohoNoteInput): string {
       : `Receipt waived: ${waiverReason}`)
     : null;
 
+  const eventLineText = `Event: ${eventLine}`;
   const lines = [
-    `Event: ${eventLine}`,
+    eventLineText,
     `Submitted by: ${actorLine(input.submittedBy, input.submittedOn)}`,
     `Pushed by: ${actorLine(input.pushedBy, input.pushedOn)}`,
     ...(waiverLine ? [waiverLine] : []),
@@ -147,22 +165,39 @@ export function buildZohoNote(input: ZohoNoteInput): string {
   const rawBlock = lines.join('\n');
   let block = rawBlock.slice(0, max);
 
-  // The waiver line is the one that gives way. Everything else in this block
-  // exists only in Zoho; the full reason is still on the Midas record and the
-  // note carries the link to it.
+  // The waiver line is the record, in Zoho, that a control was bypassed — it
+  // must survive truncation, headline or no headline. This runs whenever a
+  // waiver line exists, not only when a headline does: gating it on a
+  // headline (as an earlier version of this did) let the line vanish with no
+  // ellipsis and no trace whenever the block alone — e.g. a very long event
+  // name, with no headline to reserve space for — already overflowed `max`.
   //
   // Measure the overrun against `rawBlock`, NOT the already-sliced `block`:
   // once the raw block exceeds `max`, the sliced length is pinned at `max` and
   // the correction under-shoots, leaving the headline below its floor.
   const headline = input.headline?.trim();
-  if (waiverLine && headline) {
-    const reserve = Math.min(headline.length, HEADLINE_FLOOR);
-    const overrun = rawBlock.length + 2 + reserve - max;
+  if (waiverLine) {
+    const reserve = headline ? Math.min(headline.length, HEADLINE_FLOOR) : 0;
+    const headlineSeparator = headline ? 2 : 0;
+    let overrun = rawBlock.length + headlineSeparator + reserve - max;
     if (overrun > 0) {
-      const keep = Math.max(0, waiverLine.length - overrun - 1);
-      const shortened = `${waiverLine.slice(0, keep)}…`;
+      // The event name is display context that also lives in Midas, so it
+      // gives way first; the waiver line is the only copy of this evidence
+      // that lives in Zoho at all, so it gives way only if the event line
+      // shrinking to a single "…" still isn't enough — and even then it
+      // keeps its own "Receipt waived[ by X]: " prefix, so "waived" itself
+      // is never among the characters that get cut.
+      const shortEvent = shortenBy(eventLineText, overrun);
+      overrun -= shortEvent.removed;
+      const waiverPrefix = waiverLine.slice(0, waiverLine.length - waiverReason!.length);
+      const shortWaiver = shortenBy(waiverLine, overrun, waiverPrefix.length);
+
       block = lines
-        .map((l) => (l === waiverLine ? shortened : l))
+        .map((l) => {
+          if (l === eventLineText) return shortEvent.line;
+          if (l === waiverLine) return shortWaiver.line;
+          return l;
+        })
         .join('\n')
         .slice(0, max);
     }
