@@ -13,11 +13,13 @@ export function readyForZohoCondition() {
     isNotNull(expenses.paymentMethodId),
     or(isNotNull(expenses.categoryId), isNotNull(expenses.zohoExpenseAccountId)),
     // See lib/flags.ts and lib/zohoReadiness.ts — the same rule, three ways.
-    // No test reaches this one: the API suite never touches a database, so this
-    // clause is verified by review and by the post-deploy lane check.
+    // The blank-guard here mirrors the TypeScript `.trim()` checks in those two
+    // files: a blank or whitespace-only reason is not a waiver. No test reaches
+    // this one: the API suite never touches a database, so this clause is
+    // verified by review and by the post-deploy lane check.
     or(
       sql`exists (select 1 from receipts r where r.expense_id = ${expenses.id})`,
-      isNotNull(expenses.receiptWaiverReason),
+      sql`coalesce(btrim(${expenses.receiptWaiverReason}), '') <> ''`,
     ),
     // An unmapped card fails the push with MISSING_ZOHO_PAID_THROUGH — not ready.
     // Only a numeric Zoho account id counts; a free-text label is not a mapping.
