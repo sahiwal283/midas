@@ -253,8 +253,10 @@ export const accountantApi = {
   ) =>
     client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/details`, data).then((r) => r.data.expense),
 
-  pushToZoho: (id: string) =>
-    client.post(`/accountant/expenses/${id}/zoho-push`).then((r) => r.data),
+  pushToZoho: (id: string, receiptWaiverReason?: string) =>
+    client.post(`/accountant/expenses/${id}/zoho-push`,
+      receiptWaiverReason ? { receiptWaiverReason } : {},
+    ).then((r) => r.data),
 
   resolveRequest: (id: string) =>
     client.post(`/accountant/expenses/${id}/resolve-request`).then((r) => r.data),
