@@ -170,10 +170,16 @@ function ZohoReadinessCard({
   if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') failed.push('Approved');
 
   // Offered only when a missing receipt is the single problem and no waiver
-  // exists yet. Waiving does not help a missing account id — the push would
-  // still fail at the payload guard, so a button that then errors is worse
-  // than no button.
-  const receiptIsOnlyBlocker = !hasWaiver && failed.length === 1;
+  // exists yet. All three terms are required: !hasWaiver so a resolved waiver
+  // doesn't re-prompt, the explicit `receipts.length === 0` so a *receipted*
+  // expense whose one other check fails (e.g. company unset) never shows this
+  // button — without it, confirming would write a fabricated waiver row and
+  // audit entry for an expense that already has its receipt, then still fail
+  // on the real blocker — and failed.length === 1 so waiving something that
+  // won't fix a second, unrelated failure (like a missing account id, which
+  // would still fail at the payload guard) is never offered as if it would.
+  const receiptIsOnlyBlocker =
+    !hasWaiver && (expense.receipts?.length ?? 0) === 0 && failed.length === 1;
 
   return (
     <div className={`rounded-xl border p-4 ${ready ? 'border-success/30 bg-success/10' : 'border-ink/10 bg-white'}`}>
