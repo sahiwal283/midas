@@ -19,6 +19,14 @@
  */
 export const ZOHO_NOTE_MAX = 500;
 
+/**
+ * Smallest headline worth keeping. An earlier fix folded the merchant into the
+ * description because Zoho drops it, leaving expenses unsearchable by name — so
+ * when the budget is tight the waiver line is truncated to protect this, rather
+ * than letting a long reason push the merchant out of the note entirely.
+ */
+const HEADLINE_FLOOR = 40;
+
 /** Shown for a core field with no value, so the block keeps one shape. */
 const ABSENT = '—';
 
@@ -91,6 +99,10 @@ export interface ZohoNoteInput {
   submittedOn: string | null;
   pushedBy: string | null;
   pushedOn: string | null;
+  /** Accountant who pushed this without a receipt. May differ from pushedBy on a retry. */
+  receiptWaivedBy?: string | null;
+  /** Why it was pushed without a receipt. Omitted from the note when blank. */
+  receiptWaiverReason?: string | null;
   /** Raw source_app; mapped to a name an accountant recognises. */
   origin: string | null;
   /** Deep link back into Midas, or null when no web base url is configured. */
@@ -115,18 +127,47 @@ export function buildZohoNote(input: ZohoNoteInput): string {
     ? `${input.event}${eventDates ? ` (${eventDates})` : ''}`
     : ABSENT;
 
+  const waiverReason = input.receiptWaiverReason?.trim();
+  const waiverLine = waiverReason
+    ? (input.receiptWaivedBy
+      ? `Receipt waived by ${input.receiptWaivedBy}: ${waiverReason}`
+      : `Receipt waived: ${waiverReason}`)
+    : null;
+
   const lines = [
     `Event: ${eventLine}`,
     `Submitted by: ${actorLine(input.submittedBy, input.submittedOn)}`,
     `Pushed by: ${actorLine(input.pushedBy, input.pushedOn)}`,
+    ...(waiverLine ? [waiverLine] : []),
     `Origin: ${originName(input.origin)}`,
     `Midas: ${input.midasUrl || input.midasId}`,
   ];
   if (input.sourceUrl) lines.push(`Source: ${input.sourceUrl}`);
 
-  const block = lines.join('\n').slice(0, max);
+  const rawBlock = lines.join('\n');
+  let block = rawBlock.slice(0, max);
 
+  // The waiver line is the one that gives way. Everything else in this block
+  // exists only in Zoho; the full reason is still on the Midas record and the
+  // note carries the link to it.
+  //
+  // Measure the overrun against `rawBlock`, NOT the already-sliced `block`:
+  // once the raw block exceeds `max`, the sliced length is pinned at `max` and
+  // the correction under-shoots, leaving the headline below its floor.
   const headline = input.headline?.trim();
+  if (waiverLine && headline) {
+    const reserve = Math.min(headline.length, HEADLINE_FLOOR);
+    const overrun = rawBlock.length + 2 + reserve - max;
+    if (overrun > 0) {
+      const keep = Math.max(0, waiverLine.length - overrun - 1);
+      const shortened = `${waiverLine.slice(0, keep)}…`;
+      block = lines
+        .map((l) => (l === waiverLine ? shortened : l))
+        .join('\n')
+        .slice(0, max);
+    }
+  }
+
   if (!headline) return block;
 
   // Two newlines separate the sentence from the block.

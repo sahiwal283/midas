@@ -106,3 +106,78 @@ describe('buildZohoNote', () => {
     expect(note.startsWith('Event:')).toBe(true);
   });
 });
+
+describe('buildZohoNote — receipt waiver', () => {
+  const BASE = {
+    headline: 'Urth Cafe — Breakfast last day KG/SP/SJ',
+    event: null,
+    submittedBy: 'Shruti Patel',
+    submittedOn: '2026-09-09',
+    pushedBy: 'Digi',
+    pushedOn: '2026-09-10',
+    origin: 'midas',
+    midasUrl: 'https://midas.example.com/expenses/abc',
+    midasId: 'abc',
+  };
+
+  it('says nothing about a waiver when there is none', () => {
+    expect(buildZohoNote(BASE)).not.toMatch(/waived/i);
+  });
+
+  it('names the waiver actor and the reason, after the Pushed by line', () => {
+    const note = buildZohoNote({
+      ...BASE,
+      receiptWaivedBy: 'Digi',
+      receiptWaiverReason: 'submitter lost the receipt; verified against the Amex statement',
+    });
+    expect(note).toContain('Receipt waived by Digi: submitter lost the receipt; verified against the Amex statement');
+    expect(note.indexOf('Receipt waived by')).toBeGreaterThan(note.indexOf('Pushed by:'));
+    expect(note.indexOf('Receipt waived by')).toBeLessThan(note.indexOf('Origin:'));
+  });
+
+  it('falls back to an unnamed waiver rather than printing null', () => {
+    const note = buildZohoNote({ ...BASE, receiptWaivedBy: null, receiptWaiverReason: 'lost' });
+    expect(note).toContain('Receipt waived: lost');
+    expect(note).not.toMatch(/null/);
+  });
+
+  it('omits the line when a reason is blank', () => {
+    expect(buildZohoNote({ ...BASE, receiptWaivedBy: 'Digi', receiptWaiverReason: '   ' }))
+      .not.toMatch(/waived/i);
+  });
+
+  it('keeps the merchant headline when a 200-character reason is present', () => {
+    const note = buildZohoNote({
+      ...BASE,
+      receiptWaivedBy: 'Digi',
+      receiptWaiverReason: 'x'.repeat(200),
+    });
+    expect(note).toContain('Urth Cafe');
+    expect(note.length).toBeLessThanOrEqual(ZOHO_NOTE_MAX);
+  });
+
+  it('truncates the waiver line rather than losing the merchant name', () => {
+    const note = buildZohoNote({
+      ...BASE,
+      event: 'A Very Long Trade Show Name That Eats The Budget'.repeat(3),
+      receiptWaivedBy: 'Digi',
+      receiptWaiverReason: 'y'.repeat(200),
+    });
+    expect(note.length).toBeLessThanOrEqual(ZOHO_NOTE_MAX);
+    expect(note).toContain('Urth Cafe');
+    expect(note).toContain('…');
+  });
+
+  it('never exceeds the Zoho ceiling under any combination', () => {
+    const note = buildZohoNote({
+      ...BASE,
+      headline: 'H'.repeat(400),
+      event: 'E'.repeat(200),
+      midasUrl: `https://midas.example.com/expenses/${'u'.repeat(120)}`,
+      sourceUrl: `https://example.com/${'s'.repeat(120)}`,
+      receiptWaivedBy: 'Digi',
+      receiptWaiverReason: 'z'.repeat(200),
+    });
+    expect(note.length).toBeLessThanOrEqual(ZOHO_NOTE_MAX);
+  });
+});
