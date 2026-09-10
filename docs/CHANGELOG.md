@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.11.0 (2026-09-10)
+
+### Added
+- Accountants can push an approved expense that has no receipt by writing a
+  reason. The reason is required, capped at 200 characters, stored on the
+  expense, recorded in the audit log, and included in the Zoho Books note as
+  "Receipt waived by <name>: <reason>". The button appears only when the missing
+  receipt is the sole thing blocking the push.
+
+### Changed
+- A missing receipt now blocks a Zoho push on the server, not just in the UI.
+  Previously the review page simply hid the push button while the push
+  endpoints themselves had no receipt check, so a receipt-less expense could be
+  pushed by calling them directly. Every push path now refuses unless the
+  expense has a receipt or a recorded waiver.
+- A waived expense counts as ready for Zoho, so a waiver whose push then failed
+  can be retried from the queue without retyping the reason.
+
+### Database
+- Migration `0031_expense_receipt_waiver` adds `receipt_waiver_reason`,
+  `receipt_waived_by_id` and `receipt_waived_at` to `expenses`. Additive and
+  idempotent; existing rows read as not waived.
+
 ## 1.10.1 (2026-09-09)
 
 ### Fixed

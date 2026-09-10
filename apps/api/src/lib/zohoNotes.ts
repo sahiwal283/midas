@@ -19,6 +19,14 @@
  */
 export const ZOHO_NOTE_MAX = 500;
 
+/**
+ * Smallest headline worth keeping. An earlier fix folded the merchant into the
+ * description because Zoho drops it, leaving expenses unsearchable by name — so
+ * when the budget is tight the waiver line is truncated to protect this, rather
+ * than letting a long reason push the merchant out of the note entirely.
+ */
+const HEADLINE_FLOOR = 40;
+
 /** Shown for a core field with no value, so the block keeps one shape. */
 const ABSENT = '—';
 
@@ -79,6 +87,23 @@ function actorLine(name: string | null | undefined, on: string | null | undefine
   return on ? `${name} on ${on}` : name;
 }
 
+/**
+ * Shortens one line by up to `n` characters, ellipsizing what remains. Never
+ * keeps fewer than `floor` characters before the ellipsis — for the event and
+ * Source lines that floor is 0 (they may shrink to a bare "…"), but the
+ * waiver line is floored at its own "Receipt waived[ by X]: " prefix, because shrinking
+ * past that would drop the word "waived" itself: a line that still exists
+ * but no longer says anything is the same failure as the line vanishing.
+ * Reports how much was actually removed, since a line at its floor may not
+ * have `n` to give.
+ */
+function shortenBy(line: string, n: number, floor = 0): { line: string; removed: number } {
+  if (n <= 0) return { line, removed: 0 };
+  const keep = Math.max(floor, line.length - n - 1);
+  const shortened = keep >= line.length ? line : `${line.slice(0, keep)}…`;
+  return { line: shortened, removed: line.length - shortened.length };
+}
+
 export interface ZohoNoteInput {
   /** The human sentence — "merchant — description". Null when there is none. */
   headline: string | null;
@@ -91,6 +116,10 @@ export interface ZohoNoteInput {
   submittedOn: string | null;
   pushedBy: string | null;
   pushedOn: string | null;
+  /** Accountant who pushed this without a receipt. May differ from pushedBy on a retry. */
+  receiptWaivedBy?: string | null;
+  /** Why it was pushed without a receipt. Omitted from the note when blank. */
+  receiptWaiverReason?: string | null;
   /** Raw source_app; mapped to a name an accountant recognises. */
   origin: string | null;
   /** Deep link back into Midas, or null when no web base url is configured. */
@@ -115,18 +144,78 @@ export function buildZohoNote(input: ZohoNoteInput): string {
     ? `${input.event}${eventDates ? ` (${eventDates})` : ''}`
     : ABSENT;
 
+  const waiverReason = input.receiptWaiverReason?.trim();
+  const waiverLine = waiverReason
+    ? (input.receiptWaivedBy
+      ? `Receipt waived by ${input.receiptWaivedBy}: ${waiverReason}`
+      : `Receipt waived: ${waiverReason}`)
+    : null;
+
+  const eventLineText = `Event: ${eventLine}`;
   const lines = [
-    `Event: ${eventLine}`,
+    eventLineText,
     `Submitted by: ${actorLine(input.submittedBy, input.submittedOn)}`,
     `Pushed by: ${actorLine(input.pushedBy, input.pushedOn)}`,
+    ...(waiverLine ? [waiverLine] : []),
     `Origin: ${originName(input.origin)}`,
     `Midas: ${input.midasUrl || input.midasId}`,
   ];
-  if (input.sourceUrl) lines.push(`Source: ${input.sourceUrl}`);
+  const sourceLineText = input.sourceUrl ? `Source: ${input.sourceUrl}` : null;
+  if (sourceLineText) lines.push(sourceLineText);
 
-  const block = lines.join('\n').slice(0, max);
+  const rawBlock = lines.join('\n');
+  let block = rawBlock.slice(0, max);
 
+  // The waiver line is the record, in Zoho, that a control was bypassed, so
+  // everything that is merely display context gives way to it first: the
+  // headline, the event line and the Source url. It is NOT unconditionally
+  // safe — the actor lines are unbounded, and a submitter or pusher name of a
+  // few hundred characters can still crowd it out of `max` entirely. What this
+  // guarantees is that the reason outranks those three, and that it
+  // is ellipsized rather than silently sliced away when it does have to shrink.
+  // This runs whenever a waiver line exists, not only when a headline does:
+  // gating it on a headline (as an earlier version of this did) let the line
+  // vanish with no ellipsis and no trace whenever the block alone — e.g. a very
+  // long event name, with no headline to reserve space for — already
+  // overflowed `max`.
+  //
+  // Measure the overrun against `rawBlock`, NOT the already-sliced `block`:
+  // once the raw block exceeds `max`, the sliced length is pinned at `max` and
+  // the correction under-shoots, leaving the headline below its floor.
   const headline = input.headline?.trim();
+  if (waiverLine) {
+    const reserve = headline ? Math.min(headline.length, HEADLINE_FLOOR) : 0;
+    const headlineSeparator = headline ? 2 : 0;
+    let overrun = rawBlock.length + headlineSeparator + reserve - max;
+    if (overrun > 0) {
+      // The event name and the capture url are display context that also live
+      // in Midas, so they give way first — event, then Source. The waiver line
+      // is the only copy of this evidence that lives in Zoho at all, so it
+      // gives way only if both of those shrinking to a single "…" still isn't
+      // enough — and even then it keeps its own "Receipt waived[ by X]: "
+      // prefix, so "waived" itself is never among the characters that get cut.
+      // Source is in this chain deliberately: an extension capture url can run
+      // to hundreds of characters, and preserving a tracking link in full while
+      // truncating the reason inverts which of the two Zoho actually needs.
+      const shortEvent = shortenBy(eventLineText, overrun);
+      overrun -= shortEvent.removed;
+      const shortSource = sourceLineText ? shortenBy(sourceLineText, overrun) : null;
+      if (shortSource) overrun -= shortSource.removed;
+      const waiverPrefix = waiverLine.slice(0, waiverLine.length - waiverReason!.length);
+      const shortWaiver = shortenBy(waiverLine, overrun, waiverPrefix.length);
+
+      block = lines
+        .map((l) => {
+          if (l === eventLineText) return shortEvent.line;
+          if (shortSource && l === sourceLineText) return shortSource.line;
+          if (l === waiverLine) return shortWaiver.line;
+          return l;
+        })
+        .join('\n')
+        .slice(0, max);
+    }
+  }
+
   if (!headline) return block;
 
   // Two newlines separate the sentence from the block.

@@ -270,3 +270,32 @@ describe('computeFlags — return type contains only known flags', () => {
     }
   });
 });
+
+describe('computeFlags — receipt waiver', () => {
+  function waived(extra: Record<string, unknown> = {}) {
+    return {
+      status: 'approved',
+      zohoEntity: 'HAUTE',
+      categoryId: 'cat-1',
+      paymentMethodId: 'pm-1',
+      paymentMethod: { zohoAccountName: '1234567890' },
+      receipts: [],
+      reimbursementStatus: 'not_requested',
+      ...extra,
+    };
+  }
+
+  it('does not mark a receipt-less expense ready without a waiver', () => {
+    expect(computeFlags(waived() as never)).not.toContain('ready_for_zoho');
+  });
+
+  it('marks a waived receipt-less expense ready, so a failed push can be retried', () => {
+    const flags = computeFlags(waived({ receiptWaiverReason: 'lost; verified' }) as never);
+    expect(flags).toContain('ready_for_zoho');
+  });
+
+  it('still flags the missing receipt, because it really is missing', () => {
+    const flags = computeFlags(waived({ receiptWaiverReason: 'lost' }) as never);
+    expect(flags).toContain('missing_receipt');
+  });
+});

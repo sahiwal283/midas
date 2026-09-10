@@ -222,6 +222,13 @@ export const expenses = pgTable('expenses', {
   // Stores the last Zoho sync error message when status = zoho_sync_failed
   zohoSyncError: text('zoho_sync_error'),
   zohoRequestId: text('zoho_request_id'),
+  // ── Receipt waiver ─────────────────────────────────────────────────────────
+  // An accountant may push an otherwise-complete expense with no receipt by
+  // writing why. The reason is the audit artifact — it is sent to Zoho and it
+  // is what lets the push guard pass on a retry without retyping.
+  receiptWaiverReason: text('receipt_waiver_reason'),
+  receiptWaivedById: uuid('receipt_waived_by_id').references(() => users.id, { onDelete: 'set null' }),
+  receiptWaivedAt: timestamp('receipt_waived_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [

@@ -370,6 +370,8 @@ export function toCreateBooksBody(payload: ZohoPushBody): Record<string, unknown
     submittedOn: p.provenance?.submittedOn ?? null,
     pushedBy: p.provenance?.pushedBy ?? null,
     pushedOn: p.provenance?.pushedOn ?? null,
+    receiptWaivedBy: p.provenance?.receiptWaivedBy ?? null,
+    receiptWaiverReason: p.provenance?.receiptWaiverReason ?? null,
     origin: p.source?.app ?? null,
     midasUrl: p.provenance?.midasUrl ?? null,
     midasId: 'expenseId' in p && p.expenseId ? p.expenseId : '',

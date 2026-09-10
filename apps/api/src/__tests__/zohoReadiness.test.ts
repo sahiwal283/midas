@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { evaluateZohoReadiness } from '../lib/zohoReadiness';
+import { computeFlags } from '../lib/flags';
 import { MIDAS_VERSION } from '@midas/shared';
 
 // Mock env so tests don't require real env vars
@@ -217,5 +218,59 @@ describe('evaluateZohoReadiness — warnings', () => {
 describe('MIDAS_VERSION', () => {
   it('is a semver prerelease string', () => {
     expect(MIDAS_VERSION).toMatch(/^\d+\.\d+\.\d+(-[a-z0-9.]+)?$/);
+  });
+});
+
+describe('evaluateZohoReadiness — receipt waiver', () => {
+  // Build on whatever complete fixture this file already uses; the only
+  // difference between these two cases is the waiver.
+  function waivable(overrides: Record<string, unknown> = {}) {
+    return { ...base, receipts: [], ...overrides };
+  }
+
+  it('is not ready with no receipt and no waiver', () => {
+    const result = evaluateZohoReadiness(waivable() as never);
+    expect(result.ready).toBe(false);
+    expect(result.missing).toContain('receipt attachment');
+  });
+
+  it('is ready with no receipt when a waiver is recorded', () => {
+    const result = evaluateZohoReadiness(waivable({ receiptWaiverReason: 'lost; verified' }) as never);
+    expect(result.ready).toBe(true);
+    expect(result.missing).not.toContain('receipt attachment');
+  });
+
+  it('labels the check so an accountant can tell a waiver from a receipt', () => {
+    const result = evaluateZohoReadiness(waivable({ receiptWaiverReason: 'lost' }) as never);
+    const check = result.checks.find((c) => c.label.startsWith('Receipt'));
+    expect(check?.label).toBe('Receipt attached (or waived)');
+    expect(check?.pass).toBe(true);
+  });
+});
+
+describe('evaluateZohoReadiness and computeFlags — agreement', () => {
+  // One shared input, fed to both functions in the same assertion, so a
+  // future edit that changes the waiver condition in only one of the two
+  // TypeScript sites fails here instead of merely passing both suites in
+  // isolation. See also lib/queueLane.ts, which carries the same rule in SQL
+  // that no test can reach.
+  function sharedExpense(overrides: Record<string, unknown> = {}) {
+    return {
+      ...base,
+      receipts: [],
+      ...overrides,
+    };
+  }
+
+  it('readiness and flags agree on the same expense: receipt-less with a waiver is ready', () => {
+    const expense = sharedExpense({ receiptWaiverReason: 'lost; verified' });
+    expect(evaluateZohoReadiness(expense as never).ready).toBe(true);
+    expect(computeFlags(expense as never)).toContain('ready_for_zoho');
+  });
+
+  it('readiness and flags agree on the same expense: receipt-less without a waiver is not ready', () => {
+    const expense = sharedExpense();
+    expect(evaluateZohoReadiness(expense as never).ready).toBe(false);
+    expect(computeFlags(expense as never)).not.toContain('ready_for_zoho');
   });
 });

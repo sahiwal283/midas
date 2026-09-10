@@ -9,6 +9,7 @@ import { AccountantDetailsEdit } from '../components/AccountantDetailsEdit';
 import { MessageBubble } from '../components/MessageBubble';
 import { MessageComposer } from '../components/MessageComposer';
 import { receiptContentUrl } from '../components/ReceiptPreview';
+import { ReceiptWaiverDialog } from '../components/ReceiptWaiverDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { isZohoAccountId } from '@midas/shared';
 import type { Expense, ExpenseMessage, Receipt } from '../types';
@@ -37,9 +38,21 @@ function isDailyExpense(sourceApp: string | null | undefined): boolean {
 function ReceiptPane({ expense }: { expense: Expense }) {
   const receipts = expense.receipts ?? [];
   if (receipts.length === 0) {
+    const waiver = expense.receiptWaiverReason?.trim();
     return (
-      <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-ink/15 bg-cream text-sm text-charcoal/40 lg:h-full lg:min-h-[24rem]">
-        No receipt attached
+      <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-ink/15 bg-cream px-6 text-center text-sm text-charcoal/40 lg:h-full lg:min-h-[24rem]">
+        <span>No receipt attached</span>
+        {/* The readiness card disappears once the expense is synced, so the
+            justification lives here instead — where the absence is visible and
+            the record keeps it for good. */}
+        {waiver && (
+          <p className="max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs text-amber-900">
+            <span className="font-semibold">Receipt waived</span>
+            {expense.receiptWaivedAt ? ` on ${new Date(expense.receiptWaivedAt).toLocaleDateString()}` : ''}
+            {': '}
+            {waiver}
+          </p>
+        )}
       </div>
     );
   }
@@ -127,14 +140,22 @@ function ZohoReadinessCard({
   expense,
   onPush,
   pushing,
+  onWaivePush,
 }: {
   expense: Expense;
   onPush: () => void;
   pushing: boolean;
+  onWaivePush: () => void;
 }) {
   if (expense.zohoExpenseId) return null;
 
-  const hasReceipt = (expense.receipts?.length ?? 0) > 0;
+  // The fourth expression of one rule: apps/api/src/lib/zohoReadiness.ts,
+  // apps/api/src/lib/flags.ts and apps/api/src/lib/queueLane.ts (SQL) carry the
+  // other three, and all four must change together. A recorded waiver satisfies
+  // the receipt check. Without this, a waived-then-failed push asks the
+  // accountant to justify it again and throws that second reason away.
+  const hasWaiver = !!expense.receiptWaiverReason?.trim();
+  const hasReceipt = (expense.receipts?.length ?? 0) > 0 || hasWaiver;
   const hasCategory = !!(expense.categoryId || expense.zohoExpenseAccountId);
   const hasPayment = !!expense.paymentMethodId;
   // Push refuses cards without a Zoho paid-through mapping — mirror that here.
@@ -149,6 +170,18 @@ function ZohoReadinessCard({
   if (hasPayment && !hasPaidThrough) failed.push('Payment method mapped to a Zoho account (Settings → Payment Methods)');
   if (!hasCompany) failed.push('Company set');
   if (expense.status !== 'approved' && expense.status !== 'zoho_sync_failed') failed.push('Approved');
+
+  // Offered only when a missing receipt is the single problem and no waiver
+  // exists yet. All three terms are required: !hasWaiver so a resolved waiver
+  // doesn't re-prompt, the explicit `receipts.length === 0` so a *receipted*
+  // expense whose one other check fails (e.g. company unset) never shows this
+  // button — without it, confirming would write a fabricated waiver row and
+  // audit entry for an expense that already has its receipt, then still fail
+  // on the real blocker — and failed.length === 1 so waiving something that
+  // won't fix a second, unrelated failure (like a missing account id, which
+  // would still fail at the payload guard) is never offered as if it would.
+  const receiptIsOnlyBlocker =
+    !hasWaiver && (expense.receipts?.length ?? 0) === 0 && failed.length === 1;
 
   return (
     <div className={`rounded-xl border p-4 ${ready ? 'border-success/30 bg-success/10' : 'border-ink/10 bg-white'}`}>
@@ -183,6 +216,16 @@ function ZohoReadinessCard({
           )}
         </ul>
       )}
+      {receiptIsOnlyBlocker && (
+        <button
+          type="button"
+          onClick={onWaivePush}
+          disabled={pushing}
+          className="mt-3 min-h-11 w-full cursor-pointer rounded-lg border border-brand-500/40 bg-brand-500/10 px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-500/15 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto lg:min-h-0"
+        >
+          Push without receipt…
+        </button>
+      )}
     </div>
   );
 }
@@ -214,6 +257,7 @@ export function AccountantReview() {
   const [askInternal, setAskInternal] = useState('');
   const [reply, setReply] = useState('');
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [waiverOpen, setWaiverOpen] = useState(false);
 
   const { data: expense, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -263,8 +307,9 @@ export function AccountantReview() {
 
   const [zohoPushError, setZohoPushError] = useState('');
   const zohoRetryMutation = useMutation({
-    mutationFn: () => accountantApi.pushToZoho(id!),
+    mutationFn: (receiptWaiverReason?: string) => accountantApi.pushToZoho(id!, receiptWaiverReason),
     onMutate: () => setZohoPushError(''),
+    onSuccess: () => setWaiverOpen(false),
     onError: (err: any) => {
       setZohoPushError(err?.response?.data?.error?.message ?? 'Zoho push failed.');
     },
@@ -451,8 +496,9 @@ export function AccountantReview() {
           {/* Zoho readiness */}
           <ZohoReadinessCard
             expense={expense}
-            onPush={() => zohoRetryMutation.mutate()}
+            onPush={() => zohoRetryMutation.mutate(undefined)}
             pushing={zohoRetryMutation.isPending}
+            onWaivePush={() => { setZohoPushError(''); setWaiverOpen(true); }}
           />
 
           {/* Zoho sync history */}
@@ -463,8 +509,17 @@ export function AccountantReview() {
           )}
           <ZohoSyncCard
             expense={expense}
-            onRetry={() => zohoRetryMutation.mutate()}
+            onRetry={() => zohoRetryMutation.mutate(undefined)}
             retrying={zohoRetryMutation.isPending}
+          />
+
+          <ReceiptWaiverDialog
+            open={waiverOpen}
+            onClose={() => setWaiverOpen(false)}
+            onConfirm={(reason) => zohoRetryMutation.mutate(reason)}
+            subtitle={`${expense.merchant} · ${fmtMoney(Number(expense.amount || 0))} · ${expense.user?.name ?? 'Unknown'}`}
+            pending={zohoRetryMutation.isPending}
+            error={zohoPushError || null}
           />
 
           {/* Conversation */}

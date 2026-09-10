@@ -12,6 +12,9 @@ export interface ZohoProvenance {
   submittedOn: string | null;
   pushedBy: string | null;
   pushedOn: string | null;
+  /** Accountant who waived the receipt requirement, resolved to a name. */
+  receiptWaivedBy?: string | null;
+  receiptWaiverReason?: string | null;
   /** Deep link back into Midas; null when MIDAS_WEB_BASE_URL is unset. */
   midasUrl: string | null;
 }
@@ -86,6 +89,10 @@ export interface PayloadExpense {
   submittedOn?: string | null;
   pushedByName?: string | null;
   pushedOn?: string | null;
+  /** Set when this expense is being pushed without a receipt. */
+  receiptWaiverReason?: string | null;
+  /** Resolved by the pusher — Zoho stores names, not Midas user ids. */
+  receiptWaivedByName?: string | null;
 }
 
 // Deterministic idempotency key — same expense always yields the same key, so a retry
@@ -143,6 +150,8 @@ export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePay
       submittedOn: expense.submittedOn ?? null,
       pushedBy: expense.pushedByName ?? null,
       pushedOn: expense.pushedOn ?? null,
+      receiptWaivedBy: expense.receiptWaivedByName ?? null,
+      receiptWaiverReason: expense.receiptWaiverReason ?? null,
       midasUrl: midasRecordUrl('expenses', expense.id),
     },
     brand,

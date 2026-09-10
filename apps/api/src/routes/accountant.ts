@@ -26,7 +26,7 @@ import { pushPurchaseOrderToZoho } from '../lib/zohoPoPush';
 import { assertActiveCompany, isCompanyZohoEnabled } from '../lib/companies';
 import { zohoEnabledByCompanyName } from '../lib/companyZoho';
 import { resolveCategoryEntityAccountId } from '../lib/categoryZohoAccounts';
-import { normalizeReferenceNumber } from '@midas/shared';
+import { normalizeReferenceNumber, MAX_WAIVER_REASON } from '@midas/shared';
 
 const router = Router();
 router.use(authenticate, requireRole('accountant', 'admin'));
@@ -62,6 +62,12 @@ const categorySchema = z.object({
   categoryId: z.string().uuid(),
   /** Required when the expense already has a Zoho Books id. */
   confirmSynced: z.boolean().optional(),
+});
+
+// Only this route accepts a waiver. POST /expenses/:id/submit is not
+// role-gated and never reads the field, so a submitter cannot self-waive.
+const zohoPushSchema = z.object({
+  receiptWaiverReason: z.string().trim().min(1).max(MAX_WAIVER_REASON).optional(),
 });
 
 type StatusValue = (typeof expenseStatusEnum.enumValues)[number];
@@ -751,6 +757,7 @@ router.patch('/expenses/:id/category', asyncHandler(async (req, res) => {
 // ── Zoho push ─────────────────────────────────────────────────────────────────
 
 router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
+  const { receiptWaiverReason } = zohoPushSchema.parse(req.body ?? {});
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, req.params.id),
     with: {
@@ -768,12 +775,23 @@ router.post('/expenses/:id/zoho-push', asyncHandler(async (req, res) => {
   ) {
     throw createError('Only approved or sync-failed expenses can be pushed to Zoho', 409, 'CONFLICT');
   }
-  const outcome = await pushExpenseToZoho(expense, req.user!.id);
+  const outcome = await pushExpenseToZoho(
+    expense,
+    req.user!.id,
+    receiptWaiverReason ? { receiptWaiver: { reason: receiptWaiverReason } } : undefined,
+  );
   if (outcome.ok) {
     res.json({ expense: outcome.expense, zoho: outcome.zoho });
     return;
   }
-  if (outcome.status === 409) throw createError(outcome.message, 409, outcome.code);
+  // Only a genuine integration failure is a 502; everything else (400 for a
+  // bad waiver reason, 409 for a blocked push) is the caller's to fix. Written
+  // as "not 502" rather than as a list of the known client statuses so any
+  // future member of the outcome union is reported as itself instead of being
+  // relabelled a Zoho outage.
+  if (outcome.status !== 502) {
+    throw createError(outcome.message, outcome.status, outcome.code);
+  }
   res.status(502).json({
     error: {
       code: outcome.code,

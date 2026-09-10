@@ -20,6 +20,7 @@ import { syncExpenseToTransaction } from './syncExpenseTransaction';
 import { isCompanyZohoEnabled } from './companies';
 import { resolveUserNames, toDateOnly } from './userNames';
 import { tryEventDates } from './tradeShowEvents';
+import { receiptPushBlocker, normalizeWaiverReason, shouldRecordWaiver } from './receiptPushBlocker';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -42,18 +43,34 @@ async function pushWithRetry(payload: ReturnType<typeof buildZohoServicePayload>
   throw lastErr;
 }
 
-export type PushableExpense = PayloadExpense & typeof expenses.$inferSelect;
+export type PushableExpense = PayloadExpense & typeof expenses.$inferSelect & {
+  receiptWaiverReason?: string | null;
+  receiptWaivedById?: string | null;
+};
 
 export type ZohoPushOutcome =
   | { ok: true; expense: typeof expenses.$inferSelect; zoho: ZohoPushResult }
-  | { ok: false; status: 409 | 502; code: string; message: string; requestId?: string };
+  | { ok: false; status: 400 | 409 | 502; code: string; message: string; requestId?: string };
+
+export interface PushOptions {
+  /**
+   * An accountant's justification for pushing with no receipt. Only the
+   * accountant routes pass this — `POST /expenses/:id/submit` is not
+   * role-gated and never reads the field, so a submitter cannot self-waive.
+   */
+  receiptWaiver?: { reason: string };
+}
 
 /**
  * Validates and pushes one expense to Zoho. On success sets approved + synced;
  * on push failure sets zoho_sync_failed. Used by the accountant push route and
  * by daily-expense auto-push on submit.
  */
-export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: string): Promise<ZohoPushOutcome> {
+export async function pushExpenseToZoho(
+  expense: PushableExpense,
+  actorUserId: string,
+  opts?: PushOptions,
+): Promise<ZohoPushOutcome> {
   if (isPartnerExpense(expense)) {
     return {
       ok: false, status: 409, code: 'PARTNER_EXPENSE_NOT_PUSHABLE',
@@ -76,12 +93,75 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
     return { ok: false, status: 409, code: 'MISSING_PAYMENT_METHOD', message: 'Payment method must be set before pushing to Zoho' };
   }
 
+  // The receipt rule is enforced here rather than in each route so every caller
+  // inherits it — four call sites reach this function, and a rule remembered
+  // four times is a rule that drifts.
+  const suppliedReason = normalizeWaiverReason(opts?.receiptWaiver?.reason) ?? undefined;
+  const hasReceipt = (expense.receipts?.length ?? 0) > 0;
+  const receiptBlocker = receiptPushBlocker({
+    hasReceipt,
+    storedWaiverReason: expense.receiptWaiverReason ?? null,
+    suppliedReason: opts?.receiptWaiver ? (suppliedReason ?? opts.receiptWaiver.reason) : undefined,
+  });
+  if (receiptBlocker) {
+    return {
+      ok: false,
+      status: receiptBlocker.status,
+      code: receiptBlocker.code,
+      message: receiptBlocker.message,
+    };
+  }
+
+  // Written before the push, not after: a push that fails still leaves the
+  // justification on the record, so the retry reads it back instead of asking
+  // the accountant to type it again. A row that is already waived keeps its
+  // original reason — the first justification is the one that was reviewed,
+  // and an expense that HAS a receipt is never waived at all, however the
+  // caller filled the body. `shouldRecordWaiver` is the single expression of
+  // that: it decides both the write below and the attribution further down,
+  // so the row, the audit entry and the Zoho note can never disagree about
+  // whether this push waived anything.
+  const storedWaiver = normalizeWaiverReason(expense.receiptWaiverReason);
+  const recordingWaiver = shouldRecordWaiver({
+    hasReceipt,
+    storedWaiverReason: expense.receiptWaiverReason ?? null,
+    suppliedReason,
+  });
+  let waiverReason = storedWaiver;
+  if (recordingWaiver && suppliedReason) {
+    const waivedAt = new Date();
+    await db.update(expenses)
+      .set({
+        receiptWaiverReason: suppliedReason,
+        receiptWaivedById: actorUserId,
+        receiptWaivedAt: waivedAt,
+        updatedAt: waivedAt,
+      })
+      .where(eq(expenses.id, expense.id));
+    waiverReason = suppliedReason;
+    await auditLog({
+      entityType: 'expense',
+      entityId: expense.id,
+      userId: actorUserId,
+      action: 'expense.receipt_waived',
+      after: { receiptWaiverReason: suppliedReason },
+      metadata: { reason: suppliedReason },
+    });
+  }
+
   const categoryEntityAccountId = await resolveCategoryEntityAccountId(expense.categoryId, expense.zohoEntity);
   // Names, not ids: the Zoho note is read by accountants in Zoho Books.
-  const names = await resolveUserNames([expense.userId, actorUserId]);
+  const names = await resolveUserNames([expense.userId, actorUserId, expense.receiptWaivedById ?? null]);
   // Event run dates live only in Argo. Best-effort: the note degrades to the
   // event name alone rather than the push failing on a cosmetic lookup.
   const eventDates = await tryEventDates(expense.sourceContext?.eventId);
+  // Only a waiver this push actually recorded may name this actor. A stored
+  // reason whose `receipt_waived_by_id` is NULL — the waiving accountant was
+  // deleted, and the FK is ON DELETE SET NULL so the reason outlives them —
+  // must fall through to buildZohoNote's unnamed "Receipt waived: <reason>"
+  // form. Naming the retrying accountant there would put a false name on the
+  // one line in Zoho that records who bypassed the control.
+  const waivedById = expense.receiptWaivedById ?? (recordingWaiver ? actorUserId : null);
   const payload = buildZohoServicePayload({
     ...expense,
     categoryEntityAccountId,
@@ -91,6 +171,8 @@ export async function pushExpenseToZoho(expense: PushableExpense, actorUserId: s
     pushedOn: toDateOnly(new Date()),
     eventStartDate: eventDates?.startDate ?? null,
     eventEndDate: eventDates?.endDate ?? null,
+    receiptWaiverReason: waiverReason,
+    receiptWaivedByName: waivedById ? names.get(waivedById) ?? null : null,
   });
   // Best-effort vendor: match or create a Books vendor from the merchant so
   // the Zoho record is searchable by name. Never blocks the push.

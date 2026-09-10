@@ -142,6 +142,18 @@ export function fromOwnerRef(owner: OwnerRef | null | undefined): { sourceApp: s
 
 // ── Expense ───────────────────────────────────────────────────────────────────
 
+/**
+ * Longest accountant justification for pushing an expense with no receipt.
+ *
+ * Lives here rather than in the API because the web dialog's character counter
+ * needs it and `apps/web` cannot import from `apps/api`. The blocker and the
+ * route's zod schema read it from here too, so the limit has one definition.
+ *
+ * Sized against the Zoho note budget: a typical provenance block is ~185 of the
+ * 500-character ceiling, so 200 still leaves room for the merchant headline.
+ */
+export const MAX_WAIVER_REASON = 200;
+
 export type ExpenseStatus = 'draft' | 'pending' | 'in_review' | 'awaiting_info' | 'approved' | 'zoho_sync_failed' | 'rejected' | 'cancelled';
 export type ReimbursementStatus = 'not_requested' | 'pending' | 'approved' | 'rejected' | 'paid';
 export type IntegrationStatus = 'not_required' | 'pending' | 'queued' | 'syncing' | 'synced' | 'failed';
@@ -245,6 +257,13 @@ export interface Expense {
   /** Last Zoho sync error. Stripped from responses for non-accountant/admin users. */
   zohoSyncError?: string | null;
   receipts?: Receipt[];
+  /**
+   * Why this expense was pushed to Zoho without a receipt. Set only by an
+   * accountant; its presence is what lets the push guard pass.
+   */
+  receiptWaiverReason?: string | null;
+  receiptWaivedById?: string | null;
+  receiptWaivedAt?: string | null;
   messages?: ExpenseMessage[];
   /** Derived server-side — not stored in DB */
   flags?: string[];
