@@ -238,36 +238,56 @@ export function ReceiptAttachments({
    * escape being Discard and re-pick.
    */
   async function retry(slot: Extract<BatchSlot, { state: 'failed' }>) {
+    // Immediate, same as staging in `addFiles`: the tile flips to 'uploading'
+    // on click, not whenever its turn in the chain arrives.
     setSlots((prev) => prev.map((s) => (
       s.localId === slot.localId
         ? { state: 'uploading', localId: s.localId, name: slot.name, previewUrl: null }
         : s
     )));
-    let id: string;
-    try {
-      id = await ensureOwnerId();
-    } catch (err) {
-      const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
-      setSlots((prev) => prev.map((s) => (
-        s.localId === slot.localId
-          ? { state: 'failed', localId: s.localId, name: slot.name, file: slot.file, error: message }
-          : s
-      )));
-      return;
-    }
-    try {
-      const receipt = await uploadOne(id, slot.file, false);
-      setSlots((prev) => prev.map((s) => (
-        s.localId === slot.localId ? { state: 'done', localId: s.localId, receipt } : s
-      )));
-      refresh(id);
-    } catch (err) {
-      setSlots((prev) => prev.map((s) => (
-        s.localId === slot.localId
-          ? { state: 'failed', localId: s.localId, name: slot.name, file: slot.file, error: uploadMessage(err) }
-          : s
-      )));
-    }
+
+    // Everything below is the part that must not overlap with a queued
+    // `addFiles` batch's own `ensureOwnerId()` call — the same race this is
+    // meant to close, just reachable from Retry instead of a second pick.
+    // `uploadOne(id, slot.file, false)` is hardcoded `batch: false` here,
+    // independent of the chain: a retry is always the last (and only) upload
+    // of its own batch of one, never batched, whatever else is queued.
+    const runRetry = async () => {
+      let id: string;
+      try {
+        id = await ensureOwnerId();
+      } catch (err) {
+        const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
+        setSlots((prev) => prev.map((s) => (
+          s.localId === slot.localId
+            ? { state: 'failed', localId: s.localId, name: slot.name, file: slot.file, error: message }
+            : s
+        )));
+        return;
+      }
+      try {
+        const receipt = await uploadOne(id, slot.file, false);
+        setSlots((prev) => prev.map((s) => (
+          s.localId === slot.localId ? { state: 'done', localId: s.localId, receipt } : s
+        )));
+        refresh(id);
+      } catch (err) {
+        setSlots((prev) => prev.map((s) => (
+          s.localId === slot.localId
+            ? { state: 'failed', localId: s.localId, name: slot.name, file: slot.file, error: uploadMessage(err) }
+            : s
+        )));
+      }
+    };
+
+    // Same scheduling as `addFiles`: chained onto whatever is already
+    // running, and the stored link is always `.catch()`-wrapped so a retry
+    // that somehow threw uncaught could never wedge the chain for whatever
+    // is queued behind it. `runRetry` itself never rejects — both of its
+    // error paths land the slot back in 'failed' rather than throwing.
+    const scheduled = uploadChain.current.then(runRetry).catch(() => undefined);
+    uploadChain.current = scheduled;
+    await scheduled;
   }
 
   async function removeReceipt(receiptId: string) {
