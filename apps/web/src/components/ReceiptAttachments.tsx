@@ -30,6 +30,16 @@ type Props = {
   /** Anything that has to refetch beyond the receipts list (expense flags). */
   onChange?: () => void;
   /**
+   * Fires once per batch (a single pick/scan, or `ensureOwnerId` rejecting for
+   * that pick) — never once per file — with every file from that batch that
+   * failed. Not called when every file in the batch succeeded. `ownerId` is
+   * `null` when `ensureOwnerId` itself rejected, since no draft exists to
+   * attach anything to. A caller uses this to fall back to the offline queue;
+   * it does not replace the per-tile Retry, which still covers a later retry
+   * of an individual file.
+   */
+  onUploadFailed?: (files: File[], ownerId: string | null, err: unknown) => void;
+  /**
    * True while any slot is uploading (a fresh pick or a retry), false the
    * instant none are — including right after a failure. Lets a form gate its
    * own submit button on "is anything still on the wire" without re-deriving
@@ -52,7 +62,7 @@ function uploadMessage(err: unknown): string {
 }
 
 export function ReceiptAttachments({
-  kind, ownerId, ensureOwnerId, pendingFile, onFirstReceipt, onChange, onBusyChange, readOnly = false,
+  kind, ownerId, ensureOwnerId, pendingFile, onFirstReceipt, onChange, onUploadFailed, onBusyChange, readOnly = false,
 }: Props) {
   const qc = useQueryClient();
   const [slots, setSlots] = useState<BatchSlot[]>([]);
@@ -182,10 +192,13 @@ export function ReceiptAttachments({
       } catch (err) {
         const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
         staged.forEach((slot, i) => fail(slot, accepted[i], slot.name, message));
+        onUploadFailed?.(accepted, null, err);
         return;
       }
 
       const hadNone = serverReceipts.length === 0;
+      const failedFiles: File[] = [];
+      let lastFailure: unknown;
       for (let i = 0; i < accepted.length; i += 1) {
         const slot = staged[i];
         try {
@@ -200,9 +213,12 @@ export function ReceiptAttachments({
           }
         } catch (err) {
           fail(slot, accepted[i], slot.name, uploadMessage(err));
+          failedFiles.push(accepted[i]);
+          lastFailure = err;
         }
       }
       refresh(id);
+      if (failedFiles.length) onUploadFailed?.(failedFiles, id, lastFailure);
     };
 
     // Chained onto whatever batch is already running rather than run

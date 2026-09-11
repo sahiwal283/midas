@@ -10,6 +10,7 @@ import { EventPicker, useEventPickerAvailable } from '../components/EventPicker'
 import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
 import { takePendingCapture } from '../lib/pendingCapture';
+import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
 import { VendorCombobox } from '../components/VendorCombobox';
 import { ReceiptAttachments } from '../components/ReceiptAttachments';
 import { pickReferenceNumber } from '@midas/shared';
@@ -140,6 +141,35 @@ export function ExpenseNew() {
     const expense = await expenseApi.create({ draft: true });
     setExpenseId(expense.id);
     return expense.id;
+  }
+
+  /**
+   * `ReceiptAttachments` already retries an individual failed tile in place;
+   * this only steps in for an offline/network failure, where the user is
+   * likely to navigate away before connectivity returns. The whole failed
+   * batch becomes one queue item — that is why `enqueueUpload` takes
+   * `receipts` as an array.
+   */
+  function handleUploadFailed(files: File[], ownerId: string | null, err: unknown) {
+    if (!isLikelyOfflineOrNetworkError(err)) return;
+    void enqueueUpload({
+      payload: {
+        merchant: form.merchant,
+        amount: Number(form.amount) || 0,
+        date: form.date,
+        currency: form.currency,
+      },
+      receipts: files,
+      expenseId: ownerId ?? undefined,
+      lastError: 'Receipt upload failed — queued for retry',
+    }).then(() => {
+      void qc.invalidateQueries({ queryKey: ['upload-queue-count'] });
+      setError(
+        files.length > 1
+          ? 'You appear to be offline. The photos are queued and will retry automatically — you can keep filling out the form.'
+          : 'You appear to be offline. The photo is queued and will retry automatically — you can keep filling out the form.',
+      );
+    });
   }
 
   function setCompany(name: string) {
@@ -464,6 +494,7 @@ export function ExpenseNew() {
             ensureOwnerId={ensureExpenseId}
             pendingFile={pendingFile}
             onFirstReceipt={applyOcr}
+            onUploadFailed={handleUploadFailed}
             onBusyChange={setUploading}
           />
         </div>

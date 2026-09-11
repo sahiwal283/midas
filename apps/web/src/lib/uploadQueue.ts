@@ -5,10 +5,17 @@
  */
 
 const DB_NAME = 'midas-upload-queue';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'items';
 
 export type UploadQueueStatus = 'pending' | 'syncing' | 'failed';
+
+export interface QueuedFile {
+  name: string;
+  type: string;
+  size: number;
+  data: ArrayBuffer;
+}
 
 export interface UploadQueueItem {
   id: string;
@@ -27,25 +34,63 @@ export interface UploadQueueItem {
     paymentMethodId?: string;
     description?: string;
   };
-  /** Receipt file stored as ArrayBuffer for IndexedDB. */
-  receipt: {
-    name: string;
-    type: string;
-    size: number;
-    data: ArrayBuffer;
-  };
+  /** Receipt files stored as ArrayBuffers for IndexedDB, in page order. */
+  receipts: QueuedFile[];
+  /** Indexes of `receipts` already uploaded, so a retry does not duplicate them. */
+  uploadedIndexes: number[];
   /** Set after a draft expense was created but receipt upload failed. */
   expenseId?: string;
+}
+
+/**
+ * v1 stored one `receipt` per item. v2 stores `receipts[]`. A phone may be
+ * holding an unsynced expense from v1 right now, so rows are rewritten rather
+ * than dropped.
+ */
+export function migrateQueueItem(raw: unknown): UploadQueueItem | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Partial<UploadQueueItem> & { receipt?: QueuedFile };
+
+  const receipts = Array.isArray(row.receipts)
+    ? row.receipts
+    : row.receipt ? [row.receipt] : [];
+  if (receipts.length === 0) return null;
+
+  const { receipt: _dropped, ...rest } = row;
+  return {
+    ...(rest as UploadQueueItem),
+    receipts,
+    uploadedIndexes: Array.isArray(row.uploadedIndexes) ? row.uploadedIndexes : [],
+  };
 }
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onerror = () => reject(req.error ?? new Error('indexedDB open failed'));
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'id' });
+        return;
+      }
+      // Upgrading from v1: rewrite every row to the v2 shape in place.
+      if (event.oldVersion < 2) {
+        const tx = req.transaction;
+        if (!tx) return;
+        const store = tx.objectStore(STORE);
+        const cursorReq = store.openCursor();
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (!cursor) return;
+          const migrated = migrateQueueItem(cursor.value);
+          if (migrated) {
+            cursor.update(migrated);
+          } else {
+            cursor.delete();
+          }
+          cursor.continue();
+        };
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -66,7 +111,10 @@ export async function listUploadQueue(): Promise<UploadQueueItem[]> {
     const tx = db.transaction(STORE, 'readonly');
     const req = tx.objectStore(STORE).getAll();
     req.onsuccess = () => {
-      const items = (req.result as UploadQueueItem[]).sort((a, b) => a.createdAt - b.createdAt);
+      const items = (req.result as unknown[])
+        .map(migrateQueueItem)
+        .filter((i): i is UploadQueueItem => i !== null)
+        .sort((a, b) => a.createdAt - b.createdAt);
       resolve(items);
     };
     req.onerror = () => reject(req.error);
@@ -80,11 +128,18 @@ export async function getUploadQueueCount(): Promise<number> {
 
 export async function enqueueUpload(input: {
   payload: UploadQueueItem['payload'];
-  receipt: File;
+  receipts: File[];
   expenseId?: string;
   lastError?: string;
 }): Promise<UploadQueueItem> {
-  const data = await input.receipt.arrayBuffer();
+  const receipts: QueuedFile[] = await Promise.all(
+    input.receipts.map(async (receipt) => ({
+      name: receipt.name,
+      type: receipt.type,
+      size: receipt.size,
+      data: await receipt.arrayBuffer(),
+    })),
+  );
   const now = Date.now();
   const item: UploadQueueItem = {
     id: crypto.randomUUID(),
@@ -95,12 +150,8 @@ export async function enqueueUpload(input: {
     retryCount: 0,
     lastError: input.lastError,
     payload: input.payload,
-    receipt: {
-      name: input.receipt.name,
-      type: input.receipt.type,
-      size: input.receipt.size,
-      data,
-    },
+    receipts,
+    uploadedIndexes: [],
     expenseId: input.expenseId,
   };
 
@@ -132,8 +183,8 @@ export async function removeUploadItem(id: string): Promise<void> {
   await txDone(tx);
 }
 
-export function receiptFileFromQueueItem(item: UploadQueueItem): File {
-  return new File([item.receipt.data], item.receipt.name, { type: item.receipt.type });
+export function receiptFilesFromQueueItem(item: UploadQueueItem): File[] {
+  return item.receipts.map((r) => new File([r.data], r.name, { type: r.type }));
 }
 
 export function isLikelyOfflineOrNetworkError(err: unknown): boolean {
