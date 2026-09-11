@@ -61,6 +61,13 @@ export function ReceiptAttachments({
   const filesRef = useRef<HTMLInputElement>(null);
   // Guards onFirstReceipt against firing twice when two picks race.
   const firstFired = useRef(false);
+  // Serialises the ensureOwnerId-onward part of `addFiles` across overlapping
+  // calls (a queued pick landing while an earlier one is still parked on
+  // `ensureOwnerId()`). Without this, two calls can both read a null owner id
+  // and each mint their own draft. Always reassigned to a promise that itself
+  // never rejects (see `addFiles`), so a failure in one queued batch can never
+  // permanently wedge every batch queued after it.
+  const uploadChain = useRef<Promise<void>>(Promise.resolve());
 
   const queryKey = kind === 'expense'
     ? ['expense-receipts', ownerId]
@@ -163,33 +170,51 @@ export function ReceiptAttachments({
       )));
     };
 
-    let id: string;
-    try {
-      id = await ensureOwnerId();
-    } catch (err) {
-      const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
-      staged.forEach((slot, i) => fail(slot, accepted[i], slot.name, message));
-      return;
-    }
-
-    const hadNone = serverReceipts.length === 0;
-    for (let i = 0; i < accepted.length; i += 1) {
-      const slot = staged[i];
+    // Everything from here on is the part that must not overlap with another
+    // call's same phase: minting the owner id, and the sequential upload loop
+    // whose `batch=1` flag depends on genuinely being last. Staging above
+    // already happened synchronously, so a queued pick's tiles show up right
+    // away even while this part waits its turn.
+    const runUpload = async () => {
+      let id: string;
       try {
-        const receipt = await uploadOne(id, accepted[i], isBatchedUpload(i, accepted.length));
-        if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
-        setSlots((prev) => prev.map((s) => (
-          s.localId === slot.localId ? { state: 'done', localId: s.localId, receipt } : s
-        )));
-        if (hadNone && i === 0 && !firstFired.current) {
-          firstFired.current = true;
-          onFirstReceipt?.(receipt);
-        }
+        id = await ensureOwnerId();
       } catch (err) {
-        fail(slot, accepted[i], slot.name, uploadMessage(err));
+        const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
+        staged.forEach((slot, i) => fail(slot, accepted[i], slot.name, message));
+        return;
       }
-    }
-    refresh(id);
+
+      const hadNone = serverReceipts.length === 0;
+      for (let i = 0; i < accepted.length; i += 1) {
+        const slot = staged[i];
+        try {
+          const receipt = await uploadOne(id, accepted[i], isBatchedUpload(i, accepted.length));
+          if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
+          setSlots((prev) => prev.map((s) => (
+            s.localId === slot.localId ? { state: 'done', localId: s.localId, receipt } : s
+          )));
+          if (hadNone && i === 0 && !firstFired.current) {
+            firstFired.current = true;
+            onFirstReceipt?.(receipt);
+          }
+        } catch (err) {
+          fail(slot, accepted[i], slot.name, uploadMessage(err));
+        }
+      }
+      refresh(id);
+    };
+
+    // Chained onto whatever batch is already running rather than run
+    // immediately: this is the single-flight gate for `ensureOwnerId`. The
+    // `.catch(() => undefined)` is load-bearing on the STORED value, not just
+    // this call's own error handling — `runUpload` already handles every
+    // error it can hit internally and never rejects, but if it somehow did,
+    // this keeps `uploadChain.current` a promise that always settles
+    // successfully, so the next queued call can still chain onto it.
+    const scheduled = uploadChain.current.then(runUpload).catch(() => undefined);
+    uploadChain.current = scheduled;
+    await scheduled;
   }
 
   // Tracked by reference, not a boolean flag: a caller may swap in a second
