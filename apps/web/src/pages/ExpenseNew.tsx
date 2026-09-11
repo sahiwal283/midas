@@ -35,9 +35,6 @@ export function ExpenseNew() {
 
   const [step, setStep] = useState<WizardStep>('choose');
   const [expenseId, setExpenseId] = useState<string | null>(null);
-  // The strip owns the files now; the form only needs to know whether any
-  // landed, for the OCR status card and the submit-path messaging.
-  const [hasReceipt, setHasReceipt] = useState(false);
   const [ocrRan, setOcrRan] = useState(false);
   // OCR-suggested expense category (raw string from the receipt scan).
   const [ocrCategorySuggestion, setOcrCategorySuggestion] = useState<string | null>(null);
@@ -121,7 +118,6 @@ export function ExpenseNew() {
     void (async () => {
       const id = await ensureExpenseId();
       const uploaded = await expenseApi.uploadReceipt(id, await compressReceiptImage(captured));
-      setHasReceipt(true);
       applyOcr(uploaded);
     })().catch(() => setError('We could not upload that photo. Add it again below.'));
   }, [params]);
@@ -343,7 +339,6 @@ export function ExpenseNew() {
               onClick={() => {
                 setStep('choose');
                 setExpenseId(null);
-                setHasReceipt(false);
                 setOcrRan(false);
                 setOcrCategorySuggestion(null);
                 setCategoryAutoSuggested(false);
@@ -465,8 +460,8 @@ export function ExpenseNew() {
             kind="expense"
             ownerId={expenseId}
             ensureOwnerId={ensureExpenseId}
-            onFirstReceipt={(r) => { setHasReceipt(true); applyOcr(r); }}
-            onChange={() => setHasReceipt(true)}
+            onFirstReceipt={applyOcr}
+            onBusyChange={setUploading}
           />
         </div>
 

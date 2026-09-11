@@ -18,6 +18,13 @@ type Props = {
   onFirstReceipt?: (receipt: Receipt) => void;
   /** Anything that has to refetch beyond the receipts list (expense flags). */
   onChange?: () => void;
+  /**
+   * True while any slot is uploading (a fresh pick or a retry), false the
+   * instant none are — including right after a failure. Lets a form gate its
+   * own submit button on "is anything still on the wire" without re-deriving
+   * upload state itself.
+   */
+  onBusyChange?: (busy: boolean) => void;
   readOnly?: boolean;
 };
 
@@ -34,7 +41,7 @@ function uploadMessage(err: unknown): string {
 }
 
 export function ReceiptAttachments({
-  kind, ownerId, ensureOwnerId, onFirstReceipt, onChange, readOnly = false,
+  kind, ownerId, ensureOwnerId, onFirstReceipt, onChange, onBusyChange, readOnly = false,
 }: Props) {
   const qc = useQueryClient();
   const [slots, setSlots] = useState<BatchSlot[]>([]);
@@ -72,6 +79,13 @@ export function ReceiptAttachments({
       if (s.state === 'uploading' && s.previewUrl) URL.revokeObjectURL(s.previewUrl);
     }
   }, []);
+
+  // Derived rather than toggled by hand at each call site: a slot can leave
+  // 'uploading' via success, failure, or a retry re-entering it, and deriving
+  // from the current slots on every change is the only way that can't miss one.
+  useEffect(() => {
+    onBusyChange?.(slots.some((s) => s.state === 'uploading'));
+  }, [slots, onBusyChange]);
 
   // Takes the resolved owner id explicitly rather than closing over the
   // `ownerId` prop: on the creation forms `ownerId` is still null at the

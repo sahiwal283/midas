@@ -67,6 +67,11 @@ export function PurchaseOrderNew() {
   // the same purchase order instead of leaving an orphan behind.
   const [draftId, setDraftId] = useState<string | null>(null);
   const [ocrPhase, setOcrPhase] = useState<'idle' | 'working' | 'done' | 'failed'>('idle');
+  // Set when the user takes the "Enter manually instead" escape hatch: a late
+  // OCR result must not overwrite what they have since typed. `onFirstReceipt`
+  // fires at most once per mounted instance, so `applyPoOcr` runs at most once
+  // too — no run counter is needed, just this one-way flag.
+  const abandonedOcr = useRef(false);
 
   const items = itemsQ.data ?? [];
 
@@ -105,6 +110,9 @@ export function PurchaseOrderNew() {
   async function applyPoOcr(uploaded: Receipt) {
     setOcrPhase('working');
     try {
+      // Nothing async has happened yet, but check anyway: cheap, and keeps this
+      // function safe to reorder without silently losing the guard.
+      if (abandonedOcr.current) return;
       const header = poHeaderFromOcr(uploaded.ocrData);
       if (header.vendorName) setVendorName(header.vendorName);
       if (header.transactionDate) setTransactionDate(header.transactionDate);
@@ -112,10 +120,14 @@ export function PurchaseOrderNew() {
       const catalogue = zohoEntity
         ? await queryClient.ensureQueryData(itemsQueryOptions(zohoEntity)).catch(() => [] as ZohoItem[])
         : [];
+      // The user may have hit "Enter manually instead" while the catalogue was
+      // in flight — a late line-item prefill must not stomp on what they typed.
+      if (abandonedOcr.current) return;
       const drafts = lineDraftsFromOcr(uploaded.ocrData, catalogue);
       if (drafts.length) setLines(drafts);
       setOcrPhase('done');
     } catch {
+      if (abandonedOcr.current) return;
       setOcrPhase('failed');
       setError('The receipt could not be read. Enter the details by hand — the photo is saved.');
     }
@@ -218,7 +230,7 @@ export function PurchaseOrderNew() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => setOcrPhase('idle')}
+                  onClick={() => { abandonedOcr.current = true; setOcrPhase('idle'); }}
                   className="mt-2 min-h-11 text-sm font-medium text-brand-700"
                 >
                   Enter manually instead
