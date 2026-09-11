@@ -25,7 +25,7 @@ import { syncExpenseToTransaction } from '../lib/syncExpenseTransaction';
 import { pushPurchaseOrderToZoho } from '../lib/zohoPoPush';
 import { assertActiveCompany, isCompanyZohoEnabled } from '../lib/companies';
 import { zohoEnabledByCompanyName } from '../lib/companyZoho';
-import { resolveCategoryEntityAccountId } from '../lib/categoryZohoAccounts';
+import { accountColumnsForCompanyChange, resolveCategoryEntityAccountId } from '../lib/categoryZohoAccounts';
 import { normalizeReferenceNumber, MAX_WAIVER_REASON } from '@midas/shared';
 
 const router = Router();
@@ -899,6 +899,16 @@ router.patch('/expenses/:id/zoho-entity', asyncHandler(async (req, res) => {
   if (!zohoEntity) throw createError('zohoEntity is required', 400, 'MISSING_ZOHO_ENTITY');
   const expense = await db.query.expenses.findFirst({ where: eq(expenses.id, req.params.id) });
   if (!expense) throw notFound('Expense not found');
+  // The company decides which Zoho org the expense was filed in, so once it is
+  // pushed this is Zoho's record to change, not ours. Same refusal the details
+  // patch gives — that path is what the UI uses.
+  if (expense.zohoExpenseId) {
+    throw createError(
+      'This expense is already in Zoho. Change the company there, or reverse the push first.',
+      409,
+      'NOT_EDITABLE',
+    );
+  }
 
   const [updated] = await db.update(expenses)
     .set({ zohoEntity, updatedAt: new Date() })
@@ -952,11 +962,15 @@ router.patch('/expenses/:id/reference-number', asyncHandler(async (req, res) => 
 }));
 
 // ── Correct the fields an accountant can see blocking a Zoho push ────────────
-// Category, company, reference number and reimbursement already have their own
-// endpoints above. This covers the rest: payment method, merchant, amount,
-// date and notes.
+// Category, reference number and reimbursement already have their own
+// endpoints above. This covers the rest: company, payment method, merchant,
+// amount, date and notes. Company is here rather than on its own endpoint so
+// it saves atomically with the card — the two are chosen together, and a card
+// belongs to one company.
 
 const detailsSchema = z.object({
+  /** Company name; validated against the active catalog below. */
+  zohoEntity: z.string().min(1).optional(),
   merchant: z.string().min(1).optional(),
   amount: z.coerce.number().positive().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -988,10 +1002,20 @@ router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
     event = { id: found.id, name: found.name };
   }
 
+  // Canonical spelling from the catalog, and a hard 400 for a company that is
+  // unknown or inactive — the same guard the review path uses.
+  const zohoEntity = patch.zohoEntity !== undefined
+    ? await assertActiveCompany(patch.zohoEntity) ?? undefined
+    : undefined;
+
   // eventId isn't part of DetailsEditPatch — the planner takes the resolved
   // { id, name } shape instead — so drop it rather than spread it through.
   const { eventId: _eventId, ...rest } = patch;
-  const plan = planAccountantDetailsEdit(expense, { ...rest, event }, await getClosedPeriods());
+  const plan = planAccountantDetailsEdit(
+    expense,
+    { ...rest, zohoEntity, event },
+    await getClosedPeriods(),
+  );
   if (!plan.ok) throw createError(plan.refusal.message, plan.refusal.status, plan.refusal.code);
 
   const { changes } = plan;
@@ -1015,8 +1039,24 @@ router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
     }
   }
 
+  // Moving to another company moves the expense to another Zoho org, whose
+  // chart of accounts is its own. The stored account id wins over the one
+  // resolved at push time, so it has to be re-resolved here or the expense
+  // would be filed under the previous brand's account.
+  let accountPatch: { zohoExpenseAccountId?: string | null; zohoExpenseAccountName?: string | null } = {};
+  if (changes.zohoEntity) {
+    const category = expense.categoryId
+      ? await db.query.expenseCategories.findFirst({ where: eq(expenseCategories.id, expense.categoryId) })
+      : null;
+    accountPatch = accountColumnsForCompanyChange({
+      categoryId: expense.categoryId,
+      categoryName: category?.name ?? null,
+      resolvedAccountId: await resolveCategoryEntityAccountId(expense.categoryId, changes.zohoEntity),
+    });
+  }
+
   const [updated] = await db.update(expenses)
-    .set({ ...changes, ...reimbursementPatch, updatedAt: new Date() })
+    .set({ ...changes, ...reimbursementPatch, ...accountPatch, updatedAt: new Date() })
     .where(eq(expenses.id, req.params.id))
     .returning();
 
@@ -1029,7 +1069,7 @@ router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
     userId: req.user!.id,
     action: 'details.corrected',
     before: Object.fromEntries(touched.map((k) => [k, expense[k]])),
-    after: { ...changes, ...reimbursementPatch },
+    after: { ...changes, ...reimbursementPatch, ...accountPatch },
   });
 
   res.json({ expense: updated });

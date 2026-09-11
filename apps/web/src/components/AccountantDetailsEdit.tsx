@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle } from 'lucide-react';
 import { accountantApi, expenseApi } from '../api/expenses';
+import { companyApi } from '../api/companies';
 import { VendorCombobox } from './VendorCombobox';
 import { EventPicker, useEventPickerAvailable } from './EventPicker';
 import { cardsForCompany } from '../lib/paymentMethodScope';
@@ -16,14 +17,17 @@ const inputCls = 'w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text
 
 /**
  * Accountant correction for the push blockers that had no control of their own:
- * payment method, merchant, amount, date and notes. Category, company, reference
- * number and reimbursement each have their own component already.
+ * company, payment method, merchant, amount, date and notes. Category,
+ * reference number and reimbursement each have their own component already —
+ * company does not, which is why it lives here: without it an approved expense
+ * with no company could never be pushed and no control on the page could fix
+ * it.
  */
 export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ merchant: '', amount: '', date: '', paymentMethodId: '', eventId: '', description: '' });
+  const [form, setForm] = useState({ company: '', merchant: '', amount: '', date: '', paymentMethodId: '', eventId: '', description: '' });
   const locked = Boolean(expense.zohoExpenseId);
   // The picker hides itself when the trade show link is off; its label has to
   // go with it, or the form shows an "Event" heading over nothing.
@@ -35,20 +39,28 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
     enabled: editing,
     staleTime: 60_000,
   });
+  const { data: companies = [] } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => companyApi.list(),
+    enabled: editing,
+    staleTime: 60_000,
+  });
 
-  // Cards belong to one company, and this expense is already charged to one:
-  // offering another company's card here would only re-create the mismatch the
-  // accountant is correcting. The card currently on the expense always stays in
-  // the list — dropping it would blank the select and change the record by
-  // omission rather than by a decision.
-  const selectableCards = cardsForCompany(paymentMethods, expense.zohoEntity ?? '', expense.paymentMethodId);
+  // Cards belong to one company: offering another company's card here would
+  // only re-create the mismatch the accountant is correcting. Scoped to the
+  // company *in the form*, so correcting the company re-scopes the cards in the
+  // same pass. The card currently on the expense always stays in the list —
+  // dropping it would blank the select and change the record by omission rather
+  // than by a decision.
+  const selectableCards = cardsForCompany(paymentMethods, form.company, expense.paymentMethodId);
   const hiddenCardCount = paymentMethods.length - selectableCards.length;
 
   const mutation = useMutation({
     mutationFn: () => {
       // Send only what the accountant actually touched — the server treats an
       // absent key as "leave alone", so a no-op patch stays a no-op.
-      const patch: { merchant?: string; amount?: number; date?: string; paymentMethodId?: string; description?: string; eventId?: string | null } = {};
+      const patch: { zohoEntity?: string; merchant?: string; amount?: number; date?: string; paymentMethodId?: string; description?: string; eventId?: string | null } = {};
+      if (form.company && form.company !== (expense.zohoEntity ?? '')) patch.zohoEntity = form.company;
       const merchant = form.merchant.trim();
       if (merchant && merchant !== (expense.merchant ?? '').trim()) patch.merchant = merchant;
       if (form.amount && Number(form.amount) !== Number(expense.amount)) patch.amount = Number(form.amount);
@@ -85,6 +97,7 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
 
   function openEditor() {
     setForm({
+      company: expense.zohoEntity ?? '',
       merchant: expense.merchant ?? '',
       amount: expense.amount != null ? String(expense.amount) : '',
       date: expense.date ?? '',
@@ -122,18 +135,46 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
         </p>
       ) : !editing ? (
         <p className="mt-2 text-xs text-charcoal/40">
-          Fix the merchant, amount, date, payment method
+          Fix the company, merchant, amount, date, payment method
           {eventsAvailable ? ', event or notes' : ' or notes'}
           {' '}without sending it back to the submitter.
         </p>
       ) : (
         <form onSubmit={handleSave} className="mt-3 space-y-3">
+          {/* Company first, as on the submit forms: the cards and vendors below
+              are its Zoho org's, and an expense with none cannot be pushed. */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-charcoal/70">Company</label>
+            <select
+              value={form.company}
+              onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+              className={inputCls}
+            >
+              <option value="">— Select company —</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+            {!expense.zohoEntity && (
+              <p className="mt-1 text-xs text-amber-700">
+                No company set — this expense cannot be pushed to Zoho until it has one.
+              </p>
+            )}
+            {expense.zohoEntity && form.company !== expense.zohoEntity && (
+              <p className="mt-1 text-xs text-charcoal/50">
+                Moving this expense to another company re-reads its expense account from that
+                company's chart of accounts.
+              </p>
+            )}
+          </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-charcoal/70">Merchant</label>
             <VendorCombobox
               value={form.merchant}
               onChange={(m) => setForm((f) => ({ ...f, merchant: m }))}
-              zohoEntity={expense.zohoEntity || undefined}
+              zohoEntity={form.company || undefined}
+              disabled={!form.company}
+              placeholder={form.company ? undefined : 'Pick a company first'}
               inputClassName={inputCls}
             />
           </div>
@@ -174,9 +215,9 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
                 </option>
               ))}
             </select>
-            {expense.zohoEntity && hiddenCardCount > 0 && (
+            {form.company && hiddenCardCount > 0 && (
               <p className="mt-1 text-xs text-charcoal/40">
-                Showing {expense.zohoEntity} cards only ({hiddenCardCount} other {hiddenCardCount === 1 ? 'card' : 'cards'} hidden).
+                Showing {form.company} cards only ({hiddenCardCount} other {hiddenCardCount === 1 ? 'card' : 'cards'} hidden).
               </p>
             )}
           </div>

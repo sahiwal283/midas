@@ -40,3 +40,29 @@ export async function resolveCategoryEntityAccountId(
     companyAccountIds: rows.map((r) => r.zohoAccountId),
   });
 }
+
+/**
+ * The account columns to write when an expense moves to a different company.
+ *
+ * `expenses.zoho_expense_account_id` is stored, and the payload builder prefers
+ * it over the account resolved at push time — so an id resolved against the old
+ * company would survive the move and file the expense under another brand's
+ * account. Re-resolve it for the new company, and when nothing resolves, clear
+ * it: a push that resolves no account fails visibly, where a stale id misfiles
+ * the expense in silence.
+ */
+export function accountColumnsForCompanyChange(input: {
+  categoryId: string | null;
+  /** Name of the expense's category, for the stored display name. */
+  categoryName: string | null;
+  /** What resolveCategoryEntityAccountId returned for the NEW company. */
+  resolvedAccountId: string | null;
+}): { zohoExpenseAccountId: string | null; zohoExpenseAccountName: string | null } {
+  if (!input.categoryId) {
+    return { zohoExpenseAccountId: null, zohoExpenseAccountName: null };
+  }
+  return {
+    zohoExpenseAccountId: input.resolvedAccountId,
+    zohoExpenseAccountName: input.categoryName,
+  };
+}
