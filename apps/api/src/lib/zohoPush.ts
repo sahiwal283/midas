@@ -1,5 +1,3 @@
-import path from 'path';
-import fs from 'fs/promises';
 import { asc, eq } from 'drizzle-orm';
 import { db } from '../db/index';
 import { expenses, receipts } from '../db/schema';
@@ -21,6 +19,7 @@ import { isCompanyZohoEnabled } from './companies';
 import { resolveUserNames, toDateOnly } from './userNames';
 import { tryEventDates } from './tradeShowEvents';
 import { receiptPushBlocker, normalizeWaiverReason, shouldRecordWaiver } from './receiptPushBlocker';
+import { buildReceiptBundle, bundleReceiptProblem } from './receiptBundle';
 
 const RETRY_DELAYS_MS = [2_000, 5_000];
 
@@ -246,26 +245,43 @@ export async function pushExpenseToZoho(
       let receiptAttached = false;
       let receiptProblem: string | null = null;
       if (result.zohoExpenseId && !result.dryRun) {
-        const receipt = await db.query.receipts.findFirst({
+        // Every receipt on the expense, in page order, merged into one file.
+        // Zoho Books holds a single attachment per expense, so a second attach
+        // would replace the first rather than add to it.
+        const rows = await db.query.receipts.findMany({
           where: eq(receipts.expenseId, expense.id),
-          orderBy: [asc(receipts.uploadedAt)],
+          orderBy: [asc(receipts.uploadedAt), asc(receipts.id)],
         });
-        if (receipt) {
+        if (rows.length > 0) {
+          let bundle: Awaited<ReturnType<typeof buildReceiptBundle>> | null = null;
           try {
-            const buffer = await fs.readFile(path.join(env.UPLOADS_DIR, receipt.storagePath));
-            receiptAttached = await attachReceiptToBooksExpense(
-              result.zohoExpenseId,
-              { buffer, filename: receipt.filename, mimeType: receipt.mimeType },
-              payload.brand,
-            );
-            if (!receiptAttached) receiptProblem = 'Zoho rejected the receipt upload';
+            bundle = await buildReceiptBundle(rows, env.UPLOADS_DIR);
           } catch (err) {
-            receiptProblem = `receipt file could not be read (${receipt.storagePath})`;
+            receiptProblem = `receipt file could not be read (${rows.map((r) => r.storagePath).join(', ')})`;
             logger.error(
-              { err, expenseId: expense.id, storagePath: receipt.storagePath, uploadsDir: env.UPLOADS_DIR },
+              { err, expenseId: expense.id, storagePaths: rows.map((r) => r.storagePath), uploadsDir: env.UPLOADS_DIR },
               'Receipt unreadable — expense pushed to Zoho without its receipt',
             );
           }
+
+          if (bundle) {
+            if (bundle.file) {
+              try {
+                receiptAttached = await attachReceiptToBooksExpense(
+                  result.zohoExpenseId,
+                  bundle.file,
+                  payload.brand,
+                );
+              } catch (err) {
+                logger.error(
+                  { err, expenseId: expense.id },
+                  'Zoho receipt attach threw — expense pushed without its receipt',
+                );
+              }
+            }
+            receiptProblem = bundleReceiptProblem(bundle, receiptAttached);
+          }
+
           if (receiptProblem && !receiptAttached) {
             logger.warn(
               { expenseId: expense.id, zohoExpenseId: result.zohoExpenseId, reason: receiptProblem },

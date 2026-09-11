@@ -114,3 +114,33 @@ export async function buildReceiptBundle(
     skipped,
   };
 }
+
+/**
+ * Warning text for what became of the bundle, or null when there is nothing to
+ * warn about. Pure, so the rules are covered without a database or a Zoho
+ * client.
+ *
+ * `{ file: null, skipped: [] }` returns null on purpose: that is a genuinely
+ * receipt-less record, and what it means is the caller's decision — the
+ * expense side says nothing, the PO side flags it via
+ * `poReceiptProblem({ kind: 'none' })`.
+ */
+export function bundleReceiptProblem(
+  result: BundleResult,
+  attached: boolean,
+): string | null {
+  if (!result.file) {
+    if (result.skipped.length === 0) return null;
+    return `no receipt could be attached (unsupported file type: ${result.skipped.join(', ')})`;
+  }
+
+  const parts: string[] = [];
+  if (!attached) parts.push('Zoho rejected the receipt upload');
+  if (result.skipped.length > 0) {
+    const noun = result.skipped.length === 1 ? 'receipt' : 'receipts';
+    parts.push(
+      `${result.skipped.length} ${noun} not included in the attachment: ${result.skipped.join(', ')}`,
+    );
+  }
+  return parts.length ? parts.join('; ') : null;
+}
