@@ -1,17 +1,16 @@
-import { useState, FormEvent, ChangeEvent } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useState, FormEvent } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Paperclip, Upload, AlertCircle, CheckCircle2,
+  ArrowLeft, AlertCircle, CheckCircle2,
   Clock, XCircle, RefreshCw, CreditCard, Trash2, Pencil,
 } from 'lucide-react';
 import { expenseApi, accountantApi } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { CategoryPicker } from '../components/CategoryPicker';
-import { compressReceiptImage } from '../lib/receiptCompress';
 import { VendorCombobox } from '../components/VendorCombobox';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge } from '../components/StatusBadge';
-import { ReceiptPreview } from '../components/ReceiptPreview';
+import { ReceiptAttachments } from '../components/ReceiptAttachments';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { ReimbursementControl } from '../components/ReimbursementControl';
 import { CategoryRecode } from '../components/CategoryRecode';
@@ -505,16 +504,10 @@ export function ExpenseDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const qc = useQueryClient();
   const [message, setMessage] = useState('');
   const [messageError, setMessageError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // Set when arriving here from New Expense after the draft was created but the
-  // receipt upload failed. Dismissed once a receipt is successfully uploaded.
-  const [receiptUploadFailed, setReceiptUploadFailed] = useState(
-    () => (location.state as { receiptUploadFailed?: boolean } | null)?.receiptUploadFailed ?? false,
-  );
 
   const { data: expense, isLoading } = useQuery({
     queryKey: ['expense', id],
@@ -541,14 +534,6 @@ export function ExpenseDetail() {
         (err as { response?: { data?: { error?: { message?: string } } } })
           ?.response?.data?.error?.message ?? 'Could not send your message. Please try again.',
       );
-    },
-  });
-
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => expenseApi.uploadReceipt(id!, await compressReceiptImage(file)),
-    onSuccess: () => {
-      setReceiptUploadFailed(false);
-      qc.invalidateQueries({ queryKey: ['expense', id] });
     },
   });
 
@@ -582,12 +567,6 @@ export function ExpenseDetail() {
       navigate('/expenses');
     },
   });
-
-  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) uploadMutation.mutate(file);
-    e.target.value = '';
-  }
 
   if (isLoading) return <div className="p-8 text-charcoal/40">Loading…</div>;
   if (!expense) return <div className="p-8 text-danger">Expense not found</div>;
@@ -731,19 +710,6 @@ export function ExpenseDetail() {
         </div>
       </div>
 
-      {/* Receipt upload failed during creation — prompt a retry */}
-      {receiptUploadFailed && (
-        <div className="mb-6 flex items-start gap-3 rounded-xl border-2 border-amber-400 bg-amber-50 p-4">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <div>
-            <p className="text-sm font-semibold text-amber-900">Receipt not attached</p>
-            <p className="mt-0.5 text-sm text-amber-800">
-              This draft was created, but the receipt image didn&apos;t upload. Use the <span className="font-medium">Upload</span> button under Receipts below to add it.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Rejected — reason + corrected-expense action (owner only) */}
       {isOwner && isRejected && (
         <div className="mb-6 rounded-xl border-2 border-danger/30 bg-red-50 p-4">
@@ -818,64 +784,16 @@ export function ExpenseDetail() {
 
           {/* Receipts */}
           <div id="receipts" className="scroll-mt-6 rounded-xl border border-ink/10 bg-white p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-charcoal/80">Receipts</h2>
-              {(isOwner || isPrivileged) && (
-                <label className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-ink/15 px-3 py-1.5 text-xs font-medium text-charcoal/80 hover:bg-ink/[0.03] lg:min-h-0">
-                  <Upload className="h-3.5 w-3.5" />
-                  {uploadMutation.isPending ? 'Uploading…' : 'Upload'}
-                  <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
-                </label>
-              )}
-            </div>
-            {expense.receipts && expense.receipts.length > 0 ? (
-              <div className="space-y-2">
-                {expense.receipts.map((r) => (
-                  <div key={r.id} className="rounded-lg border border-ink/5 bg-cream px-3 py-2.5 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Paperclip className="h-4 w-4 shrink-0 text-charcoal/40" />
-                      <span className="flex-1 truncate text-sm text-charcoal/80">{r.filename}</span>
-                      <span className={`text-xs font-medium ${
-                        r.ocrStatus === 'done' ? 'text-success' :
-                        r.ocrStatus === 'failed' ? 'text-danger' :
-                        r.ocrStatus === 'processing' ? 'text-brand-400' :
-                        'text-charcoal/40'
-                      }`}>
-                        {isPrivileged
-                          ? `OCR: ${r.ocrStatus}`
-                          : r.ocrStatus === 'done' ? 'Receipt scan complete'
-                          : r.ocrStatus === 'failed' ? 'Receipt scan needs review'
-                          : r.ocrStatus === 'processing' ? 'Receipt scan in progress'
-                          : 'Receipt scan pending'}
-                      </span>
-                    </div>
-                    {isPrivileged && r.ocrProvider && (
-                      <div className="pl-6 space-y-0.5">
-                        <p className="text-xs text-muted">
-                          Provider: <span className="font-medium">{r.ocrProvider}</span>
-                          {r.ocrOverallConfidence != null && (
-                            <> · Confidence: <span className="font-medium">{Math.round(Number(r.ocrOverallConfidence) * 100)}%</span></>
-                          )}
-                        </p>
-                        {r.ocrNeedsReview && (
-                          <p className="text-xs font-medium text-amber-700">
-                            Suggested: needs review{r.ocrReviewReasons?.length ? ` — ${r.ocrReviewReasons.join(', ')}` : ''}
-                          </p>
-                        )}
-                        {r.ocrStatus === 'failed' && r.ocrErrorSummary && (
-                          <p className="text-xs text-danger">{r.ocrErrorSummary}</p>
-                        )}
-                      </div>
-                    )}
-                    <ReceiptPreview expenseId={expense.id} receipt={r} />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-charcoal/40">
-                No receipts attached.{isOwner && ' You can upload a receipt using the button above.'}
-              </p>
-            )}
+            <h2 className="mb-3 text-sm font-semibold text-charcoal/80">Receipts</h2>
+            <ReceiptAttachments
+              kind="expense"
+              ownerId={expense.id}
+              ensureOwnerId={async () => expense.id}
+              readOnly={!(isOwner || isPrivileged)}
+              canRemove={isOwner}
+              isPrivileged={!!isPrivileged}
+              onChange={() => void qc.invalidateQueries({ queryKey: ['expense', id] })}
+            />
           </div>
 
           {/* Conversation */}

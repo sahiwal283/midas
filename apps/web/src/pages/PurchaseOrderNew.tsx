@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
-import { transactionReceiptApi } from '../api/expenses';
-import { compressReceiptImage } from '../lib/receiptCompress';
 import { LineItemReview, LOW_CONFIDENCE } from '../components/LineItemReview';
 import { VendorCombobox } from '../components/VendorCombobox';
+import { ReceiptAttachments } from '../components/ReceiptAttachments';
 import { lineDraftsFromOcr, poHeaderFromOcr, type LineDraft } from '../lib/ocrLineItems';
 import { takePendingCapture } from '../lib/pendingCapture';
 import type { Transaction } from '@midas/shared';
+import type { Receipt } from '../types';
 
 type ZohoItem = { itemId: string; name: string; sku?: string | null; unit?: string | null };
 
@@ -61,26 +61,24 @@ export function PurchaseOrderNew() {
   const [taxTotal, setTaxTotal] = useState('0');
   const [lines, setLines] = useState<LineDraft[]>([blankLine(1)]);
   const [error, setError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<File | null>(null);
   // The draft this photo belongs to. Held in state so a retaken photo reuses
   // the same purchase order instead of leaving an orphan behind.
   const [draftId, setDraftId] = useState<string | null>(null);
   const [ocrPhase, setOcrPhase] = useState<'idle' | 'working' | 'done' | 'failed'>('idle');
-  // The photo is on the draft already. False after a failed upload, so Save
-  // retries it instead of quietly dropping the receipt.
-  const [receiptAttached, setReceiptAttached] = useState(false);
-  // The upload that is still on the wire, resolving to whether the file landed.
-  // Save has to await this rather than read receiptAttached alone: taking the
-  // "Enter manually instead" escape hatch does not stop the upload, so a user
-  // who fills the form and saves before it resolves would otherwise upload the
-  // same photo a second time — two receipts, two OCR jobs, two charges.
-  const uploadInFlight = useRef<Promise<boolean> | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  // Set when the user takes the escape hatch: a late OCR response must not
-  // overwrite what they have since typed.
+  // Set when the user takes the "Enter manually instead" escape hatch: a late
+  // OCR result must not overwrite what they have since typed. `onFirstReceipt`
+  // fires at most once per mounted instance, so `applyPoOcr` runs at most once
+  // too — no run counter is needed, just this one-way flag.
   const abandonedOcr = useRef(false);
-  // Identifies the newest scan, so a slower earlier one cannot land on top of it.
-  const ocrRun = useRef(0);
+  // A photo captured by the mobile nav's camera button before this form ever
+  // rendered — handed to the strip so it uploads through the exact same path
+  // as a user pick, rather than by a bare upload call here.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  // True while the strip has an upload in flight. `create.mutationFn` reads
+  // `draftId`, which stays null for the whole round trip through
+  // `ensureOwnerId` — saving mid-upload would POST a second purchase order
+  // while the photo lands on the first. Gate Save on it.
+  const [receiptsBusy, setReceiptsBusy] = useState(false);
 
   const items = itemsQ.data ?? [];
 
@@ -104,81 +102,41 @@ export function PurchaseOrderNew() {
     setLines((prev) => prev.map((l) => (l.zohoItemId ? { ...l, zohoItemId: '', matchScore: null } : l)));
   }
 
-  /**
-   * A picked receipt starts the purchase order rather than waiting for Save:
-   * the file needs an owner id to attach to, and OCR runs as part of that
-   * upload. Everything OCR reads lands in the form for the user to confirm.
-   */
-  async function startWithReceipt(file: File) {
-    const run = ocrRun.current + 1;
-    ocrRun.current = run;
-    abandonedOcr.current = false;
-    const superseded = () => abandonedOcr.current || ocrRun.current !== run;
-    setError(null);
-    setReceipt(file);
-    setReceiptAttached(false);
-    setOcrPhase('working');
-    // Tracked locally as well as in state: the catch below runs before React has
-    // re-rendered, so the state value there would still read false.
-    let attached = false;
-    try {
-      let id = draftId;
-      if (!id) {
-        const { data } = await api.post<{ transaction: Transaction }>('/transactions/purchase-orders', {
-          vendorName: '',
-          transactionDate,
-          lineItems: [],
-        });
-        id = data.transaction.id;
-        setDraftId(id);
-      }
-      const draft = id;
-      // This file is on the draft whatever happens to the OCR result below, so
-      // record it even when the user has abandoned OCR — Save must not upload it
-      // a second time. But only for the newest scan: a slower earlier upload
-      // must not vouch for a photo the user has since replaced, or Save would
-      // skip the replacement and silently drop it.
-      const upload = (async () => {
-        const res = await transactionReceiptApi.upload(draft, await compressReceiptImage(file));
-        if (ocrRun.current === run) {
-          attached = true;
-          setReceiptAttached(true);
-        }
-        return res;
-      })();
-      // Never rejects: Save reads it as "did the file land", and a false sends
-      // Save down its own retry path rather than throwing there.
-      uploadInFlight.current = upload.then(() => ocrRun.current === run, () => false);
-      const { receipt: uploaded } = await upload;
-      if (superseded()) return;
+  async function ensureDraftId(): Promise<string> {
+    if (draftId) return draftId;
+    const { data } = await api.post<{ transaction: Transaction }>('/transactions/purchase-orders', {
+      vendorName: '',
+      transactionDate,
+      lineItems: [],
+    });
+    setDraftId(data.transaction.id);
+    return data.transaction.id;
+  }
 
+  /** OCR prefill from the first receipt: header fields, then line items. */
+  async function applyPoOcr(uploaded: Receipt) {
+    setOcrPhase('working');
+    try {
+      // Nothing async has happened yet, but check anyway: cheap, and keeps this
+      // function safe to reorder without silently losing the guard.
+      if (abandonedOcr.current) return;
       const header = poHeaderFromOcr(uploaded.ocrData);
       if (header.vendorName) setVendorName(header.vendorName);
       if (header.transactionDate) setTransactionDate(header.transactionDate);
       if (header.taxTotal) setTaxTotal(header.taxTotal);
-      // The catalogue drives item matching, so wait for it rather than matching
-      // against whatever happened to be cached when the upload started. A
-      // catalogue that will not load is not worth failing the scan over. With
-      // no company yet there is no catalogue to match against — the lines come
-      // back as plain text and get their item ids once a company is picked,
-      // which is far better than preselecting another brand's items.
       const catalogue = zohoEntity
         ? await queryClient.ensureQueryData(itemsQueryOptions(zohoEntity)).catch(() => [] as ZohoItem[])
         : [];
-      if (superseded()) return;
+      // The user may have hit "Enter manually instead" while the catalogue was
+      // in flight — a late line-item prefill must not stomp on what they typed.
+      if (abandonedOcr.current) return;
       const drafts = lineDraftsFromOcr(uploaded.ocrData, catalogue);
       if (drafts.length) setLines(drafts);
       setOcrPhase('done');
-    } catch (err) {
-      if (superseded()) return;
-      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
-      // Only promise the photo is saved when it actually is. When the upload
-      // itself is what failed this banner would otherwise contradict the status
-      // card two elements away, which says it will be attached on save.
-      setError(msg || (attached
-        ? 'The receipt could not be read. Enter the details by hand — the photo is saved.'
-        : 'The receipt could not be read. Enter the details by hand — the photo will be attached when you save.'));
+    } catch {
+      if (abandonedOcr.current) return;
       setOcrPhase('failed');
+      setError('The receipt could not be read. Enter the details by hand — the photo is saved.');
     }
   }
 
@@ -188,20 +146,13 @@ export function PurchaseOrderNew() {
   useEffect(() => {
     if (params.get('mode') !== 'scan' || consumedCapture.current) return;
     const captured = takePendingCapture();
-    if (captured) {
-      consumedCapture.current = true;
-      void startWithReceipt(captured);
-    }
+    if (!captured) return;
+    consumedCapture.current = true;
+    // Handed to the strip below rather than uploaded here: same staging, same
+    // ensureOwnerId, same hadNone/firstFired bookkeeping, same busy signal —
+    // no upload happens outside the component.
+    setPendingFile(captured);
   }, [params]);
-
-  useEffect(() => {
-    if (receipt && receipt.type.startsWith('image/')) {
-      const url = URL.createObjectURL(receipt);
-      setPreviewUrl(url);
-      return () => URL.revokeObjectURL(url);
-    }
-    setPreviewUrl(null);
-  }, [receipt]);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -234,29 +185,11 @@ export function PurchaseOrderNew() {
         ? await api.patch<{ transaction: Transaction }>(`/transactions/${draftId}`, body)
         : await api.post<{ transaction: Transaction }>('/transactions/purchase-orders', body);
       const tx = data.transaction;
-      if (!receipt) return { tx, receiptError: null };
-      // The photo uploads as soon as it is picked. If that upload has not
-      // settled yet, wait for it — starting a second upload of the same file
-      // would attach it twice and bill a second OCR job.
-      const alreadyAttached = receiptAttached
-        || (uploadInFlight.current ? await uploadInFlight.current : false);
-      if (alreadyAttached) return { tx, receiptError: null };
-
-      // The purchase order now exists, so a failed upload must not fail the
-      // save — losing a filled-in PO to a network blip is far worse than
-      // landing on it with the receipt still missing. Carry the reason to the
-      // detail page instead, where the Upload button is waiting.
-      try {
-        await transactionReceiptApi.upload(tx.id, await compressReceiptImage(receipt));
-        return { tx, receiptError: null };
-      } catch (err) {
-        const msg = (err as { response?: { data?: { error?: { message?: string } } } })
-          ?.response?.data?.error?.message;
-        return { tx, receiptError: msg || 'The receipt could not be uploaded.' };
-      }
+      // Every photo is already attached to the draft by the strip before Save
+      // ever runs — there is nothing left to upload here.
+      return { tx, receiptError: null };
     },
-    onSuccess: ({ tx, receiptError }) =>
-      navigate(`/transactions/${tx.id}`, { state: receiptError ? { receiptUploadFailed: receiptError } : undefined }),
+    onSuccess: ({ tx }) => navigate(`/transactions/${tx.id}`),
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
       setError(msg || 'Failed to save purchase order');
@@ -294,9 +227,6 @@ export function PurchaseOrderNew() {
 
       {ocrPhase !== 'idle' && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
-          {previewUrl && (
-            <img src={previewUrl} alt="Receipt" className="h-20 w-20 shrink-0 rounded-md border border-ink/10 object-cover" />
-          )}
           <div className="min-w-0 flex-1">
             {ocrPhase === 'working' ? (
               <>
@@ -314,10 +244,9 @@ export function PurchaseOrderNew() {
               </>
             ) : (
               <p className="text-sm text-charcoal/70">
-                {ocrPhase === 'done' && 'Receipt attached. Check the lines below before saving.'}
-                {ocrPhase !== 'done' && (receiptAttached
-                  ? 'Receipt attached.'
-                  : 'The photo will be attached when you save.')}
+                {ocrPhase === 'done'
+                  ? 'Receipt attached. Check the lines below before saving.'
+                  : 'Receipt attached.'}
               </p>
             )}
           </div>
@@ -378,23 +307,19 @@ export function PurchaseOrderNew() {
             onChange={(e) => setTransactionDate(e.target.value)}
           />
         </label>
-        <label className="block text-sm sm:col-span-2">
-          <span className="text-charcoal/80">Receipt</span>
-          <input
-            type="file"
-            accept="image/*,.pdf,.heic,.heif"
-            className="mt-1 w-full rounded border border-brand-200 px-3 py-3 text-sm file:mr-3 file:rounded file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:text-brand-700 lg:py-2"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void startWithReceipt(file);
-            }}
-          />
-          <span className="mt-1 block text-xs text-charcoal/50">
-            {receipt
-              ? `${receipt.name} — ${receiptAttached ? 'attached to this draft.' : 'uploads when you save.'}`
-              : 'Attached as soon as you pick it, and read for vendor and line items.'}
-          </span>
-        </label>
+        <div className="block text-sm sm:col-span-2">
+          <span className="text-charcoal/80">Receipts</span>
+          <div className="mt-1">
+            <ReceiptAttachments
+              kind="transaction"
+              ownerId={draftId}
+              ensureOwnerId={ensureDraftId}
+              pendingFile={pendingFile}
+              onFirstReceipt={(r) => void applyPoOcr(r)}
+              onBusyChange={setReceiptsBusy}
+            />
+          </div>
+        </div>
       </div>
 
       <h2 className="text-sm font-semibold text-ink mb-2">Line items</h2>
@@ -462,11 +387,11 @@ export function PurchaseOrderNew() {
         <div className="flex flex-col gap-3 sm:flex-row">
           <button
             type="button"
-            disabled={!canSave || create.isPending}
+            disabled={!canSave || create.isPending || receiptsBusy}
             onClick={() => create.mutate()}
             className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg bg-brand-700 text-cream px-4 py-2 text-sm font-medium disabled:opacity-50"
           >
-            {create.isPending ? 'Saving…' : 'Save draft'}
+            {create.isPending ? 'Saving…' : receiptsBusy ? 'Uploading receipt…' : 'Save draft'}
           </button>
           <button
             type="button"

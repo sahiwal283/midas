@@ -105,7 +105,7 @@ export function ToUpload() {
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-ink">{item.payload.merchant}</p>
                 <p className="break-words text-sm text-muted">
-                  ${item.payload.amount.toFixed(2)} · {item.payload.date} · {item.receipt.name}
+                  ${item.payload.amount.toFixed(2)} · {item.payload.date} · {item.receipts[0]?.name}{item.receipts.length > 1 ? ` +${item.receipts.length - 1} more` : ''}
                 </p>
                 <p className="mt-1 break-words text-xs text-charcoal/40">
                   Status: {item.status}

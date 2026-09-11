@@ -1,5 +1,3 @@
-import path from 'path';
-import fs from 'fs/promises';
 import { asc, eq } from 'drizzle-orm';
 import { db } from '../db/index';
 import { purchaseOrders, receipts, transactionLineItems, transactions } from '../db/schema';
@@ -13,6 +11,7 @@ import {
   shouldAttemptPoReceiptAttach,
   type PoReceiptOutcome,
 } from './zohoPoReceipt';
+import { buildReceiptBundle, bundleReceiptProblem } from './receiptBundle';
 import { resolveBrandFromEntity } from './zohoBrand';
 import { classifyZohoError } from './zohoErrors';
 import { isCompanyZohoEnabled } from './companies';
@@ -171,30 +170,35 @@ export async function pushPurchaseOrderToZoho(
     // upload" for an attach that was never attempted.
     if (shouldAttemptPoReceiptAttach(result.zohoPurchaseOrderId, result.dryRun)) {
       try {
-        const receipt = await db.query.receipts.findFirst({
+        const rows = await db.query.receipts.findMany({
           where: eq(receipts.transactionId, tx.id),
-          orderBy: [asc(receipts.uploadedAt)],
+          orderBy: [asc(receipts.uploadedAt), asc(receipts.id)],
         });
 
         let outcome: PoReceiptOutcome;
-        if (!receipt) {
+        if (rows.length === 0) {
           // Spec Decision 6: a receipt-less PO pushes and is *flagged*. Not a
           // hard gate — blocking would strand every PO already in flight
           // without one — but it must not render as a clean "Created" either.
           outcome = { kind: 'none' };
         } else {
           try {
-            const buffer = await fs.readFile(path.join(env.UPLOADS_DIR, receipt.storagePath));
-            const attached = await attachReceiptToBooksPurchaseOrder(
-              result.zohoPurchaseOrderId,
-              { buffer, filename: receipt.filename, mimeType: receipt.mimeType },
-              resolveBrandFromEntity(tx.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND,
-            );
-            outcome = attached ? { kind: 'attached' } : { kind: 'rejected' };
+            const bundle = await buildReceiptBundle(rows, env.UPLOADS_DIR);
+            let attached = false;
+            if (bundle.file) {
+              attached = await attachReceiptToBooksPurchaseOrder(
+                result.zohoPurchaseOrderId,
+                bundle.file,
+                resolveBrandFromEntity(tx.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND,
+              );
+            }
+            outcome = attached && bundle.skipped.length === 0
+              ? { kind: 'attached' }
+              : { kind: 'bundled', problem: bundleReceiptProblem(bundle, attached) };
           } catch (err) {
-            outcome = { kind: 'unreadable', storagePath: receipt.storagePath };
+            outcome = { kind: 'unreadable', storagePath: rows.map((r) => r.storagePath).join(', ') };
             logger.error(
-              { err, transactionId: tx.id, storagePath: receipt.storagePath, uploadsDir: env.UPLOADS_DIR },
+              { err, transactionId: tx.id, storagePaths: rows.map((r) => r.storagePath), uploadsDir: env.UPLOADS_DIR },
               'Receipt unreadable — purchase order pushed to Zoho without its receipt',
             );
           }

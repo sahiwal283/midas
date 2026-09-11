@@ -198,7 +198,10 @@ erDiagram
 - `expense_messages` is the **canonical conversation record**; any external
   notification channel is notify-only.
 - A receipt belongs to an expense **or** a transaction, never both and never
-  neither — enforced by a database check constraint, not convention.
+  neither — enforced by a database check constraint, not convention. An expense
+  or purchase order may carry up to 10 receipts, ordered by `uploadedAt`. When
+  pushed to Zoho, multiple receipts are merged into one PDF (one page per image)
+  by `apps/api/src/lib/receiptBundle.ts`; a single receipt is sent as-is.
 
 ## Transactions & purchase orders
 

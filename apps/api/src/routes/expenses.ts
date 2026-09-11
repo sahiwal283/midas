@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, and, or, desc, ilike, gte, lte, count, sql, inArray } from 'drizzle-orm';
+import { eq, and, or, asc, desc, ilike, gte, lte, count, sql, inArray } from 'drizzle-orm';
 import { db } from '../db/index';
-import { expenses, expenseCategories, paymentMethods, companies, expenseMessages } from '../db/schema';
+import { expenses, expenseCategories, paymentMethods, companies, expenseMessages, receipts } from '../db/schema';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
@@ -91,7 +91,10 @@ router.get('/', asyncHandler(async (req, res) => {
     user: { columns: { id: true, name: true, email: true } },
     category: { columns: { id: true, name: true } },
     paymentMethod: { columns: { id: true, label: true, lastFour: true, brand: true } },
-    receipts: { columns: { id: true, filename: true, mimeType: true, ocrStatus: true, uploadedAt: true } },
+    receipts: {
+      columns: { id: true, filename: true, mimeType: true, ocrStatus: true, uploadedAt: true },
+      orderBy: [asc(receipts.uploadedAt), asc(receipts.id)] as [ReturnType<typeof asc>, ReturnType<typeof asc>],
+    },
   } as const;
 
   if (page !== undefined) {
@@ -129,7 +132,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
       reviewedBy: { columns: { id: true, name: true, email: true } },
       category: true,
       paymentMethod: true,
-      receipts: true,
+      receipts: { orderBy: (r, { asc }) => [asc(r.uploadedAt), asc(r.id)] },
       messages: {
         with: { sender: { columns: { id: true, name: true, role: true } } },
         orderBy: (m, { asc }) => [asc(m.createdAt)],
@@ -423,7 +426,7 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, req.params.id),
     with: {
-      receipts: true,
+      receipts: { orderBy: (r, { asc }) => [asc(r.uploadedAt), asc(r.id)] },
       category: { columns: { id: true, name: true, zohoAccountId: true } },
       paymentMethod: { columns: { id: true, label: true, zohoAccountName: true } },
       messages: { columns: { requestType: true, isResolved: true } },
@@ -549,7 +552,7 @@ async function deleteExpenseRecord(
 ): Promise<{ ok: true; mode: 'hard_delete' | 'soft_cancel' } | { ok: false; status: 403 | 404 | 409; code: string; message: string }> {
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, expenseId),
-    with: { receipts: true },
+    with: { receipts: { orderBy: (r, { asc }) => [asc(r.uploadedAt), asc(r.id)] } },
   });
   if (!expense) {
     return { ok: false, status: 404, code: 'NOT_FOUND', message: 'Expense not found' };

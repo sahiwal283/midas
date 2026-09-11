@@ -21,7 +21,7 @@ export async function maybeAutoPushPending(expenseId: string, actorUserId: strin
   const expense = await db.query.expenses.findFirst({
     where: eq(expenses.id, expenseId),
     with: {
-      receipts: true,
+      receipts: { orderBy: (r, { asc }) => [asc(r.uploadedAt), asc(r.id)] },
       category: { columns: { id: true, name: true, zohoAccountId: true } },
       paymentMethod: { columns: { id: true, label: true, zohoAccountName: true } },
       messages: { columns: { requestType: true, isResolved: true } },

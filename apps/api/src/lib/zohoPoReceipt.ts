@@ -43,7 +43,15 @@ export type PoReceiptOutcome =
   | { kind: 'attached' }
   | { kind: 'none' }
   | { kind: 'rejected' }
-  | { kind: 'unreadable'; storagePath: string };
+  | { kind: 'unreadable'; storagePath: string }
+  /**
+   * A multi-receipt PO whose bundle was assembled. The problem text (or null)
+   * comes from `bundleReceiptProblem` in receiptBundle.ts, which already knows
+   * how to describe a rejection and any receipts left out of the merge. Kept
+   * separate from 'none' so "there was no receipt" and "there were receipts but
+   * none could be attached" stay legible as different facts.
+   */
+  | { kind: 'bundled'; problem: string | null };
 
 /**
  * Map a receipt outcome to the problem text that goes into the warning, or
@@ -60,5 +68,7 @@ export function poReceiptProblem(outcome: PoReceiptOutcome): string | null {
       return 'Zoho rejected the receipt upload';
     case 'unreadable':
       return `receipt file could not be read (${outcome.storagePath})`;
+    case 'bundled':
+      return outcome.problem;
   }
 }

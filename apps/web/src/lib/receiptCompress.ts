@@ -10,8 +10,21 @@ const SKIP_BELOW_BYTES = 1_000_000;
 const MAX_EDGE_PX = 2000;
 const JPEG_QUALITY = 0.82;
 
+/**
+ * Whether this file should go through the canvas re-encode.
+ *
+ * WebP is the special case: pdf-lib cannot embed it, so a WebP receipt would
+ * be silently dropped from the merged PDF that reaches Zoho. Transcode it at
+ * any size — correctness of what the accountant sees beats the bytes saved.
+ */
+export function shouldTranscode(type: string, size: number): boolean {
+  if (!COMPRESSIBLE.has(type)) return false;
+  if (type === 'image/webp') return true;
+  return size >= SKIP_BELOW_BYTES;
+}
+
 export async function compressReceiptImage(file: File): Promise<File> {
-  if (!COMPRESSIBLE.has(file.type) || file.size < SKIP_BELOW_BYTES) return file;
+  if (!shouldTranscode(file.type, file.size)) return file;
 
   const url = URL.createObjectURL(file);
   try {
@@ -35,7 +48,9 @@ export async function compressReceiptImage(file: File): Promise<File> {
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY),
     );
-    if (!blob || blob.size >= file.size) return file;
+    // A small WebP usually GROWS as JPEG. Keep it anyway — an unembeddable
+    // receipt costs more than a few kilobytes.
+    if (!blob || (blob.size >= file.size && file.type !== 'image/webp')) return file;
 
     return new File(
       [blob],

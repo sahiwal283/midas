@@ -3,7 +3,7 @@ import {
   listUploadQueue,
   removeUploadItem,
   updateUploadItem,
-  receiptFileFromQueueItem,
+  receiptFilesFromQueueItem,
   type UploadQueueItem,
 } from './uploadQueue';
 
@@ -60,6 +60,16 @@ async function syncOne(item: UploadQueueItem): Promise<void> {
     await updateUploadItem(item.id, { expenseId });
   }
 
-  const file = receiptFileFromQueueItem(item);
-  await expenseApi.uploadReceipt(expenseId, file);
+  const files = receiptFilesFromQueueItem(item);
+  const uploaded = new Set(item.uploadedIndexes);
+
+  for (let i = 0; i < files.length; i += 1) {
+    if (uploaded.has(i)) continue;
+    // Not the last file: hold the auto-push check so the expense does not reach
+    // Zoho with only part of its receipts attached.
+    const isLast = i === files.length - 1;
+    await expenseApi.uploadReceipt(expenseId, files[i], { batch: !isLast });
+    uploaded.add(i);
+    await updateUploadItem(item.id, { uploadedIndexes: [...uploaded] });
+  }
 }

@@ -658,7 +658,7 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
 router.delete('/expenses/:id', requireScope('expenses:delete'), asyncHandler(async (req, res) => {
   const existing = await db.query.expenses.findFirst({
     where: eq(expenses.id, req.params.id),
-    with: { receipts: true },
+    with: { receipts: { orderBy: (r, { asc }) => [asc(r.uploadedAt), asc(r.id)] } },
   });
   if (!existing) throw notFound('Expense not found');
 
@@ -739,7 +739,7 @@ router.put(
     if (!req.file) throw createError('No file uploaded', 400, 'NO_FILE');
     const expense = await db.query.expenses.findFirst({
       where: eq(expenses.id, req.params.id),
-      with: { receipts: true },
+      with: { receipts: { orderBy: (r, { asc }) => [asc(r.uploadedAt), asc(r.id)] } },
     });
     if (!expense) throw notFound('Expense not found');
 
@@ -1164,7 +1164,7 @@ router.post('/expenses/import', requireScope('expenses:import'), asyncHandler(as
             eq(expenses.sourceApp, body.sourceApp),
             eq(expenses.sourceRefId, sourceRefId),
           ),
-          with: { receipts: true },
+          with: { receipts: { orderBy: (r, { asc }) => [asc(r.uploadedAt), asc(r.id)] } },
         });
         if (row?.receipts[0]) {
           await db.update(receipts)
