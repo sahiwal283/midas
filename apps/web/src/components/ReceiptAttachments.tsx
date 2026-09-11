@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, Paperclip, Upload, X, RotateCw } from 'lucide-react';
 import { expenseApi, transactionReceiptApi } from '../api/expenses';
@@ -60,8 +60,28 @@ export function ReceiptAttachments({
   const items = mergeSlots(serverReceipts, slots);
   const count = items.length;
 
-  function refresh() {
-    void qc.invalidateQueries({ queryKey });
+  // Mirrors `slots` for the unmount cleanup below — a `useEffect` cleanup
+  // closes over whatever `slots` was on the render that registered it, so a
+  // plain closure over `slots` here would revoke stale (already-superseded)
+  // URLs instead of whatever is actually outstanding at unmount time.
+  const slotsRef = useRef(slots);
+  slotsRef.current = slots;
+
+  useEffect(() => () => {
+    for (const s of slotsRef.current) {
+      if (s.state === 'uploading' && s.previewUrl) URL.revokeObjectURL(s.previewUrl);
+    }
+  }, []);
+
+  // Takes the resolved owner id explicitly rather than closing over the
+  // `ownerId` prop: on the creation forms `ownerId` is still null at the
+  // moment a batch starts (`ensureOwnerId` mints it mid-flight), so a
+  // closure-captured `queryKey`/`ownerId` would invalidate
+  // ['expense-receipts', null] — a no-op — while the real, now-populated
+  // query for the id that was actually used never gets invalidated.
+  function refresh(id: string) {
+    const key = kind === 'expense' ? ['expense-receipts', id] : ['transaction-receipts', id];
+    void qc.invalidateQueries({ queryKey: key });
     onChange?.();
   }
 
@@ -100,18 +120,26 @@ export function ReceiptAttachments({
     }));
     setSlots((prev) => [...prev, ...staged]);
 
-    /** Mark one staged slot failed, keeping its File so Retry can resend it. */
-    const fail = (localId: string, file: File, name: string, error: string) =>
+    /**
+     * Mark one staged slot failed, keeping its File so Retry can resend it.
+     * Takes the staged slot itself (not just its localId) so it can revoke
+     * that slot's preview URL — once the slot leaves `uploading`, the
+     * `BatchSlot` union no longer carries `previewUrl`, so this is the last
+     * point a reference to it exists.
+     */
+    const fail = (slot: (typeof staged)[number], file: File, name: string, error: string) => {
+      if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
       setSlots((prev) => prev.map((s) => (
-        s.localId === localId ? { state: 'failed', localId, name, file, error } : s
+        s.localId === slot.localId ? { state: 'failed', localId: slot.localId, name, file, error } : s
       )));
+    };
 
     let id: string;
     try {
       id = await ensureOwnerId();
     } catch (err) {
       const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
-      staged.forEach((slot, i) => fail(slot.localId, accepted[i], slot.name, message));
+      staged.forEach((slot, i) => fail(slot, accepted[i], slot.name, message));
       return;
     }
 
@@ -120,6 +148,7 @@ export function ReceiptAttachments({
       const slot = staged[i];
       try {
         const receipt = await uploadOne(id, accepted[i], isBatchedUpload(i, accepted.length));
+        if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
         setSlots((prev) => prev.map((s) => (
           s.localId === slot.localId ? { state: 'done', localId: s.localId, receipt } : s
         )));
@@ -128,26 +157,45 @@ export function ReceiptAttachments({
           onFirstReceipt?.(receipt);
         }
       } catch (err) {
-        fail(slot.localId, accepted[i], slot.name, uploadMessage(err));
+        fail(slot, accepted[i], slot.name, uploadMessage(err));
       }
     }
-    refresh();
+    refresh(id);
   }
 
-  /** A retry is the last upload of its own batch of one — never batched. */
+  /**
+   * A retry is the last upload of its own batch of one — never batched.
+   *
+   * Calls `ensureOwnerId()` rather than reading the `ownerId` prop: a retry
+   * can happen while `ownerId` is still null (the draft's very first pick
+   * failed before a draft existed, but the file was kept for Retry), and
+   * reading the prop directly would leave Retry permanently dead — the only
+   * escape being Discard and re-pick.
+   */
   async function retry(slot: Extract<BatchSlot, { state: 'failed' }>) {
-    if (!ownerId) return;
     setSlots((prev) => prev.map((s) => (
       s.localId === slot.localId
         ? { state: 'uploading', localId: s.localId, name: slot.name, previewUrl: null }
         : s
     )));
+    let id: string;
     try {
-      const receipt = await uploadOne(ownerId, slot.file, false);
+      id = await ensureOwnerId();
+    } catch (err) {
+      const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
+      setSlots((prev) => prev.map((s) => (
+        s.localId === slot.localId
+          ? { state: 'failed', localId: s.localId, name: slot.name, file: slot.file, error: message }
+          : s
+      )));
+      return;
+    }
+    try {
+      const receipt = await uploadOne(id, slot.file, false);
       setSlots((prev) => prev.map((s) => (
         s.localId === slot.localId ? { state: 'done', localId: s.localId, receipt } : s
       )));
-      refresh();
+      refresh(id);
     } catch (err) {
       setSlots((prev) => prev.map((s) => (
         s.localId === slot.localId
@@ -164,7 +212,7 @@ export function ReceiptAttachments({
       if (kind === 'expense') await expenseApi.deleteReceipt(ownerId, receiptId);
       else await transactionReceiptApi.delete(ownerId, receiptId);
       setSlots((prev) => prev.filter((s) => !(s.state === 'done' && s.receipt.id === receiptId)));
-      refresh();
+      refresh(ownerId);
     } catch (err) {
       setNotice(apiMessage(err) ?? 'Could not remove that receipt.');
     }
@@ -244,6 +292,15 @@ export function ReceiptAttachments({
               <div key={item.slot.localId} className="rounded-lg border border-ink/5 bg-cream px-3 py-2.5">
                 {item.slot.state === 'uploading' && (
                   <div className="flex items-center gap-2">
+                    {item.slot.previewUrl ? (
+                      <img
+                        src={item.slot.previewUrl}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded border border-ink/10 object-cover"
+                      />
+                    ) : (
+                      <span className="h-9 w-9 shrink-0 rounded border border-ink/10 bg-ink/5" />
+                    )}
                     <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
                     <span className="flex-1 truncate text-sm text-charcoal/70">{item.slot.name}</span>
                     <span className="text-xs text-charcoal/40">Uploading…</span>
