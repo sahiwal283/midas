@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, CheckCircle2, Sparkles, ClipboardList } from 'lucide-react';
 import { expenseApi, type DuplicateMatch } from '../api/expenses';
 import { companyApi } from '../api/companies';
+import { cardBelongsToCompany, cardsForCompany } from '../lib/paymentMethodScope';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { EventPicker, useEventPickerAvailable } from '../components/EventPicker';
 import { pathFromRoot } from '../lib/categoryTree';
@@ -135,13 +136,29 @@ export function ExpenseNew() {
     setPreviewUrl(null);
   }, [receipt]);
 
+  // Cards are company-specific; the ones this expense may actually be paid on.
+  // A card prefilled from the user's defaults can belong to a different company
+  // than their default entity, so the current selection is kept in the list
+  // rather than disappearing out from under the select.
+  const selectableCards = cardsForCompany(paymentMethods, form.company, form.paymentMethodId);
+  const hiddenCardCount = paymentMethods.length - selectableCards.length;
+
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
   function setCompany(name: string) {
     // Category is company-independent — never cleared when the company changes.
-    setForm((f) => ({ ...f, company: name }));
+    // A card belonging to a different company is: paying a Boomin expense on a
+    // Haute card files the payment against the wrong org's account in Zoho, so
+    // the selection is dropped and the user picks again from this company's
+    // cards. The merchant text stays — only its Zoho link is company-specific,
+    // and the combobox re-matches it against the new company's vendors.
+    setForm((f) => {
+      const card = paymentMethods.find((p) => p.id === f.paymentMethodId);
+      const keepCard = !card || cardBelongsToCompany(card, name);
+      return { ...f, company: name, paymentMethodId: keepCard ? f.paymentMethodId : '' };
+    });
   }
 
   function setPaymentMethod(pmId: string) {
@@ -549,17 +566,59 @@ export function ExpenseNew() {
         )}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-xl border border-ink/10 bg-white p-5 shadow-panel">
+          {/* Company leads the form, and the card and merchant follow it: both
+              are company-specific in Zoho, so this is the answer that decides
+              which cards and which vendors this expense may reference at all. */}
+          <Field label="Company">
+            <select value={form.company} onChange={(e) => setCompany(e.target.value)} className={inputCls}>
+              <option value="">— Select company —</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+            {form.paymentMethodId && form.company && (
+              <p className="mt-1 text-xs text-charcoal/40">Auto-filled from your card — change it if this expense belongs to another company.</p>
+            )}
+          </Field>
+
+          <Field label="Payment method">
+            <select
+              value={form.paymentMethodId}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              disabled={!form.company}
+              className={`${inputCls} disabled:bg-ink/[0.04] disabled:text-charcoal/40`}
+            >
+              <option value="">{form.company ? '— Select payment method —' : '— Pick a company first —'}</option>
+              {selectableCards.map((pm) => (
+                <option key={pm.id} value={pm.id}>
+                  {pm.label}{pm.lastFour ? ` ···${pm.lastFour}` : ''}
+                </option>
+              ))}
+            </select>
+            {!form.company ? (
+              <p className="mt-1 text-xs text-charcoal/50">Pick a company first — cards belong to one.</p>
+            ) : hiddenCardCount > 0 ? (
+              <p className="mt-1 text-xs text-charcoal/40">
+                Showing {form.company} cards only ({hiddenCardCount} other {hiddenCardCount === 1 ? 'card' : 'cards'} hidden).
+              </p>
+            ) : null}
+          </Field>
+
           <Field label="Merchant *">
             <VendorCombobox
               required
+              disabled={!form.company}
               value={form.merchant}
               onChange={(m) => set('merchant', m)}
               zohoEntity={form.company || undefined}
-              inputClassName={`${inputCls}${lowConfidenceFields.has('merchant') ? ' border-amber-400 ring-1 ring-amber-200' : ''}`}
+              placeholder={form.company ? 'Coffee Shop, Airline, etc.' : 'Pick a company first'}
+              inputClassName={`${inputCls} disabled:bg-ink/[0.04] disabled:text-charcoal/40${lowConfidenceFields.has('merchant') ? ' border-amber-400 ring-1 ring-amber-200' : ''}`}
             />
-            {lowConfidenceFields.has('merchant') && (
+            {!form.company ? (
+              <p className="mt-1 text-xs text-charcoal/50">Pick a company first — vendors belong to one.</p>
+            ) : lowConfidenceFields.has('merchant') ? (
               <p className="mt-1 text-xs text-amber-700">OCR was unsure about the merchant — confirm or edit.</p>
-            )}
+            ) : null}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
@@ -592,29 +651,6 @@ export function ExpenseNew() {
               )}
             </Field>
           </div>
-
-          <Field label="Payment method">
-            <select value={form.paymentMethodId} onChange={(e) => setPaymentMethod(e.target.value)} className={inputCls}>
-              <option value="">— Select payment method —</option>
-              {paymentMethods.map((pm) => (
-                <option key={pm.id} value={pm.id}>
-                  {pm.label}{pm.lastFour ? ` ···${pm.lastFour}` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Company">
-            <select value={form.company} onChange={(e) => setCompany(e.target.value)} className={inputCls}>
-              <option value="">— Select company —</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.name}>{c.name}</option>
-              ))}
-            </select>
-            {form.paymentMethodId && form.company && (
-              <p className="mt-1 text-xs text-charcoal/40">Auto-filled from your card — change it if this expense belongs to another company.</p>
-            )}
-          </Field>
 
           <Field label="Category">
             <CategoryPicker

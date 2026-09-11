@@ -42,3 +42,16 @@ export function resolveBrandFromEntity(zohoEntity: string | null | undefined): s
 export function listZohoEntities(): ZohoEntityOption[] {
   return [...ZOHO_ENTITY_OPTIONS];
 }
+
+/**
+ * Brand whose Zoho catalogue (vendors, items) a picker should read, given the
+ * company the record is being charged to. Vendors and items live per Zoho org,
+ * so an unscoped list offers one brand's vendors on another brand's record —
+ * and "create vendor" would file the new vendor in the wrong org.
+ *
+ * Falls back to the default brand only when there is no company to scope to,
+ * or the company is not one of the mapped Zoho entities.
+ */
+export function catalogBrandFor(zohoEntity: string | null | undefined, defaultBrand: string): string {
+  return resolveBrandFromEntity(zohoEntity) || defaultBrand;
+}

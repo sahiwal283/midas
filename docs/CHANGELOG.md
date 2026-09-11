@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.12.0 (2026-09-11)
+
+### Changed
+- The company an expense or purchase order is charged to is now the first
+  question on both forms, and the vendor and payment-method fields follow it.
+  Vendors, Zoho items and cards all belong to one company, so the company is
+  what decides which of them the record may reference at all. Both fields stay
+  disabled, with an inline reason, until a company is picked.
+- New Purchase Order has one vendor field instead of two. The separate "Zoho
+  vendor" picker and "Vendor name" box asked for the same thing twice; the
+  remaining field searches that company's Zoho vendors, creates one there when
+  the name is new, and carries the vendor id the push needs.
+- Changing the company on a form drops the selections that belonged to the old
+  one: the linked Zoho vendor, any matched Zoho line items, and a card owned by
+  another company. Typed text — vendor name, line descriptions — is kept, since
+  that is what the user or the receipt actually read.
+- The payment-method dropdown lists the selected company's cards plus any card
+  with no company set (personal / out-of-pocket cards that cross brands), and
+  says how many it hid. The accountant's "Correct details" form does the same,
+  always keeping the card already on the expense in the list.
+
+### Fixed
+- Vendor and item lists on the purchase-order forms were read from the default
+  Zoho brand regardless of the company on the purchase order, so a Boomin
+  purchase order offered Haute vendors and Haute items — and creating a vendor
+  from that form filed it in the default brand's Zoho org. Both lists, the
+  create, and the accountant's vendor/item remapping on the detail page are now
+  scoped to the purchase order's company.
+- Receipt OCR on a purchase order no longer preselects line items before a
+  company is chosen, which could only ever match against the default brand's
+  catalogue.
+
+### API
+- `GET /api/v1/transactions/meta/vendors`, `GET .../meta/items` and
+  `POST .../meta/sync-catalog` accept an optional `zohoEntity` query parameter
+  and resolve the Zoho brand from it. Omitting it keeps the previous
+  default-brand behaviour, so existing callers are unaffected.
+
 ## 1.11.0 (2026-09-10)
 
 ### Added
