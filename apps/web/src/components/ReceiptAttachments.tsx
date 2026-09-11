@@ -431,6 +431,19 @@ export function ReceiptAttachments({
                 <div className="flex items-center gap-2">
                   <Paperclip className="h-4 w-4 shrink-0 text-charcoal/40" />
                   <span className="flex-1 truncate text-sm text-charcoal/80">{item.receipt.filename}</span>
+                  <span className={`text-xs font-medium ${
+                    item.receipt.ocrStatus === 'done' ? 'text-success' :
+                    item.receipt.ocrStatus === 'failed' ? 'text-danger' :
+                    item.receipt.ocrStatus === 'processing' ? 'text-brand-400' :
+                    'text-charcoal/40'
+                  }`}>
+                    {isPrivileged
+                      ? `OCR: ${item.receipt.ocrStatus}`
+                      : item.receipt.ocrStatus === 'done' ? 'Receipt scan complete'
+                      : item.receipt.ocrStatus === 'failed' ? 'Receipt scan needs review'
+                      : item.receipt.ocrStatus === 'processing' ? 'Receipt scan in progress'
+                      : 'Receipt scan pending'}
+                  </span>
                   {!readOnly && canRemove && (
                     <button
                       type="button"
@@ -444,14 +457,6 @@ export function ReceiptAttachments({
                 </div>
                 {isPrivileged && (
                   <div className="pl-6 space-y-0.5">
-                    <span className={`text-xs font-medium ${
-                      item.receipt.ocrStatus === 'done' ? 'text-success' :
-                      item.receipt.ocrStatus === 'failed' ? 'text-danger' :
-                      item.receipt.ocrStatus === 'processing' ? 'text-brand-400' :
-                      'text-charcoal/40'
-                    }`}>
-                      OCR: {item.receipt.ocrStatus}
-                    </span>
                     {item.receipt.ocrProvider && (
                       <p className="text-xs text-muted">
                         Provider: <span className="font-medium">{item.receipt.ocrProvider}</span>
