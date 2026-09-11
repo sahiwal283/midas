@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
-import { transactionReceiptApi } from '../api/expenses';
-import { compressReceiptImage } from '../lib/receiptCompress';
 import { LineItemReview, LOW_CONFIDENCE } from '../components/LineItemReview';
 import { VendorCombobox } from '../components/VendorCombobox';
 import { ReceiptAttachments } from '../components/ReceiptAttachments';
@@ -72,6 +70,15 @@ export function PurchaseOrderNew() {
   // fires at most once per mounted instance, so `applyPoOcr` runs at most once
   // too — no run counter is needed, just this one-way flag.
   const abandonedOcr = useRef(false);
+  // A photo captured by the mobile nav's camera button before this form ever
+  // rendered — handed to the strip so it uploads through the exact same path
+  // as a user pick, rather than by a bare upload call here.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  // True while the strip has an upload in flight. `create.mutationFn` reads
+  // `draftId`, which stays null for the whole round trip through
+  // `ensureOwnerId` — saving mid-upload would POST a second purchase order
+  // while the photo lands on the first. Gate Save on it.
+  const [receiptsBusy, setReceiptsBusy] = useState(false);
 
   const items = itemsQ.data ?? [];
 
@@ -141,11 +148,10 @@ export function PurchaseOrderNew() {
     const captured = takePendingCapture();
     if (!captured) return;
     consumedCapture.current = true;
-    void (async () => {
-      const id = await ensureDraftId();
-      const { receipt: uploaded } = await transactionReceiptApi.upload(id, await compressReceiptImage(captured));
-      await applyPoOcr(uploaded);
-    })().catch(() => setError('We could not upload that photo. Add it again below.'));
+    // Handed to the strip below rather than uploaded here: same staging, same
+    // ensureOwnerId, same hadNone/firstFired bookkeeping, same busy signal —
+    // no upload happens outside the component.
+    setPendingFile(captured);
   }, [params]);
 
   const create = useMutation({
@@ -308,7 +314,9 @@ export function PurchaseOrderNew() {
               kind="transaction"
               ownerId={draftId}
               ensureOwnerId={ensureDraftId}
+              pendingFile={pendingFile}
               onFirstReceipt={(r) => void applyPoOcr(r)}
+              onBusyChange={setReceiptsBusy}
             />
           </div>
         </div>
@@ -379,11 +387,11 @@ export function PurchaseOrderNew() {
         <div className="flex flex-col gap-3 sm:flex-row">
           <button
             type="button"
-            disabled={!canSave || create.isPending}
+            disabled={!canSave || create.isPending || receiptsBusy}
             onClick={() => create.mutate()}
             className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg bg-brand-700 text-cream px-4 py-2 text-sm font-medium disabled:opacity-50"
           >
-            {create.isPending ? 'Saving…' : 'Save draft'}
+            {create.isPending ? 'Saving…' : receiptsBusy ? 'Uploading receipt…' : 'Save draft'}
           </button>
           <button
             type="button"

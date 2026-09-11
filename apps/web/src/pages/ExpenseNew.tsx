@@ -9,7 +9,6 @@ import { CategoryPicker } from '../components/CategoryPicker';
 import { EventPicker, useEventPickerAvailable } from '../components/EventPicker';
 import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
-import { compressReceiptImage } from '../lib/receiptCompress';
 import { takePendingCapture } from '../lib/pendingCapture';
 import { VendorCombobox } from '../components/VendorCombobox';
 import { ReceiptAttachments } from '../components/ReceiptAttachments';
@@ -35,6 +34,10 @@ export function ExpenseNew() {
 
   const [step, setStep] = useState<WizardStep>('choose');
   const [expenseId, setExpenseId] = useState<string | null>(null);
+  // A photo captured by the mobile nav's camera button before this form ever
+  // rendered — handed to the strip so it uploads through the exact same path
+  // as a user pick, rather than by a bare upload call here.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [ocrRan, setOcrRan] = useState(false);
   // OCR-suggested expense category (raw string from the receipt scan).
   const [ocrCategorySuggestion, setOcrCategorySuggestion] = useState<string | null>(null);
@@ -114,12 +117,10 @@ export function ExpenseNew() {
     if (!captured) return;
     consumedCapture.current = true;
     setStep('form');
-    // The strip takes it from here: create the draft, upload, run OCR prefill.
-    void (async () => {
-      const id = await ensureExpenseId();
-      const uploaded = await expenseApi.uploadReceipt(id, await compressReceiptImage(captured));
-      applyOcr(uploaded);
-    })().catch(() => setError('We could not upload that photo. Add it again below.'));
+    // Handed to the strip below rather than uploaded here: same staging, same
+    // ensureOwnerId, same hadNone/firstFired bookkeeping, same busy signal —
+    // no upload happens outside the component.
+    setPendingFile(captured);
   }, [params]);
 
   // Cards are company-specific; the ones this expense may actually be paid on.
@@ -339,6 +340,7 @@ export function ExpenseNew() {
               onClick={() => {
                 setStep('choose');
                 setExpenseId(null);
+                setPendingFile(null);
                 setOcrRan(false);
                 setOcrCategorySuggestion(null);
                 setCategoryAutoSuggested(false);
@@ -460,6 +462,7 @@ export function ExpenseNew() {
             kind="expense"
             ownerId={expenseId}
             ensureOwnerId={ensureExpenseId}
+            pendingFile={pendingFile}
             onFirstReceipt={applyOcr}
             onBusyChange={setUploading}
           />

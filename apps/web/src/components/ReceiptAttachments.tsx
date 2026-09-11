@@ -14,6 +14,17 @@ type Props = {
   /** null until a draft exists — `ensureOwnerId` creates one on first pick. */
   ownerId: string | null;
   ensureOwnerId: () => Promise<string>;
+  /**
+   * A file handed in from outside — e.g. a camera capture taken by the mobile
+   * nav before this component ever mounted. Run through the exact same
+   * `addFiles` path as a user pick (same staging, same `ensureOwnerId`, same
+   * `hadNone`/`firstFired` bookkeeping, same `onBusyChange`, same `refresh`)
+   * rather than uploaded by the caller — no upload may happen outside this
+   * component. Consumed once per distinct `File` reference; set it back to
+   * `null` (or a fresh `File`) from the caller rather than expecting this to
+   * reset on its own.
+   */
+  pendingFile?: File | null;
   /** Fires once, for the first receipt to land on an owner that had none. */
   onFirstReceipt?: (receipt: Receipt) => void;
   /** Anything that has to refetch beyond the receipts list (expense flags). */
@@ -41,7 +52,7 @@ function uploadMessage(err: unknown): string {
 }
 
 export function ReceiptAttachments({
-  kind, ownerId, ensureOwnerId, onFirstReceipt, onChange, onBusyChange, readOnly = false,
+  kind, ownerId, ensureOwnerId, pendingFile, onFirstReceipt, onChange, onBusyChange, readOnly = false,
 }: Props) {
   const qc = useQueryClient();
   const [slots, setSlots] = useState<BatchSlot[]>([]);
@@ -82,9 +93,13 @@ export function ReceiptAttachments({
 
   // Derived rather than toggled by hand at each call site: a slot can leave
   // 'uploading' via success, failure, or a retry re-entering it, and deriving
-  // from the current slots on every change is the only way that can't miss one.
+  // from the current slots on every change is the only way that can't miss
+  // one. The cleanup resets to false unconditionally — including on unmount —
+  // so a caller's busy flag can never be stranded `true` by this component
+  // going away (or re-running) mid-upload.
   useEffect(() => {
     onBusyChange?.(slots.some((s) => s.state === 'uploading'));
+    return () => onBusyChange?.(false);
   }, [slots, onBusyChange]);
 
   // Takes the resolved owner id explicitly rather than closing over the
@@ -176,6 +191,17 @@ export function ReceiptAttachments({
     }
     refresh(id);
   }
+
+  // Tracked by reference, not a boolean flag: a caller may swap in a second
+  // `pendingFile` later (a second scan handoff), and this must fire for that
+  // one too — it just must never re-fire for the SAME File object, including
+  // across the re-renders that addFiles itself triggers while it runs.
+  const consumedPendingFile = useRef<File | null>(null);
+  useEffect(() => {
+    if (!pendingFile || pendingFile === consumedPendingFile.current) return;
+    consumedPendingFile.current = pendingFile;
+    void addFiles([pendingFile]);
+  }, [pendingFile]);
 
   /**
    * A retry is the last upload of its own batch of one — never batched.

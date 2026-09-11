@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useRef } from 'react';
 import api from '../api/client';
@@ -43,13 +43,6 @@ export function PurchaseOrderDetail() {
   useEffect(() => {
     if (editError) editErrorRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [editError]);
-  // The create form uploads the receipt once the PO exists. If that upload
-  // failed it still sends the user here — the purchase order is real — and
-  // carries the reason so it lands in this page's banner, beside the Upload
-  // button they need.
-  const carriedUploadError = (useLocation().state as { receiptUploadFailed?: string } | null)
-    ?.receiptUploadFailed ?? null;
-
   const q = useQuery({
     queryKey: ['transaction', id],
     queryFn: async () => (await api.get<{ transaction: Transaction }>(`/transactions/${id}`)).data.transaction,
@@ -381,11 +374,6 @@ export function PurchaseOrderDetail() {
       {/* Receipts */}
       <div className="mb-8 rounded-xl border border-ink/10 bg-white p-5 shadow-panel">
         <h2 className="mb-3 text-sm font-semibold text-charcoal/80">Receipts</h2>
-        {carriedUploadError && (
-          <p role="alert" className="mb-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
-            {carriedUploadError}
-          </p>
-        )}
         <ReceiptAttachments
           kind="transaction"
           ownerId={tx.id}
