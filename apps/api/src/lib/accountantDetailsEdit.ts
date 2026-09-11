@@ -1,10 +1,12 @@
 /**
  * Accountant field corrections on someone else's expense.
  *
- * Accountants can already fix category, company, reference number and
- * reimbursement from the review page. The remaining Zoho-push blockers they
- * could see but not fix were payment method, merchant, amount and date — this
- * planner is the shared guard for that patch.
+ * Accountants can already fix category, reference number and reimbursement
+ * from their own controls. The Zoho-push blockers they could see but not fix
+ * were payment method, merchant, amount, date and — until the company field
+ * was added here — the company itself, which no control on the page could set
+ * once the expense left the owner's editable statuses. This planner is the
+ * shared guard for that patch.
  *
  * Pure: no db, no env. The route supplies the closed-period list.
  */
@@ -15,6 +17,8 @@ import { eventChangeFor, eventOwnershipRefusal } from './eventSelection';
 
 /** The expense fields this patch reads. `amount` is the numeric column's string. */
 export interface DetailsEditTarget {
+  /** Company the expense is charged to — the Zoho org it will be filed in. */
+  zohoEntity: string | null;
   merchant: string | null;
   amount: string | null;
   date: string;
@@ -31,6 +35,8 @@ export interface DetailsEditTarget {
 
 /** Any subset — omitted keys are left alone. */
 export interface DetailsEditPatch {
+  /** Company name, already validated against the active catalog by the route. */
+  zohoEntity?: string;
   merchant?: string;
   amount?: number;
   date?: string;
@@ -43,6 +49,7 @@ export interface DetailsEditPatch {
 
 /** Column values to write. `amount` is stringified for the numeric column. */
 export interface DetailsEditChanges {
+  zohoEntity?: string;
   merchant?: string;
   amount?: string;
   date?: string;
@@ -105,6 +112,13 @@ export function planAccountantDetailsEdit(
 
   const changes: DetailsEditChanges = {};
 
+  // An approved expense with no company cannot be pushed, and the company is
+  // also what decides which Zoho org — and so which chart of accounts — the
+  // expense belongs to. The route re-resolves the stored account id whenever
+  // this changes; see accountColumnsForCompanyChange.
+  if (patch.zohoEntity !== undefined && patch.zohoEntity !== expense.zohoEntity) {
+    changes.zohoEntity = patch.zohoEntity;
+  }
   if (patch.merchant !== undefined) {
     const merchant = patch.merchant.trim();
     if (merchant !== (expense.merchant ?? '').trim()) changes.merchant = merchant;

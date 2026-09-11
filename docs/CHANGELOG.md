@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.12.1 (2026-09-11)
+
+### Fixed
+- Accountants can set the company on an expense again. An expense that reached
+  `approved` without one could not be pushed — "Company set" showed as the
+  blocker — and no control on the page could fix it: the company field lives on
+  the owner's edit card, which only renders for the submitter while the expense
+  is still draft, awaiting info or pending. Company is now part of the
+  accountant's "Correct details" form, alongside the payment method it governs.
+- Changing an expense's company now re-reads its Zoho expense account from the
+  new company's chart of accounts. The stored account id takes precedence over
+  the one resolved at push time, so an account resolved for the previous company
+  would otherwise survive the move and file the expense under another brand's
+  account. When the new company has no mapping for the category, the stored id
+  is cleared rather than kept: a push that resolves no account fails visibly,
+  where a stale id misfiles the expense in silence.
+- `PATCH /api/v1/accountant/expenses/:id/zoho-entity` now refuses an expense
+  already pushed to Zoho (409 `NOT_EDITABLE`), matching every other correction
+  endpoint. The company decides which Zoho org holds the record, so changing it
+  after the push would put Midas and Zoho permanently out of step.
+
+### Changed
+- The card list in "Correct details" follows the company selected in the form
+  rather than the one stored on the expense, so correcting both in one pass
+  offers the right cards immediately. The merchant field is likewise scoped to
+  the selected company, and gated until one is chosen.
+
+### API
+- `PATCH /api/v1/accountant/expenses/:id/details` accepts `zohoEntity`. It is
+  validated against the active company catalog and carries the same guards as
+  the rest of that patch: refused once the expense is in Zoho, and refused in a
+  closed period.
+
 ## 1.12.0 (2026-09-11)
 
 ### Changed

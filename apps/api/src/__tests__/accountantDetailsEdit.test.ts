@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { planAccountantDetailsEdit, type DetailsEditTarget } from '../lib/accountantDetailsEdit';
 
 const base: DetailsEditTarget = {
+  zohoEntity: null,
   merchant: 'Summitt labs',
   amount: '948.00',
   date: '2026-05-05',
@@ -179,7 +180,7 @@ describe('planAccountantDetailsEdit — notes', () => {
 
 describe('planAccountantDetailsEdit — event re-tag', () => {
   const midasOwned = {
-    merchant: 'SPEEDEE MART', amount: '10.46', date: '2026-08-25',
+    zohoEntity: null, merchant: 'SPEEDEE MART', amount: '10.46', date: '2026-08-25',
     paymentMethodId: null, description: null, zohoExpenseId: null,
     sourceApp: null, sourceRefId: null, sourceContext: {},
   };
@@ -265,5 +266,58 @@ describe('planAccountantDetailsEdit — event re-tag', () => {
       [],
     );
     expect(plan).toMatchObject({ ok: false, refusal: { code: 'NOT_EDITABLE', status: 409 } });
+  });
+});
+
+describe('planAccountantDetailsEdit — company', () => {
+  // The reason this field exists: an approved expense with no company cannot be
+  // pushed, and until now no accountant control could set one.
+  it('sets the company on an expense that has none', () => {
+    const result = planAccountantDetailsEdit(base, { zohoEntity: 'Boomin Brands' }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ zohoEntity: 'Boomin Brands' });
+  });
+
+  it('corrects a company that was set to the wrong one', () => {
+    const result = planAccountantDetailsEdit(
+      { ...base, zohoEntity: 'Haute Brands' },
+      { zohoEntity: 'Nirvana Kulture' },
+      [],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ zohoEntity: 'Nirvana Kulture' });
+  });
+
+  it('writes nothing when the company is unchanged', () => {
+    const result = planAccountantDetailsEdit(
+      { ...base, zohoEntity: 'Haute Brands' },
+      { zohoEntity: 'Haute Brands' },
+      [],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({});
+  });
+
+  // Zoho holds the record once pushed; the company decides which org it was
+  // filed in, so a Midas-side rewrite would put the two permanently out of step.
+  it('refuses a company change on an expense already pushed to Zoho', () => {
+    const result = planAccountantDetailsEdit(
+      { ...base, zohoExpenseId: 'zoho-123' },
+      { zohoEntity: 'Boomin Brands' },
+      [],
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('NOT_EDITABLE');
+  });
+
+  it('refuses a company change in a closed period', () => {
+    const result = planAccountantDetailsEdit(base, { zohoEntity: 'Boomin Brands' }, ['2026-05']);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('PERIOD_CLOSED');
   });
 });
