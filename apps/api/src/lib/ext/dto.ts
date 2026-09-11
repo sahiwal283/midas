@@ -1,5 +1,6 @@
+import { asc } from 'drizzle-orm';
 import { env } from '../../config/env';
-import type { ExpenseSourceContext } from '../../db/schema';
+import { receipts, type ExpenseSourceContext } from '../../db/schema';
 import { toWireExpenseStatus, type IntegrationStatus, type LegacyExpenseStatus } from '../transactionStatus';
 
 type ExpenseRow = {
@@ -115,5 +116,6 @@ export const EXT_EXPENSE_WITH = {
       ocrStatus: true,
       sha256: true,
     },
+    orderBy: [asc(receipts.uploadedAt), asc(receipts.id)] as [ReturnType<typeof asc>, ReturnType<typeof asc>],
   },
 } as const;

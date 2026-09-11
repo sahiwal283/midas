@@ -37,6 +37,13 @@ async function twoPagePdf(): Promise<Buffer> {
   return Buffer.from(await doc.save());
 }
 
+/** A single-page PDF sized `width` x `height` — distinguishable by dimensions alone. */
+async function onePagePdf(width: number, height: number): Promise<Buffer> {
+  const doc = await PDFDocument.create();
+  doc.addPage([width, height]);
+  return Buffer.from(await doc.save());
+}
+
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'midas-bundle-'));
 });
@@ -123,6 +130,30 @@ describe('buildReceiptBundle', () => {
     // 1 image page + 2 copied PDF pages
     expect(out.getPageCount()).toBe(3);
     expect(file!.filename).toBe('receipt-3-pages.pdf');
+  });
+
+  it('places pages in input order, not sorted or reversed — the core page-order contract', async () => {
+    // Two single-page PDFs distinguishable only by dimensions: page N of the
+    // output must come from receipt N of the input. Page COUNT alone (as the
+    // other tests here assert) cannot catch a bundler that silently swaps or
+    // sorts pages.
+    const small = await put('order-small.pdf', 'application/pdf', await onePagePdf(150, 150));
+    const large = await put('order-large.pdf', 'application/pdf', await onePagePdf(400, 600));
+    const { file } = await buildReceiptBundle([small, large], dir);
+    const out = await PDFDocument.load(file!.buffer);
+    expect(out.getPageCount()).toBe(2);
+    expect(out.getPage(0).getSize()).toEqual({ width: 150, height: 150 });
+    expect(out.getPage(1).getSize()).toEqual({ width: 400, height: 600 });
+  });
+
+  it('still places pages in input order when that order is reversed', async () => {
+    const small = await put('order-small2.pdf', 'application/pdf', await onePagePdf(150, 150));
+    const large = await put('order-large2.pdf', 'application/pdf', await onePagePdf(400, 600));
+    const { file } = await buildReceiptBundle([large, small], dir);
+    const out = await PDFDocument.load(file!.buffer);
+    expect(out.getPageCount()).toBe(2);
+    expect(out.getPage(0).getSize()).toEqual({ width: 400, height: 600 });
+    expect(out.getPage(1).getSize()).toEqual({ width: 150, height: 150 });
   });
 
   it('names skipped receipts but still bundles the rest', async () => {

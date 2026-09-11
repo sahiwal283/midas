@@ -790,6 +790,8 @@ export function ExpenseDetail() {
               ownerId={expense.id}
               ensureOwnerId={async () => expense.id}
               readOnly={!(isOwner || isPrivileged)}
+              canRemove={isOwner}
+              isPrivileged={!!isPrivileged}
               onChange={() => void qc.invalidateQueries({ queryKey: ['expense', id] })}
             />
           </div>

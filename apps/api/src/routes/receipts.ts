@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { Router } from 'express';
 import multer from 'multer';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../db/index';
 import { receipts, expenses, transactions } from '../db/schema';
 import { authenticate } from '../middleware/auth';
@@ -89,7 +89,10 @@ router.get('/', asyncHandler(async (req, res) => {
     ? eq(receipts.expenseId, owner.id)
     : eq(receipts.transactionId, owner.id);
 
-  const rows = await db.query.receipts.findMany({ where: ownerFilter });
+  const rows = await db.query.receipts.findMany({
+    where: ownerFilter,
+    orderBy: [asc(receipts.uploadedAt), asc(receipts.id)],
+  });
   res.json({ receipts: rows });
 }));
 

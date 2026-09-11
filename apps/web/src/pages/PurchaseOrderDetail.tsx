@@ -379,6 +379,7 @@ export function PurchaseOrderDetail() {
           ownerId={tx.id}
           ensureOwnerId={async () => tx.id}
           readOnly={!isOwner}
+          isPrivileged={!!isPrivileged}
         />
       </div>
 

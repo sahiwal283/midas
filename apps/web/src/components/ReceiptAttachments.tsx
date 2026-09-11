@@ -47,6 +47,22 @@ type Props = {
    */
   onBusyChange?: (busy: boolean) => void;
   readOnly?: boolean;
+  /**
+   * Gates the per-receipt Remove button independently of `readOnly`. The
+   * server's DELETE is submitter-only, but `readOnly` also covers a
+   * privileged non-owner who CAN upload (accountant/admin on someone else's
+   * expense) — that caller must still see Add without also getting a Remove
+   * button they can't actually use. Defaults to `true` so every call site
+   * that doesn't pass this keeps today's behaviour (Remove tracks `readOnly`
+   * alone).
+   */
+  canRemove?: boolean;
+  /**
+   * When true, renders the accountant-only OCR diagnostics (status,
+   * provider, confidence, suggested review reasons, error summary) beneath
+   * each receipt's filename. Never pass this from the creation forms.
+   */
+  isPrivileged?: boolean;
 };
 
 function apiMessage(err: unknown): string | undefined {
@@ -62,7 +78,8 @@ function uploadMessage(err: unknown): string {
 }
 
 export function ReceiptAttachments({
-  kind, ownerId, ensureOwnerId, pendingFile, onFirstReceipt, onChange, onUploadFailed, onBusyChange, readOnly = false,
+  kind, ownerId, ensureOwnerId, pendingFile, onFirstReceipt, onChange, onUploadFailed, onBusyChange,
+  readOnly = false, canRemove = true, isPrivileged = false,
 }: Props) {
   const qc = useQueryClient();
   const [slots, setSlots] = useState<BatchSlot[]>([]);
@@ -78,6 +95,33 @@ export function ReceiptAttachments({
   // never rejects (see `addFiles`), so a failure in one queued batch can never
   // permanently wedge every batch queued after it.
   const uploadChain = useRef<Promise<void>>(Promise.resolve());
+
+  // Single source of truth for "do we already have an owner id" — checked
+  // before calling `ensureOwnerId()` in both `runUpload` and `runRetry`.
+  // `ensureOwnerId` is a prop closure (`ensureExpenseId`/`ensureDraftId` on
+  // the creation forms) that itself closes over the parent's `expenseId`/
+  // `draftId` STATE at the render it was created on. If a second batch is
+  // picked while the first batch's `ensureOwnerId()` call is still in
+  // flight (parent hasn't re-rendered yet), the second batch's `addFiles`
+  // captures that same stale, still-null closure — and `uploadChain` only
+  // serialises WHEN each batch's `runUpload` executes, not WHICH closure it
+  // captured. Without this ref, the second batch would still call its own
+  // (permanently stale) `ensureOwnerId`, which would create a second draft
+  // even after the first batch's draft has resolved. Seeded from the
+  // `ownerId` prop (non-null on detail pages, where it's stable) so those
+  // call sites never invoke `ensureOwnerId` at all.
+  const resolvedOwnerId = useRef<string | null>(ownerId);
+  useEffect(() => {
+    resolvedOwnerId.current = ownerId;
+  }, [ownerId]);
+
+  /** Prefer the cached id; only fall back to the (possibly stale) prop closure. */
+  async function resolveOwnerId(): Promise<string> {
+    if (resolvedOwnerId.current) return resolvedOwnerId.current;
+    const id = await ensureOwnerId();
+    resolvedOwnerId.current = id;
+    return id;
+  }
 
   const queryKey = kind === 'expense'
     ? ['expense-receipts', ownerId]
@@ -188,7 +232,7 @@ export function ReceiptAttachments({
     const runUpload = async () => {
       let id: string;
       try {
-        id = await ensureOwnerId();
+        id = await resolveOwnerId();
       } catch (err) {
         const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
         staged.forEach((slot, i) => fail(slot, accepted[i], slot.name, message));
@@ -199,10 +243,20 @@ export function ReceiptAttachments({
       const hadNone = serverReceipts.length === 0;
       const failedFiles: File[] = [];
       let lastFailure: unknown;
+      // Once anything earlier in this batch has failed, the bundle this pick
+      // represents can never be complete — the failed file only reattaches
+      // via a later, unbatched Retry. Sending the final file unbatched here
+      // anyway would let the server's auto-push check run against that
+      // incomplete bundle and push a partial receipt set to Zoho. Force
+      // `batch=true` for every file from the first failure onward (including
+      // what would otherwise be the last, un-batched upload) so the check is
+      // deferred until Retry sends its own, genuinely-last, unbatched upload.
+      let anyFailedSoFar = false;
       for (let i = 0; i < accepted.length; i += 1) {
         const slot = staged[i];
+        const batched = anyFailedSoFar || isBatchedUpload(i, accepted.length);
         try {
-          const receipt = await uploadOne(id, accepted[i], isBatchedUpload(i, accepted.length));
+          const receipt = await uploadOne(id, accepted[i], batched);
           if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
           setSlots((prev) => prev.map((s) => (
             s.localId === slot.localId ? { state: 'done', localId: s.localId, receipt } : s
@@ -215,6 +269,7 @@ export function ReceiptAttachments({
           fail(slot, accepted[i], slot.name, uploadMessage(err));
           failedFiles.push(accepted[i]);
           lastFailure = err;
+          anyFailedSoFar = true;
         }
       }
       refresh(id);
@@ -271,7 +326,7 @@ export function ReceiptAttachments({
     const runRetry = async () => {
       let id: string;
       try {
-        id = await ensureOwnerId();
+        id = await resolveOwnerId();
       } catch (err) {
         const message = apiMessage(err) ?? 'Could not start this entry. Please try again.';
         setSlots((prev) => prev.map((s) => (
@@ -376,7 +431,7 @@ export function ReceiptAttachments({
                 <div className="flex items-center gap-2">
                   <Paperclip className="h-4 w-4 shrink-0 text-charcoal/40" />
                   <span className="flex-1 truncate text-sm text-charcoal/80">{item.receipt.filename}</span>
-                  {!readOnly && (
+                  {!readOnly && canRemove && (
                     <button
                       type="button"
                       onClick={() => void removeReceipt(item.receipt.id)}
@@ -387,6 +442,37 @@ export function ReceiptAttachments({
                     </button>
                   )}
                 </div>
+                {isPrivileged && (
+                  <div className="pl-6 space-y-0.5">
+                    <span className={`text-xs font-medium ${
+                      item.receipt.ocrStatus === 'done' ? 'text-success' :
+                      item.receipt.ocrStatus === 'failed' ? 'text-danger' :
+                      item.receipt.ocrStatus === 'processing' ? 'text-brand-400' :
+                      'text-charcoal/40'
+                    }`}>
+                      OCR: {item.receipt.ocrStatus}
+                    </span>
+                    {item.receipt.ocrProvider && (
+                      <p className="text-xs text-muted">
+                        Provider: <span className="font-medium">{item.receipt.ocrProvider}</span>
+                        {item.receipt.ocrOverallConfidence != null && (
+                          <> · Confidence: <span className="font-medium">{Math.round(Number(item.receipt.ocrOverallConfidence) * 100)}%</span></>
+                        )}
+                      </p>
+                    )}
+                    {item.receipt.ocrNeedsReview && (
+                      <p className="text-xs font-medium text-amber-700">
+                        Suggested: needs review{item.receipt.ocrReviewReasons?.length ? ` — ${item.receipt.ocrReviewReasons.join(', ')}` : ''}
+                      </p>
+                    )}
+                    {item.receipt.ocrStatus === 'failed' && item.receipt.ocrErrorSummary && (
+                      <p className="text-xs text-danger">{item.receipt.ocrErrorSummary}</p>
+                    )}
+                    {item.receipt.ocrStatus === 'done' && item.receipt.ocrText && (
+                      <p className="whitespace-pre-wrap break-words text-xs text-charcoal/60">{item.receipt.ocrText}</p>
+                    )}
+                  </div>
+                )}
                 <ReceiptPreview expenseId={ownerId ?? ''} receipt={item.receipt} className="max-h-64" />
               </div>
             ) : (
