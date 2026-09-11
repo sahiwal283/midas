@@ -62,6 +62,13 @@ UI shows expense + OCR results           UI shows item in To upload list
 The offline queue is **client-side**. Midas server does not invent expenses that
 never arrived — the queue retries until the sync POST succeeds.
 
+A queued expense item stores the expense draft plus `receipts[]` (one receipt
+per uploaded file) and `uploadedIndexes` (indices of receipts successfully sent).
+On reconnect, the queue resumes mid-batch, retrying only unsent receipts rather
+than the entire expense. To hold the auto-approve and Zoho-push checks until the
+last receipt in a batch has arrived, upload with `?batch=1` on all but the final
+file; omit the flag on the final upload to trigger the checks.
+
 ### Idempotency
 
 Queued creates should include a stable client key:

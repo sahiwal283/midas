@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.13.0
+
+### Added
+- Several images per expense or purchase order — take photos, upload files, or mix both. Up to 10 per entry, each with its own preview, retry and remove.
+- Multi-receipt entries reach Zoho Books as a single merged PDF, one page per image, in the order they were added. An entry with a single receipt is still sent as-is, byte for byte.
+
+### Changed
+- Receipt uploads accept an optional `?batch=1` flag that holds the auto-approve/auto-push check until the last file of a batch has landed. Without it, an expense could push to Zoho with only its first photo attached.
+- WebP receipts are transcoded to JPEG at any size on upload — `pdf-lib` cannot embed WebP, so they would otherwise be left out of the merged PDF.
+- The offline upload queue stores several files per expense (IndexedDB v1 → v2; existing queued items are migrated, not dropped) and resumes mid-batch instead of re-uploading files that already landed.
+- All receipt uploads across the app now go through one shared component, so the four upload surfaces no longer drift apart.
+
+### Fixed
+- Uploading several receipts to a pending expense could push it to Zoho with only the first one attached.
+- The accountant-only OCR diagnostics readout has been removed from the expense detail receipts card.
+
+### Known limitations
+- Only the first image prefills the form. On a multi-page purchase order, later pages are scanned and stored but their line items are entered by hand.
+- Adding a receipt to an expense already pushed to Zoho does not update the Zoho attachment; the bundle is built at push time.
+- Receipts already stored as WebP from before this release are excluded from the merged PDF and named in the sync warning.
+- If the final upload of a batch fails and the user discards it rather than retrying, the auto-approve check does not run for that expense until it is next edited, submitted, or pushed by an accountant.
+
 ## 1.12.1 (2026-09-11)
 
 ### Fixed
