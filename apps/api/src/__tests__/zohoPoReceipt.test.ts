@@ -78,3 +78,25 @@ describe('poReceiptProblem', () => {
     expect(poReceiptWarning(poReceiptProblem({ kind: 'attached' }))).toBeNull();
   });
 });
+
+describe('poReceiptProblem — bundled outcomes', () => {
+  it('is null when the bundle attached cleanly', () => {
+    expect(poReceiptProblem({ kind: 'bundled', problem: null })).toBeNull();
+  });
+
+  it('passes the bundle problem through verbatim', () => {
+    expect(poReceiptProblem({
+      kind: 'bundled',
+      problem: '1 receipt not included in the attachment: old.webp',
+    })).toBe('1 receipt not included in the attachment: old.webp');
+  });
+
+  it('still distinguishes a receipt-less PO from an unattachable one', () => {
+    expect(poReceiptProblem({ kind: 'none' }))
+      .toBe('purchase order pushed with no receipt');
+    expect(poReceiptProblem({
+      kind: 'bundled',
+      problem: 'no receipt could be attached (unsupported file type: a.webp)',
+    })).toBe('no receipt could be attached (unsupported file type: a.webp)');
+  });
+});
