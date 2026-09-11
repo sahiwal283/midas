@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, Upload, PencilLine, X, FileText, AlertCircle, AlertTriangle, CheckCircle2, Sparkles, ClipboardList } from 'lucide-react';
+import { Camera, Upload, PencilLine, AlertCircle, AlertTriangle, CheckCircle2, Sparkles, ClipboardList } from 'lucide-react';
 import { expenseApi, type DuplicateMatch } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { cardBelongsToCompany, cardsForCompany } from '../lib/paymentMethodScope';
@@ -9,10 +9,10 @@ import { CategoryPicker } from '../components/CategoryPicker';
 import { EventPicker, useEventPickerAvailable } from '../components/EventPicker';
 import { pathFromRoot } from '../lib/categoryTree';
 import { useAuth } from '../contexts/AuthContext';
-import { enqueueUpload, isLikelyOfflineOrNetworkError } from '../lib/uploadQueue';
 import { compressReceiptImage } from '../lib/receiptCompress';
 import { takePendingCapture } from '../lib/pendingCapture';
 import { VendorCombobox } from '../components/VendorCombobox';
+import { ReceiptAttachments } from '../components/ReceiptAttachments';
 import { pickReferenceNumber } from '@midas/shared';
 import type { Receipt } from '../types';
 
@@ -35,8 +35,9 @@ export function ExpenseNew() {
 
   const [step, setStep] = useState<WizardStep>('choose');
   const [expenseId, setExpenseId] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // The strip owns the files now; the form only needs to know whether any
+  // landed, for the OCR status card and the submit-path messaging.
+  const [hasReceipt, setHasReceipt] = useState(false);
   const [ocrRan, setOcrRan] = useState(false);
   // OCR-suggested expense category (raw string from the receipt scan).
   const [ocrCategorySuggestion, setOcrCategorySuggestion] = useState<string | null>(null);
@@ -71,9 +72,6 @@ export function ExpenseNew() {
     eventId: '',
     expenseKind: 'business' as 'business' | 'partner',
   });
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const { user } = useAuth();
   const defaultsApplied = useRef(false);
@@ -111,30 +109,22 @@ export function ExpenseNew() {
   });
 
   // ?mode=scan: the mobile camera button opens the native camera in the nav
-  // itself (see MobileNav) and hands the photo over — consume it here. The
-  // programmatic-click fallback covers direct visits to this URL.
+  // itself (see MobileNav) and hands the photo over — consume it here.
   const consumedCapture = useRef(false);
   useEffect(() => {
-    if (params.get('mode') !== 'scan') return;
+    if (params.get('mode') !== 'scan' || consumedCapture.current) return;
     const captured = takePendingCapture();
-    if (captured) {
-      consumedCapture.current = true;
-      void startWithReceipt(captured);
-      return;
-    }
-    if (consumedCapture.current) return;
-    const t = setTimeout(() => cameraInputRef.current?.click(), 150);
-    return () => clearTimeout(t);
+    if (!captured) return;
+    consumedCapture.current = true;
+    setStep('form');
+    // The strip takes it from here: create the draft, upload, run OCR prefill.
+    void (async () => {
+      const id = await ensureExpenseId();
+      const uploaded = await expenseApi.uploadReceipt(id, await compressReceiptImage(captured));
+      setHasReceipt(true);
+      applyOcr(uploaded);
+    })().catch(() => setError('We could not upload that photo. Add it again below.'));
   }, [params]);
-
-  useEffect(() => {
-    if (receipt && receipt.type.startsWith('image/')) {
-      const url = URL.createObjectURL(receipt);
-      setPreviewUrl(url);
-      return () => URL.revokeObjectURL(url);
-    }
-    setPreviewUrl(null);
-  }, [receipt]);
 
   // Cards are company-specific; the ones this expense may actually be paid on.
   // A card prefilled from the user's defaults can belong to a different company
@@ -145,6 +135,14 @@ export function ExpenseNew() {
 
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  /** The strip needs an owner to attach to, so the draft is created here. */
+  async function ensureExpenseId(): Promise<string> {
+    if (expenseId) return expenseId;
+    const expense = await expenseApi.create({ draft: true });
+    setExpenseId(expense.id);
+    return expense.id;
   }
 
   function setCompany(name: string) {
@@ -227,56 +225,6 @@ export function ExpenseNew() {
     setForm((f) => (f.categoryId ? f : { ...f, categoryId: deepest.id }));
     setCategoryAutoSuggested(true);
   }, [ocrCategorySuggestion, categories, form.categoryId]);
-
-  /** Photo/upload entry: create empty draft, upload receipt, let OCR prefill. */
-  async function startWithReceipt(original: File) {
-    setError('');
-    // Shrink multi-MB camera photos before they hit the network — the single
-    // biggest lever for upload speed on mobile data.
-    const file = await compressReceiptImage(original);
-    setReceipt(file);
-    setStep('form');
-    setUploading(true);
-    try {
-      let id = expenseId;
-      if (!id) {
-        const expense = await expenseApi.create({ draft: true });
-        id = expense.id;
-        setExpenseId(id);
-      }
-      const uploaded = await expenseApi.uploadReceipt(id, file);
-      applyOcr(uploaded);
-    } catch (err) {
-      if (isLikelyOfflineOrNetworkError(err)) {
-        await enqueueUpload({
-          payload: { merchant: form.merchant, amount: Number(form.amount) || 0, date: form.date, currency: form.currency },
-          receipt: file,
-          expenseId: expenseId ?? undefined,
-          lastError: 'Receipt upload failed — queued for retry',
-        });
-        void qc.invalidateQueries({ queryKey: ['upload-queue-count'] });
-        setError('You appear to be offline. The receipt is queued and will retry automatically — you can keep filling out the form.');
-      } else {
-        // The upload itself failed — the server has no receipt. Clear the local
-        // file so the form doesn't claim "Receipt attached" when nothing is.
-        setReceipt(null);
-        setError(
-          err && typeof err === 'object' && (err as any)?.response?.status === 413
-            ? 'That photo is too large to upload (max 10 MB). Please retake it or choose a smaller image.'
-            : 'We could not upload the receipt. You can fill in the details manually and try attaching it again.',
-        );
-        setOcrRan(false);
-      }
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  function handleFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) void startWithReceipt(file);
-    e.target.value = '';
-  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -395,7 +343,7 @@ export function ExpenseNew() {
               onClick={() => {
                 setStep('choose');
                 setExpenseId(null);
-                setReceipt(null);
+                setHasReceipt(false);
                 setOcrRan(false);
                 setOcrCategorySuggestion(null);
                 setCategoryAutoSuggested(false);
@@ -432,7 +380,7 @@ export function ExpenseNew() {
           <div className="mt-6 space-y-3">
             <button
               type="button"
-              onClick={() => cameraInputRef.current?.click()}
+              onClick={() => setStep('form')}
               className="flex w-full cursor-pointer items-center gap-4 rounded-xl border-2 border-brand-500/30 bg-brand-500/10 p-5 text-left hover:border-brand-500"
             >
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-500 text-cream">
@@ -446,7 +394,7 @@ export function ExpenseNew() {
 
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => setStep('form')}
               className="flex w-full cursor-pointer items-center gap-4 rounded-xl border border-ink/10 bg-white p-5 text-left shadow-panel hover:border-brand-500/40"
             >
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink/[0.05] text-charcoal/70">
@@ -454,7 +402,7 @@ export function ExpenseNew() {
               </span>
               <span>
                 <span className="block font-semibold text-ink">Upload receipt</span>
-                <span className="block text-sm text-charcoal/55">From your camera roll or files (photos, HEIC, PDF)</span>
+                <span className="block text-sm text-charcoal/55">Add one or several — photos, HEIC or PDF</span>
               </span>
             </button>
 
@@ -485,9 +433,6 @@ export function ExpenseNew() {
               </span>
             </Link>
           </div>
-
-          <input ref={fileInputRef} type="file" accept="image/*,.pdf,.heic,.heif" className="hidden" onChange={handleFile} />
-          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
         </div>
       </div>
     );
@@ -500,70 +445,30 @@ export function ExpenseNew() {
         <h1 className="font-display text-3xl font-semibold text-ink">Add Expense</h1>
         <StepHint current={2} total={3} label={ocrRan ? 'Review & submit' : 'Enter details'} />
 
-        {/* Receipt summary / OCR review card */}
-        {receipt && (
-          <div className="mt-4 rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
-            <div className="flex items-start gap-3">
-              {previewUrl ? (
-                <img src={previewUrl} alt="Receipt" className="h-20 w-20 shrink-0 rounded-md border border-ink/10 object-cover" />
-              ) : (
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-cream">
-                  <FileText className="h-8 w-8 text-charcoal/40" />
-                </div>
+        <div className="mt-4 rounded-xl border border-ink/10 bg-white p-4 shadow-panel">
+          <h2 className="mb-3 text-sm font-semibold text-charcoal/80">Receipts</h2>
+          {ocrRan && (
+            <div className="mb-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                <Sparkles className="h-4 w-4 text-brand-600" />
+                Check what we read — correct anything that looks off.
+              </p>
+              {lowConfidenceFields.size > 0 && (
+                <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  Low confidence on {Array.from(lowConfidenceFields).join(', ')} — please double-check those fields.
+                </p>
               )}
-              <div className="min-w-0 flex-1">
-                {uploading ? (
-                  <p className="flex items-center gap-2 text-sm text-charcoal/70">
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
-                    Reading your receipt…
-                  </p>
-                ) : ocrRan ? (
-                  <div>
-                    <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
-                      <Sparkles className="h-4 w-4 text-brand-600" />
-                      Check what we read — correct anything that looks off.
-                    </p>
-                    {lowConfidenceFields.size > 0 && (
-                      <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-800">
-                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                        Low confidence on {Array.from(lowConfidenceFields).join(', ')} — please double-check those fields.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-charcoal/60">Receipt attached.</p>
-                )}
-                <p className="mt-1 truncate text-xs text-charcoal/40">{receipt.name}</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReceipt(null);
-                    setOcrRan(false);
-                    setOcrCategorySuggestion(null);
-                    setLowConfidenceFields(new Set());
-                  }}
-                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-charcoal/50 hover:text-danger"
-                >
-                  <X className="h-3 w-3" /> Remove
-                </button>
-              </div>
             </div>
-          </div>
-        )}
-
-        {!receipt && (
-          <div className="mt-4 flex items-center justify-between rounded-xl border border-dashed border-ink/20 bg-white/60 px-4 py-3">
-            <p className="text-sm text-charcoal/50">No receipt attached yet.</p>
-            <div className="flex gap-2">
-              <button type="button" onClick={() => cameraInputRef.current?.click()} className="rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-xs font-medium text-ink hover:bg-ink/[0.03]">
-                Scan
-              </button>
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-xs font-medium text-ink hover:bg-ink/[0.03]">
-                Upload
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+          <ReceiptAttachments
+            kind="expense"
+            ownerId={expenseId}
+            ensureOwnerId={ensureExpenseId}
+            onFirstReceipt={(r) => { setHasReceipt(true); applyOcr(r); }}
+            onChange={() => setHasReceipt(true)}
+          />
+        </div>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-xl border border-ink/10 bg-white p-5 shadow-panel">
           {/* Company leads the form, and the card and merchant follow it: both
@@ -773,9 +678,6 @@ export function ExpenseNew() {
             </button>
           </div>
         </form>
-
-        <input ref={fileInputRef} type="file" accept="image/*,.pdf,.heic,.heif" className="hidden" onChange={handleFile} />
-        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
       </div>
     </div>
   );
