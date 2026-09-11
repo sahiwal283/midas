@@ -15,6 +15,7 @@ import { auditLog } from '../lib/audit';
 import { env } from '../config/env';
 import { roleAllowed } from '../lib/roles';
 import { resolveReceiptOwner, receiptOwnerValues, type ReceiptOwnerRef } from '../lib/receiptOwner';
+import { isBatchedUpload } from '../lib/batchFlag';
 import type { UserRole } from '@midas/shared';
 
 const router = Router({ mergeParams: true });
@@ -125,7 +126,11 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
   // A receipt was often the last missing piece of a pending daily expense —
   // completing it auto-approves and pushes without accountant review. That
   // rule is expense-only; a purchase order always goes through its own review.
-  const autoPush = owner.kind === 'expense'
+  // More files are still coming in this batch: hold the auto-approve/auto-push
+  // check until the last one lands, or the expense pushes to Zoho with only
+  // the first photo attached.
+  const inBatch = isBatchedUpload(req.query.batch);
+  const autoPush = owner.kind === 'expense' && !inBatch
     ? () => maybeAutoPushPending(owner.id, req.user!.id)
     : async () => undefined;
 
