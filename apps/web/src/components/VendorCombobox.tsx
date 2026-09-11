@@ -31,6 +31,7 @@ export function VendorCombobox({
   className = '',
   inputClassName = '',
   required,
+  disabled,
 }: {
   value: string;
   onChange: (merchant: string) => void;
@@ -42,6 +43,8 @@ export function VendorCombobox({
   className?: string;
   inputClassName?: string;
   required?: boolean;
+  /** Gated until the caller knows which company's vendors to search. */
+  disabled?: boolean;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -57,6 +60,9 @@ export function VendorCombobox({
     }).then((r) => r.data.vendors),
     staleTime: 60_000,
     retry: 1,
+    // A gated field has no company yet, and an unscoped fetch would only cache
+    // the default brand's vendors under an empty key.
+    enabled: !disabled,
   });
 
   const createMutation = useMutation({
@@ -154,10 +160,11 @@ export function VendorCombobox({
         aria-expanded={open}
         aria-autocomplete="list"
         required={required}
+        disabled={disabled}
         value={value}
         placeholder={placeholder}
         className={inputClassName}
-        onFocus={() => setOpen(true)}
+        onFocus={() => { if (!disabled) setOpen(true); }}
         onKeyDown={onKeyDown}
         onChange={(e) => {
           onChange(e.target.value);
@@ -165,7 +172,7 @@ export function VendorCombobox({
           setOpen(true);
         }}
       />
-      {open && (visible.length > 0 || showCreate) && (
+      {open && !disabled && (visible.length > 0 || showCreate) && (
         <ul
           ref={listRef}
           role="listbox"

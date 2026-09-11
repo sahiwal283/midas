@@ -5,24 +5,29 @@ import api from '../api/client';
 import { transactionReceiptApi } from '../api/expenses';
 import { compressReceiptImage } from '../lib/receiptCompress';
 import { LineItemReview, LOW_CONFIDENCE } from '../components/LineItemReview';
-import { SearchableSelect } from '../components/SearchableSelect';
 import { VendorCombobox } from '../components/VendorCombobox';
 import { lineDraftsFromOcr, poHeaderFromOcr, type LineDraft } from '../lib/ocrLineItems';
 import { takePendingCapture } from '../lib/pendingCapture';
 import type { Transaction } from '@midas/shared';
 
-type ZohoVendor = { vendorId: string; vendorName: string; companyName?: string | null };
 type ZohoItem = { itemId: string; name: string; sku?: string | null; unit?: string | null };
 
 // Shared so the OCR handoff can `ensureQueryData` the same cache entry the
 // form renders from: OCR finishes while the catalogue may still be in flight,
 // and matching against an empty catalogue would silently preselect nothing.
-const itemsQueryOptions = {
-  queryKey: ['zoho-items'],
-  queryFn: async () => (await api.get<{ items: ZohoItem[] }>('/transactions/meta/items')).data.items,
-  staleTime: 60_000,
-  retry: 1,
-};
+// Keyed by company because items live per Zoho org — one cache entry per brand,
+// never one shared list that could hand another brand's item ids to this PO.
+function itemsQueryOptions(zohoEntity: string) {
+  return {
+    queryKey: ['zoho-items', zohoEntity],
+    queryFn: async () => (await api.get<{ items: ZohoItem[] }>('/transactions/meta/items', {
+      params: zohoEntity ? { zohoEntity } : undefined,
+    })).data.items,
+    staleTime: 60_000,
+    retry: 1,
+    enabled: !!zohoEntity,
+  };
+}
 
 function blankLine(n: number): LineDraft {
   return {
@@ -47,18 +52,12 @@ export function PurchaseOrderNew() {
     queryKey: ['companies'],
     queryFn: async () => (await api.get<{ companies: Array<{ name: string }> }>('/companies')).data.companies,
   });
-  const vendorsQ = useQuery({
-    queryKey: ['zoho-vendors'],
-    queryFn: async () => (await api.get<{ vendors: ZohoVendor[] }>('/transactions/meta/vendors')).data.vendors,
-    staleTime: 60_000,
-    retry: 1,
-  });
-  const itemsQ = useQuery(itemsQueryOptions);
 
   const [vendorName, setVendorName] = useState('');
   const [zohoVendorId, setZohoVendorId] = useState('');
   const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [zohoEntity, setZohoEntity] = useState('');
+  const itemsQ = useQuery(itemsQueryOptions(zohoEntity));
   const [taxTotal, setTaxTotal] = useState('0');
   const [lines, setLines] = useState<LineDraft[]>([blankLine(1)]);
   const [error, setError] = useState<string | null>(null);
@@ -84,12 +83,7 @@ export function PurchaseOrderNew() {
   const ocrRun = useRef(0);
 
   const items = itemsQ.data ?? [];
-  const vendors = vendorsQ.data ?? [];
 
-  const vendorOptions = useMemo(
-    () => [...vendors].sort((a, b) => a.vendorName.localeCompare(b.vendorName)),
-    [vendors],
-  );
   const itemOptions = useMemo(
     () => [...items]
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -97,10 +91,17 @@ export function PurchaseOrderNew() {
     [items],
   );
 
-  function pickVendor(id: string) {
-    setZohoVendorId(id);
-    const v = vendors.find((x) => x.vendorId === id);
-    if (v) setVendorName(v.companyName || v.vendorName);
+  /**
+   * Vendor and item ids belong to one company's Zoho org, so changing the
+   * company invalidates every id on the form. The typed vendor name and the
+   * line descriptions stay — those are what the user (or OCR) actually read —
+   * but the ids are dropped rather than pushed against the wrong org.
+   */
+  function setCompany(name: string) {
+    if (name === zohoEntity) return;
+    setZohoEntity(name);
+    setZohoVendorId('');
+    setLines((prev) => prev.map((l) => (l.zohoItemId ? { ...l, zohoItemId: '', matchScore: null } : l)));
   }
 
   /**
@@ -157,8 +158,13 @@ export function PurchaseOrderNew() {
       if (header.taxTotal) setTaxTotal(header.taxTotal);
       // The catalogue drives item matching, so wait for it rather than matching
       // against whatever happened to be cached when the upload started. A
-      // catalogue that will not load is not worth failing the scan over.
-      const catalogue = await queryClient.ensureQueryData(itemsQueryOptions).catch(() => [] as ZohoItem[]);
+      // catalogue that will not load is not worth failing the scan over. With
+      // no company yet there is no catalogue to match against — the lines come
+      // back as plain text and get their item ids once a company is picked,
+      // which is far better than preselecting another brand's items.
+      const catalogue = zohoEntity
+        ? await queryClient.ensureQueryData(itemsQueryOptions(zohoEntity)).catch(() => [] as ZohoItem[])
+        : [];
       if (superseded()) return;
       const drafts = lineDraftsFromOcr(uploaded.ocrData, catalogue);
       if (drafts.length) setLines(drafts);
@@ -280,9 +286,9 @@ export function PurchaseOrderNew() {
     <div className="mx-auto max-w-3xl px-4 py-8 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-8">
       <h1 className="page-title mb-6">New Purchase Order</h1>
       {error && <p className="mb-4 text-sm text-danger bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
-      {(vendorsQ.isError || itemsQ.isError) && (
+      {itemsQ.isError && (
         <p className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-          Could not load Zoho vendors/items. You can still draft the PO and map IDs later — push will require them.
+          Could not load {zohoEntity}'s Zoho items. You can still draft the PO and map IDs later — push will require them.
         </p>
       )}
 
@@ -319,34 +325,49 @@ export function PurchaseOrderNew() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 mb-6">
+        {/* Company leads the form: vendors and items are per-Zoho-org, so it is
+            the answer that decides which of them this PO may even reference. */}
         <label className="block text-sm sm:col-span-2">
-          <span className="text-charcoal/80">Zoho vendor</span>
-          <SearchableSelect
-            className="mt-1"
-            disabled={vendorsQ.isLoading}
-            placeholder={vendorsQ.isLoading ? 'Loading vendors…' : 'Search Zoho vendors…'}
-            value={zohoVendorId}
-            onChange={(id) => pickVendor(id)}
-            options={vendorOptions.map((v) => ({
-              value: v.vendorId,
-              label: v.companyName || v.vendorName,
-              hint: v.vendorId,
-            }))}
-          />
+          <span className="text-charcoal/80">Company *</span>
+          <select
+            required
+            className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2"
+            value={zohoEntity}
+            onChange={(e) => setCompany(e.target.value)}
+          >
+            <option value="">Select a company…</option>
+            {(companies.data ?? []).map((c: { name: string }) => (
+              <option key={c.name} value={c.name}>{c.name}</option>
+            ))}
+          </select>
         </label>
-        <label className="block text-sm">
-          <span className="text-charcoal/80">Vendor name *</span>
-          {/* Type-to-search with create: a brand-new vendor is created in Zoho
-              (dedup-checked) and its id fills the Zoho vendor picker above. */}
+        <label className="block text-sm sm:col-span-2">
+          <span className="text-charcoal/80">Vendor *</span>
+          {/* One field, not two: type to search this company's Zoho vendors, or
+              create one there (dedup-checked). The picked vendor's id rides
+              along in state and is what the push uses. */}
           <VendorCombobox
             className="mt-1"
-            inputClassName="w-full rounded border border-brand-200 px-3 py-3 lg:py-2 text-sm"
-            placeholder="Search or create a vendor…"
+            inputClassName="w-full rounded border border-brand-200 px-3 py-3 lg:py-2 text-sm disabled:bg-ink/[0.04] disabled:text-charcoal/40"
+            placeholder={zohoEntity ? 'Search or create a vendor…' : 'Pick a company first'}
             required
+            disabled={!zohoEntity}
+            zohoEntity={zohoEntity || undefined}
             value={vendorName}
-            onChange={setVendorName}
+            onChange={(name) => { setVendorName(name); setZohoVendorId(''); }}
             onVendorPicked={(v) => setZohoVendorId(v.vendorId)}
           />
+          {!zohoEntity ? (
+            <span className="mt-1 block text-xs text-charcoal/50">
+              Pick a company first — vendors are specific to it.
+            </span>
+          ) : zohoVendorId ? (
+            <span className="mt-1 block text-xs text-success">Linked to a {zohoEntity} vendor in Zoho.</span>
+          ) : vendorName.trim() ? (
+            <span className="mt-1 block text-xs text-charcoal/50">
+              Not linked yet — pick a suggestion or create it, or it will be matched when this PO is pushed.
+            </span>
+          ) : null}
         </label>
         <label className="block text-sm">
           <span className="text-charcoal/80">Date *</span>
@@ -356,20 +377,6 @@ export function PurchaseOrderNew() {
             value={transactionDate}
             onChange={(e) => setTransactionDate(e.target.value)}
           />
-        </label>
-        <label className="block text-sm sm:col-span-2">
-          <span className="text-charcoal/80">Company *</span>
-          <select
-            required
-            className="mt-1 w-full rounded border border-brand-200 px-3 py-3 lg:py-2"
-            value={zohoEntity}
-            onChange={(e) => setZohoEntity(e.target.value)}
-          >
-            <option value="">Select a company…</option>
-            {(companies.data ?? []).map((c: { name: string }) => (
-              <option key={c.name} value={c.name}>{c.name}</option>
-            ))}
-          </select>
         </label>
         <label className="block text-sm sm:col-span-2">
           <span className="text-charcoal/80">Receipt</span>
@@ -396,7 +403,7 @@ export function PurchaseOrderNew() {
         lines={lines}
         onChange={setLines}
         itemOptions={itemOptions}
-        itemsLoading={itemsQ.isLoading}
+        itemsLoading={!zohoEntity || itemsQ.isLoading}
       />
 
       <button

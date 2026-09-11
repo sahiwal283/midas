@@ -4,6 +4,7 @@ import { AlertCircle } from 'lucide-react';
 import { accountantApi, expenseApi } from '../api/expenses';
 import { VendorCombobox } from './VendorCombobox';
 import { EventPicker, useEventPickerAvailable } from './EventPicker';
+import { cardsForCompany } from '../lib/paymentMethodScope';
 import type { Expense } from '../types';
 
 function apiError(err: unknown): { code?: string; message?: string } {
@@ -34,6 +35,14 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
     enabled: editing,
     staleTime: 60_000,
   });
+
+  // Cards belong to one company, and this expense is already charged to one:
+  // offering another company's card here would only re-create the mismatch the
+  // accountant is correcting. The card currently on the expense always stays in
+  // the list — dropping it would blank the select and change the record by
+  // omission rather than by a decision.
+  const selectableCards = cardsForCompany(paymentMethods, expense.zohoEntity ?? '', expense.paymentMethodId);
+  const hiddenCardCount = paymentMethods.length - selectableCards.length;
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -159,12 +168,17 @@ export function AccountantDetailsEdit({ expense }: { expense: Expense }) {
               className={inputCls}
             >
               <option value="">— Select payment method —</option>
-              {paymentMethods.map((pm) => (
+              {selectableCards.map((pm) => (
                 <option key={pm.id} value={pm.id}>
                   {pm.label}{pm.lastFour ? ` ···${pm.lastFour}` : ''}
                 </option>
               ))}
             </select>
+            {expense.zohoEntity && hiddenCardCount > 0 && (
+              <p className="mt-1 text-xs text-charcoal/40">
+                Showing {expense.zohoEntity} cards only ({hiddenCardCount} other {hiddenCardCount === 1 ? 'card' : 'cards'} hidden).
+              </p>
+            )}
           </div>
           {eventsAvailable && (
             <div>

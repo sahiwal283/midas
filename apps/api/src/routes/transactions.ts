@@ -21,6 +21,7 @@ import { env } from '../config/env';
 import { assertActiveCompany } from '../lib/companies';
 import { normalizeSourceType } from '../lib/sourceTypes';
 import { listItemsWithCache, listVendorsWithCache } from '../lib/zohoCatalog';
+import { catalogBrandFor } from '../lib/zohoBrand';
 import { roleAllowed } from '../lib/roles';
 import { poSubmitBlocker } from '../lib/poSubmitGate';
 import { createPoSchema, lineItemSchema, updatePoSchema } from '../lib/poSchemas';
@@ -32,21 +33,33 @@ function sumLineTotals(items: z.infer<typeof lineItemSchema>[]): number {
   return items.reduce((acc, li) => acc + Number(li.total), 0);
 }
 
-router.get('/meta/vendors', asyncHandler(async (_req, res) => {
-  const { vendors, source } = await listVendorsWithCache(env.ZOHO_DEFAULT_BRAND);
+/** Company the caller scoped the picker to, as sent by the PO form. */
+function requestedEntity(req: { query: Record<string, unknown> }): string | undefined {
+  const raw = req.query.zohoEntity;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
+}
+
+// Vendors and items live per Zoho org, so both lists are scoped to the company
+// the purchase order is charged to — an unscoped list offers (and creates)
+// another brand's vendors and items on this brand's PO.
+router.get('/meta/vendors', asyncHandler(async (req, res) => {
+  const brand = catalogBrandFor(requestedEntity(req), env.ZOHO_DEFAULT_BRAND);
+  const { vendors, source } = await listVendorsWithCache(brand);
   res.json({ vendors, source });
 }));
 
-router.get('/meta/items', asyncHandler(async (_req, res) => {
-  const { items, source } = await listItemsWithCache(env.ZOHO_DEFAULT_BRAND);
+router.get('/meta/items', asyncHandler(async (req, res) => {
+  const brand = catalogBrandFor(requestedEntity(req), env.ZOHO_DEFAULT_BRAND);
+  const { items, source } = await listItemsWithCache(brand);
   res.json({ items, source });
 }));
 
 /** Force refresh Zoho vendor/item cache (accountant/admin). */
-router.post('/meta/sync-catalog', requireRole('accountant', 'admin'), asyncHandler(async (_req, res) => {
+router.post('/meta/sync-catalog', requireRole('accountant', 'admin'), asyncHandler(async (req, res) => {
+  const brand = catalogBrandFor(requestedEntity(req), env.ZOHO_DEFAULT_BRAND);
   const [vendorsResult, itemsResult] = await Promise.all([
-    listVendorsWithCache(env.ZOHO_DEFAULT_BRAND),
-    listItemsWithCache(env.ZOHO_DEFAULT_BRAND),
+    listVendorsWithCache(brand),
+    listItemsWithCache(brand),
   ]);
   res.json({
     vendors: { count: vendorsResult.vendors.length, source: vendorsResult.source },

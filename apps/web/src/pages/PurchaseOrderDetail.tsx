@@ -70,9 +70,15 @@ export function PurchaseOrderDetail() {
     setEditError(null);
   }, [id, status]);
 
+  // Scoped to the company this PO is charged to: remapping is a repair tool,
+  // and an unscoped list would let the repair relink the PO to another brand's
+  // vendor — the same cross-org mistake, made deliberately.
+  const poEntity = q.data?.zohoEntity ?? '';
   const vendorsQ = useQuery({
-    queryKey: ['zoho-vendors'],
-    queryFn: async () => (await api.get<{ vendors: ZohoVendor[] }>('/transactions/meta/vendors')).data.vendors,
+    queryKey: ['zoho-vendors', poEntity],
+    queryFn: async () => (await api.get<{ vendors: ZohoVendor[] }>('/transactions/meta/vendors', {
+      params: poEntity ? { zohoEntity: poEntity } : undefined,
+    })).data.vendors,
     staleTime: 60_000,
     enabled: !!q.data && (
       q.data.status === 'draft'
@@ -81,9 +87,12 @@ export function PurchaseOrderDetail() {
     ),
   });
 
+  // Item ids are per Zoho org too — same scoping as the vendor list above.
   const itemsQ = useQuery({
-    queryKey: ['zoho-items'],
-    queryFn: async () => (await api.get<{ items: ZohoItem[] }>('/transactions/meta/items')).data.items,
+    queryKey: ['zoho-items', poEntity],
+    queryFn: async () => (await api.get<{ items: ZohoItem[] }>('/transactions/meta/items', {
+      params: poEntity ? { zohoEntity: poEntity } : undefined,
+    })).data.items,
     staleTime: 60_000,
     enabled: !!q.data && (
       q.data.status === 'draft'

@@ -8,7 +8,7 @@ import { asyncHandler, createError } from '../middleware/error';
 import { zoho } from '../lib/zoho';
 import { vendorKey } from '../lib/vendorMatch';
 import { listVendorsWithCache } from '../lib/zohoCatalog';
-import { resolveBrandFromEntity } from '../lib/zohoBrand';
+import { catalogBrandFor } from '../lib/zohoBrand';
 import { env } from '../config/env';
 import { auditLog } from '../lib/audit';
 
@@ -16,7 +16,7 @@ const router = Router();
 router.use(authenticate);
 
 function brandFor(zohoEntity: string | undefined): string {
-  return (zohoEntity && resolveBrandFromEntity(zohoEntity)) || env.ZOHO_DEFAULT_BRAND;
+  return catalogBrandFor(zohoEntity, env.ZOHO_DEFAULT_BRAND);
 }
 
 // GET /api/v1/vendors?zohoEntity=Haute%20Brands
