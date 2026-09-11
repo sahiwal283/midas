@@ -120,11 +120,18 @@ export const expenseApi = {
   paymentMethods: () =>
     client.get<{ paymentMethods: PaymentMethod[] }>('/payment-methods').then((r) => r.data.paymentMethods),
 
-  uploadReceipt: (expenseId: string, file: File) => {
+  listReceipts: (expenseId: string) =>
+    client.get<{ receipts: Receipt[] }>(`/expenses/${expenseId}/receipts`)
+      .then((r) => r.data.receipts),
+
+  uploadReceipt: (expenseId: string, file: File, opts?: { batch?: boolean }) => {
     const form = new FormData();
     form.append('file', file);
+    // batch=1 holds the auto-approve/auto-push check until the last file of a
+    // multi-photo upload has landed.
+    const qs = opts?.batch ? '?batch=1' : '';
     // Default path is sync OCR — response includes ocrStatus done/failed.
-    return client.post<{ receipt: Receipt; ocrMode?: 'sync' | 'async' }>(`/expenses/${expenseId}/receipts`, form, {
+    return client.post<{ receipt: Receipt; ocrMode?: 'sync' | 'async' }>(`/expenses/${expenseId}/receipts${qs}`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 130_000,
     }).then((r) => r.data.receipt);
@@ -148,14 +155,18 @@ export const transactionReceiptApi = {
     client.get<{ receipts: Receipt[] }>(`/transactions/${transactionId}/receipts`)
       .then((r) => r.data.receipts),
 
-  upload: (transactionId: string, file: File) => {
+  upload: (transactionId: string, file: File, opts?: { batch?: boolean }) => {
     const form = new FormData();
     form.append('file', file);
+    const qs = opts?.batch ? '?batch=1' : '';
     return client.post<{ receipt: Receipt; ocrMode: string }>(
-      `/transactions/${transactionId}/receipts`,
+      `/transactions/${transactionId}/receipts${qs}`,
       form,
     ).then((r) => r.data);
   },
+
+  delete: (transactionId: string, receiptId: string) =>
+    client.delete(`/transactions/${transactionId}/receipts/${receiptId}`).then((r) => r.data),
 };
 
 export interface ScopeCounts {
