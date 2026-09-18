@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.14.0
+
+### Added
+- When an expense with a scanned receipt is submitted, Midas tells the OCR service which extracted details you changed (merchant, amount, date, category, card). The OCR console uses this to report how often scanning gets receipts right the first time.
+- `ocr:backfill-corrections` script reports corrections for expenses submitted in the last 90 days (`--dry-run` to preview).
+
+### Notes
+- Reporting runs in the background after submit and never blocks or fails a submission.
+- Each receipt is reported once (`receipts.ocr_corrections_reported_at`, migration 0032).
+- Only an expense's first receipt is compared — it is the one that prefilled the form. If it was not scanned successfully, the expense is skipped.
+
 ## 1.13.0
 
 ### Added
