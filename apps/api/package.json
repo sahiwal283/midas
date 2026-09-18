@@ -1,6 +1,6 @@
 {
   "name": "@midas/api",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "private": true,
   "main": "dist/server.js",
   "scripts": {
@@ -23,7 +23,8 @@
     "zoho:smoke": "tsx --env-file=../../.env src/scripts/zoho-smoke.ts",
     "recover:admin-pw": "tsx --env-file=../../.env src/scripts/reset-admin-pw.ts",
     "recover:merge-users": "tsx --env-file=../../.env src/scripts/merge-users.ts",
-    "recover:company-state": "tsx --env-file=../../.env src/scripts/repair-company-integration-state.ts"
+    "recover:company-state": "tsx --env-file=../../.env src/scripts/repair-company-integration-state.ts",
+    "ocr:backfill-corrections": "tsx --env-file=../../.env src/scripts/backfill-ocr-corrections.ts"
   },
   "dependencies": {
     "@midas/import": "*",

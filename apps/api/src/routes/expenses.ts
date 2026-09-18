@@ -18,6 +18,7 @@ import { isLikelyDuplicate } from '../lib/duplicates';
 import { isAutoPushEligible } from '../lib/autoApprove';
 import { resolveExpenseKind } from '../lib/expenseKind';
 import { pushExpenseToZoho } from '../lib/zohoPush';
+import { reportOcrCorrectionsForExpense } from '../lib/reportOcrCorrections';
 import { syncExpenseToTransaction, removeSyncedTransaction } from '../lib/syncExpenseTransaction';
 import { effectivelyActiveIds, descendantIds } from '../lib/categoryTree';
 import { assertActiveCompany } from '../lib/companies';
@@ -464,6 +465,8 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
       before: { status: 'draft' },
       after: { status: 'approved' },
     });
+    // Tell the OCR service which extracted fields the user corrected (fire-and-forget).
+    void reportOcrCorrectionsForExpense(expense.id);
     res.json({ expense: recorded });
     return;
   }
@@ -496,6 +499,7 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
     });
 
     const outcome = await pushExpenseToZoho({ ...expense, ...approved }, req.user!.id);
+    void reportOcrCorrectionsForExpense(expense.id);
     // Push failure → zoho_sync_failed (set by the lib) lands in the accountant
     // retry lane; the submitter's part is done either way.
     res.json({
@@ -536,6 +540,7 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
     });
   }
 
+  void reportOcrCorrectionsForExpense(expense.id);
   res.json({ expense: updated, missing: missingForAutoPush ?? undefined });
 }));
 
