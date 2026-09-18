@@ -391,6 +391,8 @@ export const receipts = pgTable('receipts', {
   ocrCostEstimateUsd: numeric('ocr_cost_estimate_usd', { precision: 10, scale: 6 }),
   ocrSubmittedAt: timestamp('ocr_submitted_at'),
   ocrCompletedAt: timestamp('ocr_completed_at'),
+  // Set once corrections for this receipt were reported to the OCR service.
+  ocrCorrectionsReportedAt: timestamp('ocr_corrections_reported_at'),
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 }, (t) => [
   index('receipts_expense_id_idx').on(t.expenseId),
