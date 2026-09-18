@@ -12,8 +12,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 
+// OCR_TIMEOUT_MS is the real 120s upload default, so the timeout test can show
+// the corrections POST capping itself well below it.
 vi.mock('../config/env', () => ({
-  env: { OCR_MODE: 'service', OCR_BASE_URL: 'http://ocr.test', OCR_SERVICE_INTERNAL_TOKEN: 'tok', OCR_CLIENT_APP: 'midas', OCR_TIMEOUT_MS: 5000 },
+  env: { OCR_MODE: 'service', OCR_BASE_URL: 'http://ocr.test', OCR_SERVICE_INTERNAL_TOKEN: 'tok', OCR_CLIENT_APP: 'midas', OCR_TIMEOUT_MS: 120_000 },
 }));
 
 const dbMock = vi.hoisted(() => {
@@ -38,7 +40,10 @@ import { reportOcrCorrectionsForExpense, sendCorrections } from '../lib/reportOc
 const okResponse = { ok: true, status: 202 };
 
 describe('sendCorrections', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    env.OCR_MODE = 'service';
+  });
 
   it('posts one correction per field with service headers', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(okResponse);
@@ -47,7 +52,7 @@ describe('sendCorrections', () => {
       { field: 'merchant', original_value: null, corrected_value: 'Uline' },
     ], { fetchImpl: fetchImpl as unknown as typeof fetch });
 
-    expect(res).toEqual({ sent: 2, failed: 0, failedFields: [] });
+    expect(res).toEqual({ sent: 2, failed: 0, retryableFields: [], rejectedFields: [] });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe('http://ocr.test/ocr/corrections');
     expect(init.method).toBe('POST');
@@ -62,7 +67,7 @@ describe('sendCorrections', () => {
       .mockResolvedValueOnce({ ok: false, status: 503, body: { cancel: vi.fn().mockResolvedValue(undefined) } });
     const res = await sendCorrections('req-1', [{ field: 'date', original_value: 'a', corrected_value: 'b' }], { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(res).toEqual({ sent: 0, failed: 1, failedFields: ['date'] });
+    expect(res).toEqual({ sent: 0, failed: 1, retryableFields: ['date'], rejectedFields: [] });
   });
 
   it('does not retry a 4xx the service will reject again', async () => {
@@ -71,7 +76,31 @@ describe('sendCorrections', () => {
     const res = await sendCorrections('req-1', [{ field: 'date', original_value: 'a', corrected_value: 'b' }], { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(cancel).toHaveBeenCalled();
-    expect(res).toEqual({ sent: 0, failed: 1, failedFields: ['date'] });
+    expect(res).toEqual({ sent: 0, failed: 1, retryableFields: [], rejectedFields: [{ field: 'date', status: 422 }] });
+  });
+
+  it('aborts a hung request at the 10s cap, not the 120s upload timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      const fetchImpl = vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        const signal = init.signal!;
+        signals.push(signal);
+        signal.addEventListener('abort', () => reject(new Error('aborted')));
+      }));
+      const res = sendCorrections('req-1', [{ field: 'date', original_value: 'a', corrected_value: 'b' }], { fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(signals[0].aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signals[0].aborted).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(10_000); // the one retry hangs too
+      expect(await res).toEqual({ sent: 0, failed: 1, retryableFields: ['date'], rejectedFields: [] });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -98,8 +127,11 @@ describe('reportOcrCorrectionsForExpense', () => {
 
   let fetchImpl: ReturnType<typeof vi.fn>;
 
+  const bothFieldsWrong = { fields: { amount: { value: '9.72', source: 'llm' }, merchant: { value: 'Ulinee Corp', source: 'llm' } } };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    env.OCR_MODE = 'service';
     dbMock.returning.mockResolvedValue([{ id: 'rec-1' }]);
     fetchImpl = vi.fn().mockResolvedValue(okResponse);
     vi.stubGlobal('fetch', fetchImpl);
@@ -180,8 +212,32 @@ describe('reportOcrCorrectionsForExpense', () => {
     expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
   });
 
+  it('keeps the stamp when the service refused every correction outright', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+    fetchImpl.mockResolvedValue({ ok: false, status: 422 });
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    // A 422 never succeeds on a retry, so releasing the claim would only make
+    // the backfill re-POST this receipt on every run, forever.
+    expect(res).toMatchObject({ status: 'rejected', sent: 0, failed: 1 });
+    expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+  });
+
+  it('releases the claim when some failures were permanent but one could still land', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt({ ocrData: bothFieldsWrong })]));
+    fetchImpl
+      .mockResolvedValueOnce({ ok: false, status: 422 })
+      .mockResolvedValue({ ok: false, status: 503 });
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'send_failed', sent: 0, failed: 2 });
+    expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
+  });
+
   it('keeps the stamp when only some sends failed, so the rest are not double-counted', async () => {
-    dbMock.findFirst.mockResolvedValueOnce(expense([receipt({ ocrData: { fields: { amount: { value: '9.72', source: 'llm' }, merchant: { value: 'Ulinee Corp', source: 'llm' } } } })]));
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt({ ocrData: bothFieldsWrong })]));
     fetchImpl
       .mockResolvedValueOnce(okResponse)
       .mockResolvedValue({ ok: false, status: 500 });
