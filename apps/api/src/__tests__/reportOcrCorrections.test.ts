@@ -35,7 +35,7 @@ vi.mock('../lib/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error:
 
 import { env } from '../config/env';
 import * as schema from '../db/schema';
-import { reportOcrCorrectionsForExpense, sendCorrections } from '../lib/reportOcrCorrections';
+import { reportOcrCorrectionsForExpense, sendCorrections, sendReviewedAck } from '../lib/reportOcrCorrections';
 
 const okResponse = { ok: true, status: 202 };
 
@@ -115,6 +115,40 @@ describe('sendCorrections', () => {
   });
 });
 
+describe('sendReviewedAck', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    env.OCR_MODE = 'service';
+  });
+
+  it('posts the ack with service headers, no retry', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse);
+    await sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe('http://ocr.test/ocr/corrections/reviewed');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({ 'X-Internal-Token': 'tok', 'X-Client-App': 'midas', 'Content-Type': 'application/json' });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(JSON.parse(init.body)).toEqual({ request_id: 'req-1' });
+  });
+
+  it('never throws when the request errors outright', async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('ECONNRESET'));
+    await expect(sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([404, 503])('does not retry a %i and never throws', async (status) => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status, body: { cancel } });
+    await expect(sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalled();
+  });
+});
+
 describe('reportOcrCorrectionsForExpense', () => {
   const fields = { amount: { value: '9.72', source: 'llm' }, merchant: { value: 'Uline', source: 'llm' } };
   const receipt = (over: Record<string, unknown> = {}) => ({
@@ -156,7 +190,9 @@ describe('reportOcrCorrectionsForExpense', () => {
     expect(res.status).toBe('reported');
     expect(res.corrections).toEqual([{ field: 'amount', original_value: '9.72', corrected_value: '97.20' }]);
     expect(res).toMatchObject({ sent: 1, failed: 0 });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    // One POST for the correction, one for the reviewed ack — see the
+    // dedicated ack tests below for the detailed contract on each.
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
   });
 
@@ -209,7 +245,9 @@ describe('reportOcrCorrectionsForExpense', () => {
     const res = await reportOcrCorrectionsForExpense('exp-1');
 
     expect(res).toEqual({ status: 'reported', corrections: [], sent: 0, failed: 0 });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    // No correction to send, but the ack still fires — see the dedicated
+    // "no corrections" ack test below for the detailed contract.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
   });
 
@@ -272,6 +310,68 @@ describe('reportOcrCorrectionsForExpense', () => {
     expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
   });
 
+  it('posts the ack when there are no corrections — a clean review is still the signal', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt({ ocrData: { fields: { amount: { value: '97.20', source: 'llm' } } } })]));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toEqual({ status: 'reported', corrections: [], sent: 0, failed: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe('http://ocr.test/ocr/corrections/reviewed');
+    expect(JSON.parse(init.body)).toEqual({ request_id: 'req-1' });
+  });
+
+  it('posts both the correction and the ack when the receipt was corrected', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'reported', sent: 1, failed: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const [correctionUrl] = fetchImpl.mock.calls[0];
+    const [ackUrl, ackInit] = fetchImpl.mock.calls[1];
+    expect(correctionUrl).toBe('http://ocr.test/ocr/corrections');
+    expect(ackUrl).toBe('http://ocr.test/ocr/corrections/reviewed');
+    expect(JSON.parse(ackInit.body)).toEqual({ request_id: 'req-1' });
+  });
+
+  it('swallows a 404 from the ack route (an older OCR service without it): no throw, no change to status, claim or corrections', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+    fetchImpl
+      .mockResolvedValueOnce(okResponse) // correction
+      .mockResolvedValueOnce({ ok: false, status: 404, body: { cancel: vi.fn().mockResolvedValue(undefined) } }); // ack
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'reported', corrections: [{ field: 'amount', original_value: '9.72', corrected_value: '97.20' }], sent: 1, failed: 0 });
+    expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+  });
+
+  it.each([503, 500])('swallows a %i from the ack route without affecting the result', async (status) => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+    fetchImpl
+      .mockResolvedValueOnce(okResponse)
+      .mockResolvedValueOnce({ ok: false, status, body: { cancel: vi.fn().mockResolvedValue(undefined) } });
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'reported', sent: 1, failed: 0 });
+    expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+  });
+
+  it('swallows a network error on the ack without affecting the result', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+    fetchImpl
+      .mockResolvedValueOnce(okResponse)
+      .mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'reported', sent: 1, failed: 0 });
+    expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+  });
+
   it('skips entirely when the OCR service is not configured', async () => {
     env.OCR_MODE = 'mock';
 
@@ -281,7 +381,7 @@ describe('reportOcrCorrectionsForExpense', () => {
     expect(dbMock.findFirst).not.toHaveBeenCalled();
   });
 
-  it('computes corrections without sending or stamping in dry-run mode', async () => {
+  it('computes corrections without sending or stamping in dry-run mode (and sends no ack)', async () => {
     dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
 
     const res = await reportOcrCorrectionsForExpense('exp-1', { dryRun: true });
@@ -292,6 +392,7 @@ describe('reportOcrCorrectionsForExpense', () => {
       sent: 0,
       failed: 0,
     });
+    // Never called at all — proves neither the correction POST nor the reviewed ack fires.
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(dbMock.update).not.toHaveBeenCalled();
   });

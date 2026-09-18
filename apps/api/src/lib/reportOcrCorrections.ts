@@ -105,6 +105,48 @@ export async function sendCorrections(
   return { sent, failed: retryableFields.length + rejectedFields.length, retryableFields, rejectedFields };
 }
 
+/**
+ * Acknowledge that Midas reviewed this receipt — corrections or not. The OCR
+ * service's first-time-right denominator only counts jobs it has an ack for,
+ * so a clean review (no corrections) is exactly as important to report as a
+ * corrected one. Best-effort, no retry: a lost ack costs one job in the
+ * denominator, never a submit. Never throws — every failure (transport,
+ * non-2xx, an older OCR service that 404s on this route) is logged and
+ * swallowed here so it can never affect status, the claim, or the
+ * corrections flow.
+ */
+export async function sendReviewedAck(
+  requestId: string,
+  deps: { fetchImpl?: typeof fetch } = {},
+): Promise<void> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Internal-Token': env.OCR_SERVICE_INTERNAL_TOKEN ?? '',
+    'X-Client-App': env.OCR_CLIENT_APP ?? 'midas',
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), CORRECTION_TIMEOUT_MS);
+  try {
+    const res = await fetchImpl(`${env.OCR_BASE_URL}/ocr/corrections/reviewed`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ request_id: requestId }),
+      signal: controller.signal,
+    });
+    // Nothing reads the body, and undici holds the connection open until it
+    // is consumed or cancelled.
+    try { await res.body?.cancel(); } catch { /* connection already gone */ }
+    if (!res.ok) {
+      logger.warn({ requestId, status: res.status }, 'OCR reviewed ack rejected');
+    }
+  } catch (err) {
+    logger.warn({ requestId, err: message(err) }, 'OCR reviewed ack failed');
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function reportOcrCorrectionsForExpense(
   expenseId: string,
   opts: { dryRun?: boolean } = {},
@@ -157,9 +199,18 @@ export async function reportOcrCorrectionsForExpense(
       .returning({ id: receipts.id });
     if (!claimed.length) return { status: 'skipped', reason: 'already_reported', ...empty };
 
-    if (!corrections.length) return { status: 'reported', corrections, sent: 0, failed: 0 };
+    // The claim succeeded, so Midas did review this receipt — ack it
+    // regardless of whether there was anything to correct. This is fired
+    // after the claim (never before) and its outcome is discarded: it must
+    // never change status, the claim/release decision below, or the
+    // corrections result.
+    if (!corrections.length) {
+      await sendReviewedAck(receipt.ocrRequestId);
+      return { status: 'reported', corrections, sent: 0, failed: 0 };
+    }
 
     const { sent, failed, retryableFields, rejectedFields } = await sendCorrections(receipt.ocrRequestId, corrections);
+    await sendReviewedAck(receipt.ocrRequestId);
     if (sent === 0 && retryableFields.length) {
       // Nothing landed and at least one field could still land: release our own
       // claim (never a newer one) and let the backfill retry this receipt.

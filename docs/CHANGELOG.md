@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.15.0
+
+### Changed
+- Scan accuracy on the OCR console now reflects only receipts Midas actually reviewed. Previously every completed scan counted toward the figure, including purchase orders, extension scans, later images on a multi-photo expense, and abandoned drafts — none of which a person could ever correct — which flattered the number. Midas now tells the OCR service whenever a receipt's first image was reviewed, whether or not anything needed fixing, and only those acknowledged receipts count toward the figure.
+
+### Notes
+- The acknowledgement is sent in the background, best-effort, after any corrections for that receipt — it never delays or fails a submission, and a missed acknowledgement (an older OCR service, a dropped connection) simply leaves that one receipt out of the count rather than causing any error.
+
 ## 1.14.1
 
 ### Fixed
