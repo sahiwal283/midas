@@ -24,9 +24,19 @@ function message(err: unknown): string {
   return (err as Error)?.message ?? String(err);
 }
 
-/** 4xx means the service will reject this correction just as hard next time. */
+/**
+ * Most 4xx means the service will reject this correction just as hard next
+ * time. But 401/403/404/408/425 are configuration or transport states that
+ * get fixed — a rotated OCR_SERVICE_INTERNAL_TOKEN, a flipped
+ * OCR_REQUIRE_SERVICE_TOKEN, a route-prefix change, a proxy timeout — and
+ * treating them as permanent would keep the claim forever, silently and
+ * irreversibly destroying corrections for every submit in that window (and
+ * masquerading as an improved first-time-right rate). So these must stay
+ * retryable. Only 400 (malformed body) and 422 (unknown field name) are
+ * genuinely permanent.
+ */
 function retryableStatus(status: number): boolean {
-  return status === 429 || status >= 500;
+  return status === 429 || status === 408 || status === 425 || status === 401 || status === 403 || status === 404 || status >= 500;
 }
 
 /**

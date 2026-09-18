@@ -70,13 +70,24 @@ describe('sendCorrections', () => {
     expect(res).toEqual({ sent: 0, failed: 1, retryableFields: ['date'], rejectedFields: [] });
   });
 
-  it('does not retry a 4xx the service will reject again', async () => {
+  it.each([400, 422])('does not retry a %i, a malformed-body or unknown-field response the service will reject again', async (status) => {
     const cancel = vi.fn().mockResolvedValue(undefined);
-    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 422, body: { cancel } });
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status, body: { cancel } });
     const res = await sendCorrections('req-1', [{ field: 'date', original_value: 'a', corrected_value: 'b' }], { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(cancel).toHaveBeenCalled();
-    expect(res).toEqual({ sent: 0, failed: 1, retryableFields: [], rejectedFields: [{ field: 'date', status: 422 }] });
+    expect(res).toEqual({ sent: 0, failed: 1, retryableFields: [], rejectedFields: [{ field: 'date', status }] });
+  });
+
+  // 401/403/404/408/425 are configuration or transport states that get fixed
+  // (a rotated token, a flipped auth flag, a route-prefix change) — treating
+  // them as permanent would destroy the correction forever on the first hit.
+  it.each([401, 403, 404, 408, 425])('retries a %i auth/routing failure like a 5xx', async (status) => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status, body: { cancel } });
+    const res = await sendCorrections('req-1', [{ field: 'date', original_value: 'a', corrected_value: 'b' }], { fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(res).toEqual({ sent: 0, failed: 1, retryableFields: ['date'], rejectedFields: [] });
   });
 
   it('aborts a hung request at the 10s cap, not the 120s upload timeout', async () => {
@@ -212,16 +223,29 @@ describe('reportOcrCorrectionsForExpense', () => {
     expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
   });
 
-  it('keeps the stamp when the service refused every correction outright', async () => {
+  it.each([400, 422])('keeps the stamp when the service refuses with a permanent %i', async (status) => {
     dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
-    fetchImpl.mockResolvedValue({ ok: false, status: 422 });
+    fetchImpl.mockResolvedValue({ ok: false, status });
 
     const res = await reportOcrCorrectionsForExpense('exp-1');
 
-    // A 422 never succeeds on a retry, so releasing the claim would only make
-    // the backfill re-POST this receipt on every run, forever.
+    // A 400/422 never succeeds on a retry, so releasing the claim would only
+    // make the backfill re-POST this receipt on every run, forever.
     expect(res).toMatchObject({ status: 'rejected', sent: 0, failed: 1 });
     expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+  });
+
+  it.each([401, 403, 404, 408, 425])('releases the claim when the service answers with a fixable %i', async (status) => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+    fetchImpl.mockResolvedValue({ ok: false, status });
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    // A rotated token, a flipped auth flag or a route-prefix change gets
+    // fixed — the claim must release so the backfill retries this receipt
+    // instead of losing the correction forever.
+    expect(res).toMatchObject({ status: 'send_failed', sent: 0, failed: 1 });
+    expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
   });
 
   it('releases the claim when some failures were permanent but one could still land', async () => {
