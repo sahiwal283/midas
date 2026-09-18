@@ -1,8 +1,13 @@
 /**
  * Report user corrections of OCR fields to the OCR service so it can measure
  * accuracy. Never throws into callers; safe to fire-and-forget from submit.
+ *
+ * The OCR service stores every correction it is handed — it has no unique key
+ * on (request_id, field) and de-duplicates nothing. So a correction must be
+ * sent at most once: `receipts.ocr_corrections_reported_at` is claimed before
+ * sending, and released again only if nothing at all landed.
  */
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 
 import { env } from '../config/env';
 import { db } from '../db/index';
@@ -15,44 +20,62 @@ function serviceConfigured(): boolean {
   return env.OCR_MODE === 'service' && Boolean(env.OCR_BASE_URL) && Boolean(env.OCR_SERVICE_INTERNAL_TOKEN);
 }
 
+function message(err: unknown): string {
+  return (err as Error)?.message ?? String(err);
+}
+
+/** 4xx means the service will reject this correction just as hard next time. */
+function retryableStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
 export async function sendCorrections(
   requestId: string,
   corrections: Correction[],
   deps: { fetchImpl?: typeof fetch } = {},
-): Promise<{ sent: number; failed: number }> {
+): Promise<{ sent: number; failed: number; failedFields: CorrectableField[] }> {
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Internal-Token': env.OCR_SERVICE_INTERNAL_TOKEN ?? '',
+    'X-Client-App': env.OCR_CLIENT_APP ?? 'midas',
+  };
   let sent = 0;
-  let failed = 0;
+  const failedFields: CorrectableField[] = [];
+
   for (const c of corrections) {
-    const init: RequestInit = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Token': env.OCR_SERVICE_INTERNAL_TOKEN ?? '',
-        'X-Client-App': env.OCR_CLIENT_APP ?? 'midas',
-      },
-      body: JSON.stringify({ request_id: requestId, field: c.field, original_value: c.original_value, corrected_value: c.corrected_value }),
-    };
+    const body = JSON.stringify({ request_id: requestId, field: c.field, original_value: c.original_value, corrected_value: c.corrected_value });
     let ok = false;
     for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), env.OCR_TIMEOUT_MS);
       try {
-        const res = await fetchImpl(`${env.OCR_BASE_URL}/ocr/corrections`, init);
+        const res = await fetchImpl(`${env.OCR_BASE_URL}/ocr/corrections`, { method: 'POST', headers, body, signal: controller.signal });
         ok = res.ok;
-        if (!ok) logger.warn({ requestId, field: c.field, status: res.status, attempt }, 'OCR correction report rejected');
+        // Nothing reads the body, and undici holds the connection open until
+        // it is consumed or cancelled.
+        try { await res.body?.cancel(); } catch { /* connection already gone */ }
+        if (!ok) {
+          logger.warn({ requestId, field: c.field, status: res.status, attempt }, 'OCR correction report rejected');
+          if (!retryableStatus(res.status)) break;
+        }
       } catch (err) {
-        logger.warn({ requestId, field: c.field, attempt, err: (err as Error).message }, 'OCR correction report failed');
+        logger.warn({ requestId, field: c.field, attempt, err: message(err) }, 'OCR correction report failed');
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
     if (ok) sent++;
-    else failed++;
+    else failedFields.push(c.field);
   }
-  return { sent, failed };
+
+  return { sent, failed: failedFields.length, failedFields };
 }
 
 export async function reportOcrCorrectionsForExpense(
   expenseId: string,
   opts: { dryRun?: boolean } = {},
-): Promise<{ status: 'skipped' | 'reported' | 'dry_run'; reason?: string; corrections: Correction[]; sent: number; failed: number }> {
+): Promise<{ status: 'skipped' | 'reported' | 'send_failed' | 'dry_run'; reason?: string; corrections: Correction[]; sent: number; failed: number }> {
   const empty = { corrections: [] as Correction[], sent: 0, failed: 0 };
   try {
     if (!serviceConfigured()) return { status: 'skipped', reason: 'ocr_service_not_configured', ...empty };
@@ -91,14 +114,33 @@ export async function reportOcrCorrectionsForExpense(
 
     if (opts.dryRun) return { status: 'dry_run', corrections, sent: 0, failed: 0 };
 
-    const { sent, failed } = corrections.length
-      ? await sendCorrections(receipt.ocrRequestId, corrections)
-      : { sent: 0, failed: 0 };
-    await db.update(receipts).set({ ocrCorrectionsReportedAt: new Date() }).where(eq(receipts.id, receipt.id));
-    if (corrections.length) logger.info({ expenseId, requestId: receipt.ocrRequestId, sent, failed }, 'Reported OCR corrections');
+    // Claim the receipt before sending. The conditional update is the only
+    // thing standing between a concurrent resubmit and double-counted
+    // corrections, since the service de-duplicates nothing.
+    const claimed = await db.update(receipts)
+      .set({ ocrCorrectionsReportedAt: new Date() })
+      .where(and(eq(receipts.id, receipt.id), isNull(receipts.ocrCorrectionsReportedAt)))
+      .returning({ id: receipts.id });
+    if (!claimed.length) return { status: 'skipped', reason: 'already_reported', ...empty };
+
+    if (!corrections.length) return { status: 'reported', corrections, sent: 0, failed: 0 };
+
+    const { sent, failed, failedFields } = await sendCorrections(receipt.ocrRequestId, corrections);
+    if (sent === 0) {
+      // Nothing landed, so nothing would be double-counted: release the claim
+      // and let the backfill retry this receipt.
+      await db.update(receipts).set({ ocrCorrectionsReportedAt: null }).where(eq(receipts.id, receipt.id));
+      logger.warn({ expenseId, requestId: receipt.ocrRequestId, failed, failedFields }, 'OCR correction reporting failed; receipt left unreported for retry');
+      return { status: 'send_failed', corrections, sent, failed };
+    }
+    if (failed) {
+      // Stays claimed: a retry would double-count the fields that did land.
+      logger.warn({ expenseId, requestId: receipt.ocrRequestId, failedFields }, 'Some OCR corrections were not reported');
+    }
+    logger.info({ expenseId, requestId: receipt.ocrRequestId, sent, failed }, 'Reported OCR corrections');
     return { status: 'reported', corrections, sent, failed };
   } catch (err) {
-    logger.warn({ expenseId, err: (err as Error).message }, 'OCR correction reporting skipped after error');
+    logger.warn({ expenseId, err: message(err) }, 'OCR correction reporting skipped after error');
     return { status: 'skipped', reason: 'error', ...empty };
   }
 }

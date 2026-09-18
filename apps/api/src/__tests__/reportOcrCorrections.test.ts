@@ -3,22 +3,26 @@
  *
  * Covers:
  *  - the POST contract to the OCR service (URL, headers, one body per field)
- *  - retry-once-then-count-a-failure, without throwing into the caller
+ *  - retry on transport failures and 5xx only, never on a 4xx
  *  - the first-receipt selection rule: only the receipt that prefilled the
  *    form is ever diffed, so a later scan can never invent corrections
+ *  - the claim/release of ocr_corrections_reported_at, which is the only
+ *    guard against double-counting (the OCR service de-duplicates nothing)
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { drizzle } from 'drizzle-orm/node-postgres';
 
 vi.mock('../config/env', () => ({
-  env: { OCR_MODE: 'service', OCR_BASE_URL: 'http://ocr.test', OCR_SERVICE_INTERNAL_TOKEN: 'tok', OCR_CLIENT_APP: 'midas' },
+  env: { OCR_MODE: 'service', OCR_BASE_URL: 'http://ocr.test', OCR_SERVICE_INTERNAL_TOKEN: 'tok', OCR_CLIENT_APP: 'midas', OCR_TIMEOUT_MS: 5000 },
 }));
 
 const dbMock = vi.hoisted(() => {
   const findFirst = vi.fn();
-  const where = vi.fn().mockResolvedValue(undefined);
+  const returning = vi.fn();
+  const where = vi.fn(() => Object.assign(Promise.resolve(undefined), { returning }));
   const set = vi.fn(() => ({ where }));
   const update = vi.fn(() => ({ set }));
-  return { findFirst, where, set, update };
+  return { findFirst, returning, where, set, update };
 });
 
 vi.mock('../db/index', () => ({
@@ -27,44 +31,59 @@ vi.mock('../db/index', () => ({
 
 vi.mock('../lib/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
+import { env } from '../config/env';
+import * as schema from '../db/schema';
 import { reportOcrCorrectionsForExpense, sendCorrections } from '../lib/reportOcrCorrections';
 
+const okResponse = { ok: true, status: 202 };
+
 describe('sendCorrections', () => {
-  beforeEach(() => vi.restoreAllMocks());
+  beforeEach(() => vi.clearAllMocks());
 
   it('posts one correction per field with service headers', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 202 });
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse);
     const res = await sendCorrections('req-1', [
       { field: 'amount', original_value: '9.72', corrected_value: '97.20' },
       { field: 'merchant', original_value: null, corrected_value: 'Uline' },
     ], { fetchImpl: fetchImpl as unknown as typeof fetch });
 
-    expect(res).toEqual({ sent: 2, failed: 0 });
+    expect(res).toEqual({ sent: 2, failed: 0, failedFields: [] });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe('http://ocr.test/ocr/corrections');
     expect(init.method).toBe('POST');
     expect(init.headers).toMatchObject({ 'X-Internal-Token': 'tok', 'X-Client-App': 'midas', 'Content-Type': 'application/json' });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.parse(init.body)).toEqual({ request_id: 'req-1', field: 'amount', original_value: '9.72', corrected_value: '97.20' });
   });
 
   it('retries once, then counts a failure without throwing', async () => {
     const fetchImpl = vi.fn()
       .mockRejectedValueOnce(new Error('ECONNRESET'))
-      .mockResolvedValueOnce({ ok: false, status: 503 });
+      .mockResolvedValueOnce({ ok: false, status: 503, body: { cancel: vi.fn().mockResolvedValue(undefined) } });
     const res = await sendCorrections('req-1', [{ field: 'date', original_value: 'a', corrected_value: 'b' }], { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(res).toEqual({ sent: 0, failed: 1 });
+    expect(res).toEqual({ sent: 0, failed: 1, failedFields: ['date'] });
+  });
+
+  it('does not retry a 4xx the service will reject again', async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 422, body: { cancel } });
+    const res = await sendCorrections('req-1', [{ field: 'date', original_value: 'a', corrected_value: 'b' }], { fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalled();
+    expect(res).toEqual({ sent: 0, failed: 1, failedFields: ['date'] });
   });
 });
 
 describe('reportOcrCorrectionsForExpense', () => {
+  const fields = { amount: { value: '9.72', source: 'llm' }, merchant: { value: 'Uline', source: 'llm' } };
   const receipt = (over: Record<string, unknown> = {}) => ({
     id: 'rec-1',
     uploadedAt: new Date('2026-09-16T10:00:00Z'),
     ocrStatus: 'done',
     ocrRequestId: 'req-1',
     ocrCorrectionsReportedAt: null,
-    ocrData: { fields: { amount: { value: '9.72', source: 'llm' }, merchant: { value: 'Uline', source: 'llm' } } },
+    ocrData: { fields },
     ...over,
   });
   const expense = (receipts: unknown[]) => ({
@@ -81,11 +100,12 @@ describe('reportOcrCorrectionsForExpense', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 202 });
+    dbMock.returning.mockResolvedValue([{ id: 'rec-1' }]);
+    fetchImpl = vi.fn().mockResolvedValue(okResponse);
     vi.stubGlobal('fetch', fetchImpl);
   });
 
-  it('reports corrections against the first receipt and marks it reported', async () => {
+  it('reports corrections against the first receipt and stamps it', async () => {
     dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
 
     const res = await reportOcrCorrectionsForExpense('exp-1');
@@ -94,7 +114,7 @@ describe('reportOcrCorrectionsForExpense', () => {
     expect(res.corrections).toEqual([{ field: 'amount', original_value: '9.72', corrected_value: '97.20' }]);
     expect(res).toMatchObject({ sent: 1, failed: 0 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(dbMock.set).toHaveBeenCalledWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+    expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
   });
 
   // The query returns the first receipt only; both are passed here to prove the
@@ -128,5 +148,96 @@ describe('reportOcrCorrectionsForExpense', () => {
 
     expect(res).toEqual({ status: 'skipped', reason: 'already_reported', corrections: [], sent: 0, failed: 0 });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when a concurrent writer claimed the receipt first', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+    dbMock.returning.mockResolvedValueOnce([]);
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toEqual({ status: 'skipped', reason: 'already_reported', corrections: [], sent: 0, failed: 0 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('stamps a receipt whose fields the user did not change', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt({ ocrData: { fields: { amount: { value: '97.20', source: 'llm' } } } })]));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toEqual({ status: 'reported', corrections: [], sent: 0, failed: 0 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+  });
+
+  it('releases the claim when every send failed, so the backfill can retry', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+    fetchImpl.mockRejectedValue(new Error('ECONNRESET'));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'send_failed', sent: 0, failed: 1 });
+    expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
+  });
+
+  it('keeps the stamp when only some sends failed, so the rest are not double-counted', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt({ ocrData: { fields: { amount: { value: '9.72', source: 'llm' }, merchant: { value: 'Ulinee Corp', source: 'llm' } } } })]));
+    fetchImpl
+      .mockResolvedValueOnce(okResponse)
+      .mockResolvedValue({ ok: false, status: 500 });
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'reported', sent: 1, failed: 1 });
+    expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+  });
+
+  it('skips entirely when the OCR service is not configured', async () => {
+    env.OCR_MODE = 'mock';
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toEqual({ status: 'skipped', reason: 'ocr_service_not_configured', corrections: [], sent: 0, failed: 0 });
+    expect(dbMock.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('computes corrections without sending or stamping in dry-run mode', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1', { dryRun: true });
+
+    expect(res).toEqual({
+      status: 'dry_run',
+      corrections: [{ field: 'amount', original_value: '9.72', corrected_value: '97.20' }],
+      sent: 0,
+      failed: 0,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    env.OCR_MODE = 'service';
+    vi.unstubAllGlobals();
+  });
+});
+
+// A query the driver rejects would be swallowed by the reporter's top-level
+// catch and look like a permanent "no corrections" — so compile the real
+// query config the reporter builds and check it asks for one receipt.
+describe('first-receipt query', () => {
+  it('orders by (uploaded_at, id) and limits to the first receipt', async () => {
+    vi.clearAllMocks();
+    dbMock.findFirst.mockResolvedValueOnce(undefined);
+    await reportOcrCorrectionsForExpense('exp-1');
+
+    const config = dbMock.findFirst.mock.calls[0][0];
+    // A client that is never queried: toSQL() only compiles the query.
+    const realDb = drizzle({ query: () => Promise.resolve({ rows: [] }) } as never, { schema });
+    const { sql, params } = realDb.query.expenses.findFirst(config).toSQL();
+
+    expect(sql).toContain('order by "expenses_receipts"."uploaded_at" asc, "expenses_receipts"."id" asc limit $');
+    expect(sql).toContain('"expenses_receipts"."ocr_corrections_reported_at"');
+    expect(params).toContain('exp-1');
   });
 });
