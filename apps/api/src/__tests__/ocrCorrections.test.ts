@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { diffOcrCorrections, lastFour, normalizeAmountCents, normalizeDate, normalizeText } from '../lib/ocrCorrections';
 
 const submitted = { merchant: 'Uline', amount: '97.20', date: '2026-09-16', categoryName: 'Shipping Supplies', cardLastFour: '4242' };
+// `source` is accepted (and ignored) here because production OCR field
+// objects carry it; diffOcrCorrections no longer reads it — see below.
 const f = (value: string | null, source = 'llm') => ({ value, source });
 
 describe('normalizers', () => {
@@ -62,7 +64,22 @@ describe('diffOcrCorrections', () => {
     expect(diffOcrCorrections({ cardLastFour: f('1111') }, { ...submitted, cardLastFour: null })).toEqual([]);
   });
 
-  it('ignores fields Midas inferred itself', () => {
-    expect(diffOcrCorrections({ merchant: f('Wrong', 'inference'), amount: f('1.00', 'rule_based') }, submitted)).toEqual([]);
+  // Corrections are now reported regardless of the field's source: the user
+  // sees and can correct an inferred/rule-based prefill exactly like an OCR
+  // one, so it counts toward first-time-right accuracy the same way.
+  it('reports fields Midas inferred or rule-filled itself, same as any other source', () => {
+    expect(diffOcrCorrections({ merchant: f('Wrong', 'inference'), amount: f('1.00', 'rule_based') }, submitted)).toEqual([
+      { field: 'merchant', original_value: 'Wrong', corrected_value: 'Uline' },
+      { field: 'amount', original_value: '1.00', corrected_value: '97.20' },
+    ]);
+  });
+
+  // Realistic production case: OCR extracted nothing usable for merchant, so
+  // Midas's rule engine guessed a stray line off the receipt. The user fixed
+  // it — that is a real correction, not a clean first-time-right scan.
+  it('reports an inference-sourced merchant guess the user corrected', () => {
+    expect(diffOcrCorrections({ merchant: f('S Arville St', 'inference') }, { ...submitted, merchant: 'Circle k' })).toEqual([
+      { field: 'merchant', original_value: 'S Arville St', corrected_value: 'Circle k' },
+    ]);
   });
 });

@@ -7,7 +7,6 @@ export type CorrectableField = 'merchant' | 'amount' | 'date' | 'category' | 'ca
 
 export interface OcrFieldLike {
   value: string | null;
-  source?: string;
 }
 
 export interface SubmittedValues {
@@ -23,9 +22,6 @@ export interface Correction {
   original_value: string | null;
   corrected_value: string | null;
 }
-
-/** Values Midas filled in itself are not the OCR service's mistakes. */
-const MIDAS_INFERRED_SOURCES = new Set(['inference', 'rule_based']);
 
 export function normalizeAmountCents(v: string | null | undefined): number | null {
   if (v === null || v === undefined) return null;
@@ -55,7 +51,7 @@ export function lastFour(v: string | null | undefined): string | null {
 }
 
 function usable(field: OcrFieldLike | undefined): field is OcrFieldLike {
-  return Boolean(field) && !MIDAS_INFERRED_SOURCES.has(String(field!.source ?? ''));
+  return Boolean(field);
 }
 
 export function diffOcrCorrections(
