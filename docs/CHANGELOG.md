@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.14.1
+
+### Fixed
+- Scan-accuracy reporting now counts a correction whenever a scanned detail (merchant, amount, date, category, card) was changed on submit, no matter how that detail was originally filled in — including when Midas itself guessed or inferred a value the user then fixed. Previously those were silently excluded, which understated how often scanning needed a fix and could even count a wrong Midas-side guess as "right the first time."
+
 ## 1.14.0
 
 ### Added
