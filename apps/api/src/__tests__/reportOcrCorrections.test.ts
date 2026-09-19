@@ -147,6 +147,31 @@ describe('sendReviewedAck', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(cancel).toHaveBeenCalled();
   });
+
+  it('aborts a hung request at the 10s cap and resolves cleanly, with no retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const signals: AbortSignal[] = [];
+      const fetchImpl = vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        const signal = init.signal!;
+        signals.push(signal);
+        signal.addEventListener('abort', () => reject(new Error('aborted')));
+      }));
+      const res = sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(signals[0].aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signals[0].aborted).toBe(true);
+
+      // Swallowed, not retried: the abort's rejection resolves the ack to
+      // void rather than throwing or hanging on a second attempt.
+      await expect(res).resolves.toBeUndefined();
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('reportOcrCorrectionsForExpense', () => {
