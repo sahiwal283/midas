@@ -26,7 +26,8 @@ import { logger } from './logger';
 import { diffOcrCorrections } from './ocrCorrections';
 import type { Correction, CorrectableField, OcrFieldLike } from './ocrCorrections';
 
-function serviceConfigured(): boolean {
+/** Exported for `ocr:backfill-reviewed`, which must not POST into the void. */
+export function serviceConfigured(): boolean {
   return env.OCR_MODE === 'service' && Boolean(env.OCR_BASE_URL) && Boolean(env.OCR_SERVICE_INTERNAL_TOKEN);
 }
 
@@ -213,10 +214,10 @@ export async function reportOcrCorrectionsForExpense(
       .returning({ id: receipts.id });
     if (!claimed.length) return { status: 'skipped', reason: 'already_reported', ...empty };
 
-    // The claim succeeded, so Midas did review this receipt — ack it
-    // regardless of whether there was anything to correct. This is fired
-    // after the claim (never before) and its outcome is discarded: it must
-    // never change status, the claim/release decision below, or the
+    // Midas reviewed this receipt and found nothing to correct, so reporting
+    // it is already final: ack the clean review — it is exactly as much of a
+    // signal as a corrected one. Fired after the claim, never before, and its
+    // outcome is discarded: it must never change status, the claim, or the
     // corrections result.
     if (!corrections.length) {
       await sendReviewedAck(receipt.ocrRequestId);
