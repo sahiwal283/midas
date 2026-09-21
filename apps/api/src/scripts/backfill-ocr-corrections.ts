@@ -16,11 +16,15 @@
  * gentle with.
  *
  * reportOcrCorrectionsForExpense's result status is one of:
- *   'reported'    stamped; corrections were sent (or there were none to send)
+ *   'reported'    stamped; every correction landed (or there were none to send)
  *   'rejected'    the OCR service permanently refused every correction
- *                 (401/404/422) — claim is KEPT so it is never retried
- *   'send_failed' every send failed with a retryable error (network/timeout/
- *                 429/5xx) — claim was RELEASED so a later run can retry it
+ *                 (400 malformed body / 422 unknown field) — claim is KEPT so
+ *                 it is never retried
+ *   'send_failed' at least one correction could still land (network/timeout/
+ *                 401/403/404/408/425/429/5xx) — claim was RELEASED so a later
+ *                 run redelivers the whole receipt. Corrections that already
+ *                 landed are re-sent and discarded by the service (UNIQUE
+ *                 (request_id, field), ON CONFLICT DO NOTHING since 0.21.0)
  *   'dry_run'     computed only; nothing claimed, sent, or written
  *   'skipped'     see `reason`: no_receipt, first_receipt_not_scanned,
  *                 already_reported, no_ocr_fields, ocr_service_not_configured,

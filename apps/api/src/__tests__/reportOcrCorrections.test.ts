@@ -6,8 +6,11 @@
  *  - retry on transport failures and 5xx only, never on a 4xx
  *  - the first-receipt selection rule: only the receipt that prefilled the
  *    form is ever diffed, so a later scan can never invent corrections
- *  - the claim/release of ocr_corrections_reported_at, which is the only
- *    guard against double-counting (the OCR service de-duplicates nothing)
+ *  - the claim/release of ocr_corrections_reported_at: claimed before any
+ *    send so a concurrent resubmit cannot report the same receipt twice,
+ *    released again whenever a field could still land so the backfill can
+ *    redeliver it
+ *  - the invariant that a released claim never sends the reviewed ack
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -38,6 +41,10 @@ import * as schema from '../db/schema';
 import { reportOcrCorrectionsForExpense, sendCorrections, sendReviewedAck } from '../lib/reportOcrCorrections';
 
 const okResponse = { ok: true, status: 202 };
+
+/** The reviewed-ack POSTs among a fetch mock's calls (the rest are corrections). */
+const ackCalls = (f: ReturnType<typeof vi.fn>) =>
+  f.mock.calls.filter(([url]) => String(url) === 'http://ocr.test/ocr/corrections/reviewed');
 
 describe('sendCorrections', () => {
   beforeEach(() => {
@@ -123,7 +130,7 @@ describe('sendReviewedAck', () => {
 
   it('posts the ack with service headers, no retry', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(okResponse);
-    await sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch })).resolves.toBe(true);
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0];
@@ -134,16 +141,16 @@ describe('sendReviewedAck', () => {
     expect(JSON.parse(init.body)).toEqual({ request_id: 'req-1' });
   });
 
-  it('never throws when the request errors outright', async () => {
+  it('never throws when the request errors outright, and reports the ack as not landed', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('ECONNRESET'));
-    await expect(sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch })).resolves.toBeUndefined();
+    await expect(sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch })).resolves.toBe(false);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it.each([404, 503])('does not retry a %i and never throws', async (status) => {
     const cancel = vi.fn().mockResolvedValue(undefined);
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status, body: { cancel } });
-    await expect(sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch })).resolves.toBeUndefined();
+    await expect(sendReviewedAck('req-1', { fetchImpl: fetchImpl as unknown as typeof fetch })).resolves.toBe(false);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(cancel).toHaveBeenCalled();
   });
@@ -165,8 +172,8 @@ describe('sendReviewedAck', () => {
       expect(signals[0].aborted).toBe(true);
 
       // Swallowed, not retried: the abort's rejection resolves the ack to
-      // void rather than throwing or hanging on a second attempt.
-      await expect(res).resolves.toBeUndefined();
+      // false rather than throwing or hanging on a second attempt.
+      await expect(res).resolves.toBe(false);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
@@ -284,6 +291,10 @@ describe('reportOcrCorrectionsForExpense', () => {
 
     expect(res).toMatchObject({ status: 'send_failed', sent: 0, failed: 1 });
     expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
+    // The claim is released, so this receipt has not been reported yet: an ack
+    // here would tell the OCR service the job was reviewed with nothing to
+    // correct — i.e. score it right first time. The retry sends the ack.
+    expect(ackCalls(fetchImpl)).toHaveLength(0);
   });
 
   it.each([400, 422])('keeps the stamp when the service refuses with a permanent %i', async (status) => {
@@ -296,6 +307,8 @@ describe('reportOcrCorrectionsForExpense', () => {
     // make the backfill re-POST this receipt on every run, forever.
     expect(res).toMatchObject({ status: 'rejected', sent: 0, failed: 1 });
     expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+    // The claim is kept, so reporting this receipt is finished: the ack fires.
+    expect(ackCalls(fetchImpl)).toHaveLength(1);
   });
 
   it.each([401, 403, 404, 408, 425])('releases the claim when the service answers with a fixable %i', async (status) => {
@@ -309,6 +322,7 @@ describe('reportOcrCorrectionsForExpense', () => {
     // instead of losing the correction forever.
     expect(res).toMatchObject({ status: 'send_failed', sent: 0, failed: 1 });
     expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
+    expect(ackCalls(fetchImpl)).toHaveLength(0);
   });
 
   it('releases the claim when some failures were permanent but one could still land', async () => {
@@ -321,9 +335,10 @@ describe('reportOcrCorrectionsForExpense', () => {
 
     expect(res).toMatchObject({ status: 'send_failed', sent: 0, failed: 2 });
     expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
+    expect(ackCalls(fetchImpl)).toHaveLength(0);
   });
 
-  it('keeps the stamp when only some sends failed, so the rest are not double-counted', async () => {
+  it('releases the claim when one field landed and another can still be retried', async () => {
     dbMock.findFirst.mockResolvedValueOnce(expense([receipt({ ocrData: bothFieldsWrong })]));
     fetchImpl
       .mockResolvedValueOnce(okResponse)
@@ -331,8 +346,23 @@ describe('reportOcrCorrectionsForExpense', () => {
 
     const res = await reportOcrCorrectionsForExpense('exp-1');
 
-    expect(res).toMatchObject({ status: 'reported', sent: 1, failed: 1 });
+    // Keeping the claim here would lose the field that did not land, forever.
+    // Re-sending the one that did is harmless: since OCR service 0.21.0 the
+    // corrections table is UNIQUE (request_id, field) and the insert is
+    // ON CONFLICT DO NOTHING.
+    expect(res).toMatchObject({ status: 'send_failed', sent: 1, failed: 1 });
+    expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
+    expect(ackCalls(fetchImpl)).toHaveLength(0);
+  });
+
+  it('keeps the claim when every field landed', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt({ ocrData: bothFieldsWrong })]));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'reported', sent: 2, failed: 0 });
     expect(dbMock.set).toHaveBeenCalledExactlyOnceWith({ ocrCorrectionsReportedAt: expect.any(Date) });
+    expect(ackCalls(fetchImpl)).toHaveLength(1);
   });
 
   it('posts the ack when there are no corrections — a clean review is still the signal', async () => {
