@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.15.0
+
+### Added
+- `ocr:backfill-reviewed` script acknowledges every receipt Midas has already reviewed, so the accuracy figure covers past receipts from day one instead of climbing toward the truth over the following month. `--dry-run` previews, `--days=N` limits the window, and re-running is safe.
+
+### Changed
+- Scan accuracy on the OCR console now reflects only receipts Midas actually reviewed. Previously every completed scan counted toward the figure, including purchase orders, extension scans, later images on a multi-photo expense, and abandoned drafts — none of which a person could ever correct — which flattered the number. Midas now tells the OCR service whenever a receipt's first image was reviewed, whether or not anything needed fixing, and only those acknowledged receipts count toward the figure.
+
+### Notes
+- The acknowledgement is sent in the background, best-effort, once a receipt's reporting is finished with nothing left to send — it never delays or fails a submission. If a correction for that receipt could not be delivered, the receipt is left for the next backfill run and acknowledged then, rather than being counted as right the first time. A missed acknowledgement (an older OCR service, a dropped connection) simply leaves that one receipt out of the count rather than causing any error.
+
 ## 1.14.1
 
 ### Fixed

@@ -2,10 +2,22 @@
  * Report user corrections of OCR fields to the OCR service so it can measure
  * accuracy. Never throws into callers; safe to fire-and-forget from submit.
  *
- * The OCR service stores every correction it is handed — it has no unique key
- * on (request_id, field) and de-duplicates nothing. So a correction must be
- * sent at most once: `receipts.ocr_corrections_reported_at` is claimed before
- * sending, and released again only if nothing at all landed.
+ * Since OCR service 0.21.0 the corrections table is UNIQUE (request_id, field)
+ * and the insert is ON CONFLICT DO NOTHING, so re-sending a correction that
+ * already landed is a no-op rather than a duplicate row.
+ * `receipts.ocr_corrections_reported_at` is still claimed before sending — it
+ * is what keeps a concurrent resubmit from reporting the same receipt twice,
+ * and what tells the backfill which receipts still need reporting — but it is
+ * released again whenever any field could still land, so the backfill can
+ * redeliver the whole receipt.
+ *
+ * The reviewed ack is sent only once this receipt's reporting is finished with
+ * nothing outstanding: no corrections to make, or every correction delivered
+ * or permanently refused. A receipt with a correction still to land is never
+ * acked — not when its claim was released for redelivery, and not when the
+ * release itself failed — because an ack without that correction tells the
+ * service the job was reviewed and found right first time, corrupting the
+ * exact figure this reporting exists to measure.
  */
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
@@ -16,7 +28,8 @@ import { logger } from './logger';
 import { diffOcrCorrections } from './ocrCorrections';
 import type { Correction, CorrectableField, OcrFieldLike } from './ocrCorrections';
 
-function serviceConfigured(): boolean {
+/** Exported for `ocr:backfill-reviewed`, which must not POST into the void. */
+export function serviceConfigured(): boolean {
   return env.OCR_MODE === 'service' && Boolean(env.OCR_BASE_URL) && Boolean(env.OCR_SERVICE_INTERNAL_TOKEN);
 }
 
@@ -24,9 +37,19 @@ function message(err: unknown): string {
   return (err as Error)?.message ?? String(err);
 }
 
-/** 4xx means the service will reject this correction just as hard next time. */
+/**
+ * Most 4xx means the service will reject this correction just as hard next
+ * time. But 401/403/404/408/425 are configuration or transport states that
+ * get fixed — a rotated OCR_SERVICE_INTERNAL_TOKEN, a flipped
+ * OCR_REQUIRE_SERVICE_TOKEN, a route-prefix change, a proxy timeout — and
+ * treating them as permanent would keep the claim forever, silently and
+ * irreversibly destroying corrections for every submit in that window (and
+ * masquerading as an improved first-time-right rate). So these must stay
+ * retryable. Only 400 (malformed body) and 422 (unknown field name) are
+ * genuinely permanent.
+ */
 function retryableStatus(status: number): boolean {
-  return status === 429 || status >= 500;
+  return status === 429 || status === 408 || status === 425 || status === 401 || status === 403 || status === 404 || status >= 500;
 }
 
 /**
@@ -95,6 +118,51 @@ export async function sendCorrections(
   return { sent, failed: retryableFields.length + rejectedFields.length, retryableFields, rejectedFields };
 }
 
+/**
+ * Acknowledge that Midas reviewed this receipt — corrections or not. The OCR
+ * service's first-time-right denominator only counts jobs it has an ack for,
+ * so a clean review (no corrections) is exactly as important to report as a
+ * corrected one. Best-effort, no retry: a lost ack costs one job in the
+ * denominator, never a submit. Never throws — every failure (transport,
+ * non-2xx, an older OCR service that 404s on this route) is logged and
+ * swallowed here so it can never affect status, the claim, or the
+ * corrections flow. Resolves true only when the service accepted the ack: the
+ * submit path ignores that, `ocr:backfill-reviewed` counts it.
+ */
+export async function sendReviewedAck(
+  requestId: string,
+  deps: { fetchImpl?: typeof fetch } = {},
+): Promise<boolean> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Internal-Token': env.OCR_SERVICE_INTERNAL_TOKEN ?? '',
+    'X-Client-App': env.OCR_CLIENT_APP ?? 'midas',
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), CORRECTION_TIMEOUT_MS);
+  try {
+    const res = await fetchImpl(`${env.OCR_BASE_URL}/ocr/corrections/reviewed`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ request_id: requestId }),
+      signal: controller.signal,
+    });
+    // Nothing reads the body, and undici holds the connection open until it
+    // is consumed or cancelled.
+    try { await res.body?.cancel(); } catch { /* connection already gone */ }
+    if (!res.ok) {
+      logger.warn({ requestId, status: res.status }, 'OCR reviewed ack rejected');
+    }
+    return res.ok;
+  } catch (err) {
+    logger.warn({ requestId, err: message(err) }, 'OCR reviewed ack failed');
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function reportOcrCorrectionsForExpense(
   expenseId: string,
   opts: { dryRun?: boolean } = {},
@@ -137,9 +205,10 @@ export async function reportOcrCorrectionsForExpense(
 
     if (opts.dryRun) return { status: 'dry_run', corrections, sent: 0, failed: 0 };
 
-    // Claim the receipt before sending. The conditional update is the only
-    // thing standing between a concurrent resubmit and double-counted
-    // corrections, since the service de-duplicates nothing.
+    // Claim the receipt before sending. The conditional update is what stands
+    // between a concurrent resubmit and a second round of reporting for the
+    // same receipt; the service's idempotent insert is only the backstop if
+    // the two ever overlap.
     const claimedAt = new Date();
     const claimed = await db.update(receipts)
       .set({ ocrCorrectionsReportedAt: claimedAt })
@@ -147,26 +216,65 @@ export async function reportOcrCorrectionsForExpense(
       .returning({ id: receipts.id });
     if (!claimed.length) return { status: 'skipped', reason: 'already_reported', ...empty };
 
-    if (!corrections.length) return { status: 'reported', corrections, sent: 0, failed: 0 };
+    // Midas reviewed this receipt and found nothing to correct, so reporting
+    // it is already final: ack the clean review — it is exactly as much of a
+    // signal as a corrected one. Fired after the claim, never before, and its
+    // outcome is discarded: it must never change status, the claim, or the
+    // corrections result.
+    if (!corrections.length) {
+      await sendReviewedAck(receipt.ocrRequestId);
+      return { status: 'reported', corrections, sent: 0, failed: 0 };
+    }
 
-    const { sent, failed, retryableFields, rejectedFields } = await sendCorrections(receipt.ocrRequestId, corrections);
-    if (sent === 0 && retryableFields.length) {
-      // Nothing landed and at least one field could still land: release our own
-      // claim (never a newer one) and let the backfill retry this receipt.
-      await db.update(receipts)
-        .set({ ocrCorrectionsReportedAt: null })
-        .where(and(eq(receipts.id, receipt.id), eq(receipts.ocrCorrectionsReportedAt, claimedAt)));
-      logger.warn({ expenseId, requestId: receipt.ocrRequestId, failed, retryableFields, rejectedFields }, 'OCR correction reporting failed; receipt left unreported for retry');
+    let outcome: SendOutcome;
+    try {
+      outcome = await sendCorrections(receipt.ocrRequestId, corrections);
+    } catch (err) {
+      // sendCorrections handles every per-field failure itself, so a throw
+      // here came from outside that loop. Whatever it was, nothing can be
+      // assumed to have landed — fall through to the release below, because
+      // the one outcome that must never happen is a stamped receipt whose
+      // corrections were never delivered.
+      logger.warn({ expenseId, requestId: receipt.ocrRequestId, err: message(err) }, 'OCR correction sending threw; treating every field as unsent');
+      outcome = { sent: 0, failed: corrections.length, retryableFields: corrections.map((c) => c.field), rejectedFields: [] };
+    }
+    const { sent, failed, retryableFields, rejectedFields } = outcome;
+
+    if (retryableFields.length) {
+      // At least one field could still land: release our own claim (never a
+      // newer one) so `ocr:backfill-corrections` can redeliver this receipt.
+      // The fields that did land are re-sent on that run and the service
+      // discards them (UNIQUE (request_id, field), ON CONFLICT DO NOTHING) —
+      // far cheaper than keeping the claim, which would drop the fields that
+      // did not land, permanently and invisibly.
+      try {
+        await db.update(receipts)
+          .set({ ocrCorrectionsReportedAt: null })
+          .where(and(eq(receipts.id, receipt.id), eq(receipts.ocrCorrectionsReportedAt, claimedAt)));
+        logger.warn({ expenseId, requestId: receipt.ocrRequestId, sent, failed, retryableFields, rejectedFields }, 'OCR correction reporting incomplete; receipt left unreported for retry');
+      } catch (err) {
+        // The stamp is still on the row: `ocr:backfill-corrections` will
+        // refuse this receipt as already_reported and `ocr:backfill-reviewed`
+        // would ack it, scoring a lost correction as right-first-time. Nothing
+        // in code can fix that — the DB is the thing that just failed — so log
+        // the ids at error level (no user data) to make the row repairable by
+        // hand: clear ocr_corrections_reported_at and re-run the backfill.
+        logger.error({ expenseId, receiptId: receipt.id, requestId: receipt.ocrRequestId, retryableFields, err: message(err) }, 'Failed to release OCR corrections claim; receipt stays stamped and must be cleared by hand');
+      }
+      // Deliberately no ack, released or not: with corrections outstanding, an
+      // ack here is precisely the false "right first time" this module exists
+      // to prevent. A successful release gets its ack from the redelivery.
       return { status: 'send_failed', corrections, sent, failed };
     }
+
+    // The claim is kept from here on, so reporting this receipt is final —
+    // ack the review, corrections or not. The ack's outcome is discarded: it
+    // must never change status, the claim, or the corrections result.
+    await sendReviewedAck(receipt.ocrRequestId);
     if (rejectedFields.length) {
       // Stays claimed: the service refused these outright, so retrying them on
       // every backfill run would only repeat the refusal.
       logger.warn({ expenseId, requestId: receipt.ocrRequestId, rejectedFields }, 'OCR service refused some corrections');
-    }
-    if (retryableFields.length) {
-      // Stays claimed: a retry would double-count the fields that did land.
-      logger.warn({ expenseId, requestId: receipt.ocrRequestId, retryableFields }, 'Some OCR corrections were not reported');
     }
     if (sent === 0) return { status: 'rejected', corrections, sent, failed };
     logger.info({ expenseId, requestId: receipt.ocrRequestId, sent, failed }, 'Reported OCR corrections');
