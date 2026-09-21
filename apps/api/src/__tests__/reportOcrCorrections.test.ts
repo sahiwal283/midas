@@ -10,7 +10,8 @@
  *    send so a concurrent resubmit cannot report the same receipt twice,
  *    released again whenever a field could still land so the backfill can
  *    redeliver it
- *  - the invariant that a released claim never sends the reviewed ack
+ *  - the invariant that a released claim never sends the reviewed ack, and
+ *    that a receipt which could not be released is never acked either
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -37,6 +38,7 @@ vi.mock('../db/index', () => ({
 vi.mock('../lib/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
 import { env } from '../config/env';
+import { logger } from '../lib/logger';
 import * as schema from '../db/schema';
 import { reportOcrCorrectionsForExpense, sendCorrections, sendReviewedAck } from '../lib/reportOcrCorrections';
 
@@ -353,6 +355,49 @@ describe('reportOcrCorrectionsForExpense', () => {
     expect(res).toMatchObject({ status: 'send_failed', sent: 1, failed: 1 });
     expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
     expect(ackCalls(fetchImpl)).toHaveLength(0);
+  });
+
+  // Both backfills key off ocr_corrections_reported_at: a receipt that keeps a
+  // stamp it should not have is refused by ocr:backfill-corrections as
+  // already_reported and then acked by ocr:backfill-reviewed — a transient
+  // fault turned into a permanent "right first time". So on every path where
+  // the claim could not come off, the ack must not be sent and the row must be
+  // findable by hand.
+  it('sends no ack and logs the ids for manual repair when the release UPDATE itself fails', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt()]));
+    fetchImpl.mockRejectedValue(new Error('ECONNRESET'));
+    dbMock.where
+      .mockImplementationOnce(() => Object.assign(Promise.resolve(undefined), { returning: dbMock.returning }))
+      .mockImplementationOnce(() => Object.assign(Promise.reject(new Error('pool exhausted')), { returning: dbMock.returning }));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'send_failed', sent: 0, failed: 1 });
+    expect(ackCalls(fetchImpl)).toHaveLength(0);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    const [payload] = vi.mocked(logger.error).mock.calls[0];
+    // Ids and field names only — no merchant, amount, date or token.
+    expect(payload).toMatchObject({ expenseId: 'exp-1', receiptId: 'rec-1', requestId: 'req-1' });
+    expect(JSON.stringify(payload)).not.toContain('Uline');
+  });
+
+  // JSON.stringify of the request body is the one step inside sendCorrections
+  // that sits outside the per-field try/catch. A BigInt date value is the
+  // cheapest way to reach it: normalizeDate only String()s the value, so the
+  // BigInt survives the diff and then cannot be serialized. It stands in for
+  // anything that could ever throw between the claim and the ack — a malformed
+  // OCR_BASE_URL, an abort raised between fields — all of which would
+  // otherwise leave a stamped receipt with no corrections and no way back.
+  it('releases the claim and sends no ack when the send path throws outright', async () => {
+    dbMock.findFirst.mockResolvedValueOnce(expense([receipt({
+      ocrData: { fields: { date: { value: 1n as unknown as string } } },
+    })]));
+
+    const res = await reportOcrCorrectionsForExpense('exp-1');
+
+    expect(res).toMatchObject({ status: 'send_failed', sent: 0, failed: 1 });
+    expect(dbMock.set).toHaveBeenLastCalledWith({ ocrCorrectionsReportedAt: null });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('keeps the claim when every field landed', async () => {

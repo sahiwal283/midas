@@ -11,11 +11,13 @@
  * released again whenever any field could still land, so the backfill can
  * redeliver the whole receipt.
  *
- * The reviewed ack is sent only when the claim is kept, i.e. only once this
- * receipt's reporting is final. An ack on a released claim would tell the
- * service the job was reviewed with nothing to correct — scoring a lost
- * correction as right-first-time, the exact figure this reporting exists to
- * measure.
+ * The reviewed ack is sent only once this receipt's reporting is finished with
+ * nothing outstanding: no corrections to make, or every correction delivered
+ * or permanently refused. A receipt with a correction still to land is never
+ * acked — not when its claim was released for redelivery, and not when the
+ * release itself failed — because an ack without that correction tells the
+ * service the job was reviewed and found right first time, corrupting the
+ * exact figure this reporting exists to measure.
  */
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
@@ -224,7 +226,20 @@ export async function reportOcrCorrectionsForExpense(
       return { status: 'reported', corrections, sent: 0, failed: 0 };
     }
 
-    const { sent, failed, retryableFields, rejectedFields } = await sendCorrections(receipt.ocrRequestId, corrections);
+    let outcome: SendOutcome;
+    try {
+      outcome = await sendCorrections(receipt.ocrRequestId, corrections);
+    } catch (err) {
+      // sendCorrections handles every per-field failure itself, so a throw
+      // here came from outside that loop. Whatever it was, nothing can be
+      // assumed to have landed — fall through to the release below, because
+      // the one outcome that must never happen is a stamped receipt whose
+      // corrections were never delivered.
+      logger.warn({ expenseId, requestId: receipt.ocrRequestId, err: message(err) }, 'OCR correction sending threw; treating every field as unsent');
+      outcome = { sent: 0, failed: corrections.length, retryableFields: corrections.map((c) => c.field), rejectedFields: [] };
+    }
+    const { sent, failed, retryableFields, rejectedFields } = outcome;
+
     if (retryableFields.length) {
       // At least one field could still land: release our own claim (never a
       // newer one) so `ocr:backfill-corrections` can redeliver this receipt.
@@ -232,11 +247,23 @@ export async function reportOcrCorrectionsForExpense(
       // discards them (UNIQUE (request_id, field), ON CONFLICT DO NOTHING) —
       // far cheaper than keeping the claim, which would drop the fields that
       // did not land, permanently and invisibly.
-      await db.update(receipts)
-        .set({ ocrCorrectionsReportedAt: null })
-        .where(and(eq(receipts.id, receipt.id), eq(receipts.ocrCorrectionsReportedAt, claimedAt)));
-      logger.warn({ expenseId, requestId: receipt.ocrRequestId, sent, failed, retryableFields, rejectedFields }, 'OCR correction reporting incomplete; receipt left unreported for retry');
-      // Deliberately no ack: the claim is released, so the redelivery sends it.
+      try {
+        await db.update(receipts)
+          .set({ ocrCorrectionsReportedAt: null })
+          .where(and(eq(receipts.id, receipt.id), eq(receipts.ocrCorrectionsReportedAt, claimedAt)));
+        logger.warn({ expenseId, requestId: receipt.ocrRequestId, sent, failed, retryableFields, rejectedFields }, 'OCR correction reporting incomplete; receipt left unreported for retry');
+      } catch (err) {
+        // The stamp is still on the row: `ocr:backfill-corrections` will
+        // refuse this receipt as already_reported and `ocr:backfill-reviewed`
+        // would ack it, scoring a lost correction as right-first-time. Nothing
+        // in code can fix that — the DB is the thing that just failed — so log
+        // the ids at error level (no user data) to make the row repairable by
+        // hand: clear ocr_corrections_reported_at and re-run the backfill.
+        logger.error({ expenseId, receiptId: receipt.id, requestId: receipt.ocrRequestId, retryableFields, err: message(err) }, 'Failed to release OCR corrections claim; receipt stays stamped and must be cleared by hand');
+      }
+      // Deliberately no ack, released or not: with corrections outstanding, an
+      // ack here is precisely the false "right first time" this module exists
+      // to prevent. A successful release gets its ack from the redelivery.
       return { status: 'send_failed', corrections, sent, failed };
     }
 
