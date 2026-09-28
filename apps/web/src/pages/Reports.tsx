@@ -220,6 +220,10 @@ export function Reports() {
       const p = new URLSearchParams(prev);
       if (next) p.set('show', next);
       else p.delete('show');
+      // The breakdown's own drill-down (company / category) belongs to one
+      // show; never carry it into another or back to the grid.
+      p.delete('company');
+      p.delete('cat');
       return p;
     }, { replace: false });
   }
@@ -248,6 +252,8 @@ export function Reports() {
       const p = new URLSearchParams(prev);
       p.set('scope', next);
       p.delete('show');
+      p.delete('company');
+      p.delete('cat');
       return p;
     }, { replace: true });
     setEntity('');
