@@ -19,6 +19,7 @@ import { storage } from '../lib/storage';
 import { env } from '../config/env';
 import {
   PETTY_CASH_CATEGORY,
+  balanceAfterEdit,
   buildLedgerCsv,
   localTodayIso,
   pettyCashNote,
@@ -36,6 +37,7 @@ import {
   recordPayrollDeposit,
   recordPayrollPettyCash,
   recordPayrollWithdrawal,
+  updatePayrollEntry,
   voidPayrollEntry,
   type MidasActor,
 } from '../lib/payrollDrawer';
@@ -305,6 +307,84 @@ router.post('/businesses/:id/petty-cash', upload.single('receipt'), asyncHandler
   );
   await auditLog({ entityType: 'cash_drawer_entry', entityId: row.id, userId: req.user!.id, action: 'cashbook.petty_cash', after: { businessId: biz.id, amountCents, description: body.description } });
   res.status(201).json({ id: row.id });
+}));
+
+// ── Edit ──────────────────────────────────────────────────────────────────────
+
+const editEntrySchema = z.object({
+  amount: z.union([z.string(), z.number()]),
+  notes: z.string().trim().max(2000).optional(),
+  invoiceNumber: z.string().trim().max(120).optional(),
+  entryDate: z.string().optional(),
+});
+
+/**
+ * Edit an entry's amount / notes / invoice number / date. Ported from the
+ * standalone Cashbook app: audited before + after, serialized per business,
+ * and refused when the running balance would drop below zero. Voided rows
+ * can't be edited — void and re-enter instead.
+ */
+router.patch('/businesses/:id/entries/:entryId', asyncHandler(async (req, res) => {
+  const biz = await getBusiness(req.params.id);
+  const body = editEntrySchema.parse(req.body);
+  const amountCents = toCents(body.amount);
+  const invalid = validateAmountCents(amountCents);
+  if (invalid) throw createError(invalid, 400, 'INVALID_ENTRY');
+
+  if (biz.payrollLinked) {
+    if (body.entryDate) {
+      throw createError('Backdating is not available for the payroll-linked drawer.', 400, 'INVALID_ENTRY');
+    }
+    await updatePayrollEntry(
+      req.params.entryId,
+      { amountCents, notes: body.notes, invoiceNumber: body.invoiceNumber },
+      actor(req),
+    );
+    res.json({ ok: true });
+    return;
+  }
+
+  if (body.entryDate) {
+    const dateInvalid = validateEntryDate(body.entryDate);
+    if (dateInvalid) throw createError(dateInvalid, 400, 'INVALID_ENTRY');
+  }
+
+  const { before, after } = await db.transaction(async (tx) => {
+    await tx.execute(dsql`SELECT pg_advisory_xact_lock(hashtext(${'cash-' + biz.id}))`);
+    const entry = await tx.query.cashDrawerEntries.findFirst({
+      where: and(eq(cashDrawerEntries.id, req.params.entryId), eq(cashDrawerEntries.businessId, biz.id)),
+    });
+    if (!entry) throw notFound('Ledger entry not found');
+    if (entry.voidedAt) throw createError('Cannot edit a voided entry.', 409, 'ALREADY_VOIDED');
+    const invoiceNumber = entry.kind === 'DEPOSIT' ? (body.invoiceNumber ?? '').trim() : entry.invoiceNumber;
+    if (entry.kind === 'DEPOSIT' && !invoiceNumber) {
+      throw createError('Invoice number is required for deposits.', 400, 'INVALID_ENTRY');
+    }
+    const totals = await localTotals(biz.id);
+    const next = balanceAfterEdit(totals.onHandCents, entry.kind, entry.amountCents, amountCents);
+    if (next < 0) {
+      throw createError('That amount would drop the drawer below zero.', 409, 'INSUFFICIENT_CASH');
+    }
+    const [updated] = await tx.update(cashDrawerEntries)
+      .set({
+        amountCents,
+        notes: body.notes || null,
+        invoiceNumber,
+        ...(body.entryDate ? { entryDate: body.entryDate } : {}),
+      })
+      .where(eq(cashDrawerEntries.id, entry.id))
+      .returning();
+    return { before: entry, after: updated };
+  });
+  await auditLog({
+    entityType: 'cash_drawer_entry',
+    entityId: req.params.entryId,
+    userId: req.user!.id,
+    action: 'cashbook.edit',
+    before: { businessId: biz.id, amountCents: before.amountCents, notes: before.notes, invoiceNumber: before.invoiceNumber, entryDate: before.entryDate },
+    after: { businessId: biz.id, amountCents: after.amountCents, notes: after.notes, invoiceNumber: after.invoiceNumber, entryDate: after.entryDate },
+  });
+  res.json({ ok: true });
 }));
 
 // ── Void ──────────────────────────────────────────────────────────────────────

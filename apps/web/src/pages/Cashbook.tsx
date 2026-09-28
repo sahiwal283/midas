@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowDownToLine, ArrowUpFromLine, Download, ExternalLink, Paperclip, Plus, ShoppingCart, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Download, ExternalLink, Paperclip, Pencil, Plus, ShoppingCart, X } from 'lucide-react';
 import { cashbookApi, type CashBusiness, type CashLedgerEntry } from '../api/cashbook';
 import { PageHeader } from '../components/PageHeader';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -36,6 +36,7 @@ export function Cashbook() {
   const [error, setError] = useState('');
   const [openForm, setOpenForm] = useState<FormKind | null>(null);
   const [voidTarget, setVoidTarget] = useState<CashLedgerEntry | null>(null);
+  const [editTarget, setEditTarget] = useState<CashLedgerEntry | null>(null);
   const [showNewBusiness, setShowNewBusiness] = useState(false);
   const [newBusinessName, setNewBusinessName] = useState('');
 
@@ -55,6 +56,7 @@ export function Cashbook() {
       return p;
     }, { replace: true });
     setOpenForm(null);
+    setEditTarget(null);
     setError('');
   }
 
@@ -237,7 +239,20 @@ export function Cashbook() {
             />
           </div>
 
-          {openForm && (
+          {editTarget ? (
+            <EditEntryForm
+              key={editTarget.id}
+              entry={editTarget}
+              business={active}
+              onDone={() => {
+                setEditTarget(null);
+                setError('');
+                refetch();
+              }}
+              onCancel={() => setEditTarget(null)}
+              onError={onMutationError}
+            />
+          ) : openForm && (
             <EntryForm
               key={`${active.id}-${openForm}`}
               kind={openForm}
@@ -266,7 +281,7 @@ export function Cashbook() {
                 {/* Mobile cards */}
                 <div className="divide-y divide-ink/5 md:hidden">
                   {entries.map((e) => (
-                    <div key={e.id} className="px-4 py-3">
+                    <div key={e.id} className={`px-4 py-3 ${editTarget?.id === e.id ? 'bg-brand-50/60' : ''}`}>
                       <div className="flex items-center justify-between gap-3">
                         <KindBadge entry={e} />
                         <p className={`shrink-0 font-semibold tabular-nums ${e.kind === 'DEPOSIT' ? 'text-success' : 'text-danger'}`}>
@@ -277,7 +292,13 @@ export function Cashbook() {
                       {e.notes && <p className="mt-0.5 text-xs text-muted">{e.notes}</p>}
                       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-charcoal/40">
                         <span>{new Date(e.createdAt).toLocaleString()}{e.createdByLabel ? ` · ${e.createdByLabel}` : ''}</span>
-                        <EntryActions entry={e} business={active} payrollAppUrl={payrollAppUrl} onVoid={() => setVoidTarget(e)} />
+                        <EntryActions
+                          entry={e}
+                          business={active}
+                          payrollAppUrl={payrollAppUrl}
+                          onEdit={() => { setOpenForm(null); setEditTarget(e); }}
+                          onVoid={() => setVoidTarget(e)}
+                        />
                       </div>
                     </div>
                   ))}
@@ -296,7 +317,7 @@ export function Cashbook() {
                   </thead>
                   <tbody className="divide-y divide-ink/5">
                     {entries.map((e) => (
-                      <tr key={e.id} className="hover:bg-ink/[0.03]">
+                      <tr key={e.id} className={editTarget?.id === e.id ? 'bg-brand-50/60' : 'hover:bg-ink/[0.03]'}>
                         <td className="whitespace-nowrap px-4 py-3 text-charcoal/70">
                           {e.entryDate ?? new Date(e.createdAt).toLocaleDateString()}
                           <p className="text-[11px] text-charcoal/40">{new Date(e.createdAt).toLocaleTimeString()}</p>
@@ -311,7 +332,13 @@ export function Cashbook() {
                           {e.kind === 'DEPOSIT' ? '' : '-'}{usd(e.amountCents)}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <EntryActions entry={e} business={active} payrollAppUrl={payrollAppUrl} onVoid={() => setVoidTarget(e)} />
+                          <EntryActions
+                          entry={e}
+                          business={active}
+                          payrollAppUrl={payrollAppUrl}
+                          onEdit={() => { setOpenForm(null); setEditTarget(e); }}
+                          onVoid={() => setVoidTarget(e)}
+                        />
                         </td>
                       </tr>
                     ))}
@@ -369,10 +396,11 @@ function ActionCardButton({ icon, label, active, onClick }: {
   );
 }
 
-function EntryActions({ entry, business, payrollAppUrl, onVoid }: {
+function EntryActions({ entry, business, payrollAppUrl, onEdit, onVoid }: {
   entry: CashLedgerEntry;
   business: CashBusiness;
   payrollAppUrl: string | null;
+  onEdit: () => void;
   onVoid: () => void;
 }) {
   if (entry.periodLinked) {
@@ -406,12 +434,102 @@ function EntryActions({ entry, business, payrollAppUrl, onVoid }: {
       )}
       <button
         type="button"
+        onClick={onEdit}
+        className="inline-flex items-center gap-1 rounded-md border border-ink/10 bg-white px-2.5 py-1 text-xs font-semibold text-charcoal/80 shadow-sm hover:bg-ink/[0.03]"
+      >
+        <Pencil className="h-3 w-3" />
+        Edit
+      </button>
+      <button
+        type="button"
         onClick={onVoid}
         className="rounded-md border border-danger/30 bg-white px-2.5 py-1 text-xs font-semibold text-danger shadow-sm hover:bg-danger/10"
       >
         Void
       </button>
     </span>
+  );
+}
+
+// ── Edit form ─────────────────────────────────────────────────────────────────
+
+/**
+ * Edit an existing entry's amount, notes, invoice number (deposits) and date
+ * (local drawers). Mirrors the standalone Cashbook app's row edit; the API
+ * refuses edits that would drop the drawer below zero and audits before/after.
+ */
+function EditEntryForm({ entry, business, onDone, onCancel, onError }: {
+  entry: CashLedgerEntry;
+  business: CashBusiness;
+  onDone: () => void;
+  onCancel: () => void;
+  onError: (err: any) => void;
+}) {
+  const [amount, setAmount] = useState((entry.amountCents / 100).toFixed(2));
+  const [invoiceNumber, setInvoiceNumber] = useState(entry.invoiceNumber ?? '');
+  const [notes, setNotes] = useState(entry.notes ?? '');
+  const [entryDate, setEntryDate] = useState(entry.entryDate ?? '');
+
+  // The payroll drawer has no entry_date column — its rows can't be re-dated.
+  const showDate = !business.payrollLinked && entry.entryDate !== null;
+  const isDeposit = entry.kind === 'DEPOSIT';
+
+  const mutation = useMutation({
+    mutationFn: () => cashbookApi.updateEntry(business.id, entry.id, {
+      amount,
+      notes: notes.trim() || undefined,
+      ...(isDeposit ? { invoiceNumber: invoiceNumber.trim() } : {}),
+      ...(showDate && entryDate ? { entryDate } : {}),
+    }),
+    onSuccess: onDone,
+    onError,
+  });
+
+  const canSubmit = Number(amount) > 0 && (!isDeposit || invoiceNumber.trim().length > 0);
+  const kindLabel = isDeposit ? 'deposit' : entry.category === 'PETTY_CASH' ? 'petty cash purchase' : 'withdrawal';
+
+  return (
+    <div className="rounded-xl border border-brand-500/40 bg-white p-4">
+      <p className="text-sm font-semibold text-ink">Edit {kindLabel}</p>
+      <p className="mt-0.5 text-xs text-muted">
+        Changes are recorded in the audit history with the previous values. The drawer can’t go below zero.
+      </p>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <label className="field-label">Amount ($)</label>
+          <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="field" />
+        </div>
+        {showDate && (
+          <div>
+            <label className="field-label">Date</label>
+            <input type="date" value={entryDate} max={todayIso()} onChange={(e) => setEntryDate(e.target.value)} className="field" />
+          </div>
+        )}
+        {isDeposit && (
+          <div>
+            <label className="field-label">Invoice number</label>
+            <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="field" />
+          </div>
+        )}
+        <div className={isDeposit ? 'sm:col-span-2 lg:col-span-1' : 'sm:col-span-2'}>
+          <label className="field-label">{isDeposit ? 'Notes (optional)' : 'Reason / notes'}</label>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className="field" />
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={mutation.isPending} className="btn-secondary">
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending || !canSubmit}
+          className="btn-primary disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>
+    </div>
   );
 }
 

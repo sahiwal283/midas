@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  balanceAfterEdit,
   buildLedgerCsv,
   computeBalanceCents,
   pettyCashNote,
@@ -53,6 +54,23 @@ describe('computeBalanceCents', () => {
       { kind: 'WITHDRAWAL', amountCents: 2_500 },
       { kind: 'WITHDRAWAL', amountCents: 9_999, voidedAt: new Date() },
     ])).toBe(7_500);
+  });
+});
+
+describe('balanceAfterEdit', () => {
+  it('re-applies a deposit at its new amount', () => {
+    // 100 on hand, deposit of 30 becomes 50 → 120
+    expect(balanceAfterEdit(100, 'DEPOSIT', 30, 50)).toBe(120);
+    expect(balanceAfterEdit(100, 'DEPOSIT', 30, 10)).toBe(80);
+  });
+  it('re-applies a withdrawal at its new amount', () => {
+    // 100 on hand, withdrawal of 30 becomes 50 → 80
+    expect(balanceAfterEdit(100, 'WITHDRAWAL', 30, 50)).toBe(80);
+    expect(balanceAfterEdit(100, 'WITHDRAWAL', 30, 10)).toBe(120);
+  });
+  it('goes negative when a withdrawal grows past the drawer, so callers can refuse', () => {
+    expect(balanceAfterEdit(20, 'WITHDRAWAL', 30, 60)).toBe(-10);
+    expect(balanceAfterEdit(20, 'DEPOSIT', 30, 5)).toBe(-5);
   });
 });
 
