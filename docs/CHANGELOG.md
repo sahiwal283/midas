@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.16.0
+
+### Added
+- **Cashbook entries can be edited.** Each ledger row has an Edit button beside Void: amount, notes, invoice number (deposits) and date (local drawers) can be corrected in place, the way the standalone cashbook site allowed. Edits refuse to drop the drawer below zero, can't touch voided rows, and are recorded in the audit history with the previous values. The payroll-linked drawer supports the same edit through the payroll app's ledger (payroll-run rows stay read-only there, and its rows can't be re-dated). With this, Midas covers everything the standalone cashbook site did, and that site can be retired.
+- **Trade-show reports drill down like the trade show app.** In a show's breakdown, clicking a company box scopes the whole page to that company — a second band shows what you're viewing with its own back arrow — and ticking categories keeps only those. The donut, per-category bars, category × company matrix, detailed expense list, footer tallies and both CSV exports all follow the selection. A "Showing only" chip row clears categories one at a time or all at once. Filters are in the URL, so a drilled-down view can be linked and the browser back button unwinds it.
+
+### Changed
+- Expense and purchase-order detail no longer print the raw scanned text, OCR provider or confidence figure under each receipt. That block ran to pages for a long receipt and nothing on the page used it. The status label, suggested review reasons and failure summary remain for accountants.
+
 ## 1.15.0
 
 ### Added

@@ -50,6 +50,12 @@ export const cashbookApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
 
+  updateEntry: (
+    businessId: string,
+    entryId: string,
+    body: { amount: string; notes?: string; invoiceNumber?: string; entryDate?: string },
+  ) => client.patch(`/cashbook/businesses/${businessId}/entries/${entryId}`, body),
+
   voidEntry: (businessId: string, entryId: string) =>
     client.post(`/cashbook/businesses/${businessId}/entries/${entryId}/void`),
 

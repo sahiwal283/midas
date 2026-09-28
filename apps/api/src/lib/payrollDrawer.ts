@@ -18,6 +18,7 @@
 import { Pool, type PoolClient } from 'pg';
 import {
   PETTY_CASH_CATEGORY,
+  balanceAfterEdit,
   pettyCashNote,
   validateAmountCents,
   validateDeposit,
@@ -230,6 +231,64 @@ export async function recordPayrollPettyCash(
     },
     actor,
   );
+}
+
+export type PayrollEntryEdit = {
+  amountCents: number;
+  notes?: string | null;
+  /** Required for DEPOSIT rows; ignored for withdrawals. */
+  invoiceNumber?: string | null;
+};
+
+/**
+ * Edit a payroll-drawer entry's amount / notes / invoice number. Same rules
+ * as the payroll app's own edit: voided and payroll-run rows are refused,
+ * and the balance after the edit can't go negative. Dates can't change —
+ * the payroll ledger stamps its own.
+ */
+export async function updatePayrollEntry(id: string, input: PayrollEntryEdit, actor: MidasActor): Promise<void> {
+  const invalid = validateAmountCents(input.amountCents);
+  if (invalid) throw createError(invalid, 400, 'INVALID_ENTRY');
+  await inTransaction(async (tx) => {
+    await tx.query('SELECT pg_advisory_xact_lock($1)', [CASH_DRAWER_LOCK_KEY]);
+    const { rows } = await tx.query(
+      'SELECT id, kind, amount_cents, invoice_number, notes, period_id, voided_at FROM cash_drawer_entries WHERE id = $1',
+      [id],
+    );
+    const entry = rows[0];
+    if (!entry) throw createError('Ledger entry not found.', 404, 'NOT_FOUND');
+    if (entry.voided_at) throw createError('Cannot edit a voided entry.', 409, 'ALREADY_VOIDED');
+    if (entry.period_id) {
+      throw createError(
+        'This withdrawal was recorded by a payroll run — manage it from the payroll app.',
+        409,
+        'PAYROLL_RUN_ENTRY',
+      );
+    }
+    const invoiceNumber = entry.kind === 'DEPOSIT' ? input.invoiceNumber?.trim() ?? '' : null;
+    if (entry.kind === 'DEPOSIT' && !invoiceNumber) {
+      throw createError('Invoice number is required for deposits.', 400, 'INVALID_ENTRY');
+    }
+    const balance = await balanceCents(tx);
+    const next = balanceAfterEdit(balance, entry.kind, Number(entry.amount_cents), input.amountCents);
+    if (next < 0) {
+      throw createError('That amount would drop the drawer below zero.', 409, 'INSUFFICIENT_CASH');
+    }
+    const notes = input.notes?.trim() || null;
+    await tx.query(
+      `UPDATE cash_drawer_entries
+       SET amount_cents = $2, notes = $3, invoice_number = $4
+       WHERE id = $1`,
+      [id, input.amountCents, notes, entry.kind === 'DEPOSIT' ? invoiceNumber : entry.invoice_number],
+    );
+    await writePayrollAudit(tx, actor, 'cash_drawer.edit', id, {
+      kind: entry.kind,
+      before: { amountCents: Number(entry.amount_cents), notes: entry.notes, invoiceNumber: entry.invoice_number },
+      amountCents: input.amountCents,
+      notes,
+      invoiceNumber: entry.kind === 'DEPOSIT' ? invoiceNumber : entry.invoice_number,
+    });
+  });
 }
 
 export async function voidPayrollEntry(id: string, actor: MidasActor): Promise<void> {

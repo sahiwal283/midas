@@ -58,9 +58,11 @@ type Props = {
    */
   canRemove?: boolean;
   /**
-   * When true, renders the accountant-only OCR diagnostics (status,
-   * provider, confidence, suggested review reasons, error summary) beneath
-   * each receipt's filename. Never pass this from the creation forms.
+   * When true, renders the accountant-only OCR signals (raw status label,
+   * suggested review reasons, error summary) beneath each receipt's
+   * filename. The raw scanned text and provider/confidence figures are
+   * deliberately not shown — they took up the page and helped no one.
+   * Never pass this from the creation forms.
    */
   isPrivileged?: boolean;
 };
@@ -455,16 +457,8 @@ export function ReceiptAttachments({
                     </button>
                   )}
                 </div>
-                {isPrivileged && (
+                {isPrivileged && (item.receipt.ocrNeedsReview || (item.receipt.ocrStatus === 'failed' && item.receipt.ocrErrorSummary)) && (
                   <div className="pl-6 space-y-0.5">
-                    {item.receipt.ocrProvider && (
-                      <p className="text-xs text-muted">
-                        Provider: <span className="font-medium">{item.receipt.ocrProvider}</span>
-                        {item.receipt.ocrOverallConfidence != null && (
-                          <> · Confidence: <span className="font-medium">{Math.round(Number(item.receipt.ocrOverallConfidence) * 100)}%</span></>
-                        )}
-                      </p>
-                    )}
                     {item.receipt.ocrNeedsReview && (
                       <p className="text-xs font-medium text-amber-700">
                         Suggested: needs review{item.receipt.ocrReviewReasons?.length ? ` — ${item.receipt.ocrReviewReasons.join(', ')}` : ''}
@@ -472,9 +466,6 @@ export function ReceiptAttachments({
                     )}
                     {item.receipt.ocrStatus === 'failed' && item.receipt.ocrErrorSummary && (
                       <p className="text-xs text-danger">{item.receipt.ocrErrorSummary}</p>
-                    )}
-                    {item.receipt.ocrStatus === 'done' && item.receipt.ocrText && (
-                      <p className="whitespace-pre-wrap break-words text-xs text-charcoal/60">{item.receipt.ocrText}</p>
                     )}
                   </div>
                 )}

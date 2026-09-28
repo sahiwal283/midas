@@ -86,6 +86,20 @@ export function computeBalanceCents(entries: readonly LedgerEntryLike[]): number
   }, 0);
 }
 
+/**
+ * Balance after replacing an existing entry's amount. Used to guard edits —
+ * removing the old effect and applying the new must not go negative.
+ */
+export function balanceAfterEdit(
+  balanceCents: number,
+  kind: CashEntryKind,
+  oldAmountCents: number,
+  newAmountCents: number,
+): number {
+  const sign = kind === 'DEPOSIT' ? 1 : -1;
+  return balanceCents - sign * oldAmountCents + sign * newAmountCents;
+}
+
 /** Compose the petty-cash note line: "description (ref REF)". */
 export function pettyCashNote(
   description: string,
