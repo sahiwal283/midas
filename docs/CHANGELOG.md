@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.17.0
+
+### Added
+- **Notes stay editable after approval and after the Zoho push.** Accountants can correct an expense's notes at any point, including once it is in Zoho Books. A post-push note change asks for the same "Update Midas only" confirmation the category recode uses, because Midas never writes back to Zoho; amount, date, merchant, card, company and event stay locked after the push as before.
+- **The audit trail shows what changed.** Recent Activity now labels field corrections ("Details corrected", "Reference number set") instead of printing the raw action name, and lists each changed field as `Notes: old → new`. Post-push edits carry a "Midas only" tag. The Notes block on the details card says who last edited it and when.
+
+### Changed
+- **One details card instead of two.** The separate "Correct details" card is gone. The Expense Details card on the review page and the expense page carries the Edit link in its header, and the form opens in place of the read-only rows. On the expense page this card also replaces the collapsible "Details" card and the standalone "Description" card, so each fact appears once.
+
 ## 1.16.0
 
 ### Added

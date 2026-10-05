@@ -18,7 +18,8 @@ import { ReferenceNumberField } from '../components/ReferenceNumberField';
 import { useAuth } from '../contexts/AuthContext';
 import type { Expense, ExpenseMessage, AuditLogEntry } from '../types';
 import { roleAllowed } from '../lib/roles';
-import { AccountantDetailsEdit } from '../components/AccountantDetailsEdit';
+import { ExpenseDetailsCard, DetailRow as Row } from '../components/ExpenseDetailsCard';
+import { auditActionLabel, auditChanges, auditMidasOnly } from '../lib/auditChanges';
 import { MessageBubble } from '../components/MessageBubble';
 import { MessageComposer } from '../components/MessageComposer';
 
@@ -178,29 +179,6 @@ function ZohoReadinessPanel({ expense }: { expense: Expense }) {
 
 // ── Recent Activity panel (accountant/admin) ──────────────────────────────────
 
-const ACTION_LABELS: Record<string, string> = {
-  'review.claimed': 'Claimed for review',
-  'review.released': 'Claim released',
-  'review.approve': 'Approved',
-  'review.reject': 'Rejected',
-  'review.request_info': 'Info requested',
-  'info_request_resolved': 'Requests resolved',
-  'reimbursement.updated': 'Reimbursement updated',
-  'category.updated': 'Category updated',
-  'zoho.pushed': 'Pushed to Zoho',
-  'zoho.failed': 'Zoho push failed',
-  'zoho_entity.set': 'Company set',
-  'submitted': 'Submitted for review',
-  'created': 'Expense created',
-  'updated': 'Fields updated',
-  'uploaded': 'Receipt uploaded',
-  'user_responded': 'Employee replied',
-  'receipt_attached_from_extension': 'Receipt attached (extension)',
-  'expense_created_from_extension': 'Created via extension',
-  'ext.created': 'Created via app API',
-  'capture_linked_to_expense': 'Screenshot linked',
-};
-
 const ACTION_COLORS: Record<string, string> = {
   'review.approve': 'bg-success/15 text-success',
   'review.reject': 'bg-danger/15 text-danger',
@@ -231,20 +209,41 @@ function RecentActivity({ expenseId }: { expenseId: string }) {
         <>
           <ol className="space-y-2">
             {visible.map((entry: AuditLogEntry) => {
-              const label = ACTION_LABELS[entry.action] ?? entry.action;
+              const label = auditActionLabel(entry.action);
+              const changes = auditChanges(entry);
+              const midasOnly = auditMidasOnly(entry);
               const color = ACTION_COLORS[entry.action] ?? 'bg-brand-50 text-charcoal/70';
               const who = entry.actorName ?? 'System';
               const when = new Date(entry.createdAt).toLocaleString(undefined, {
                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
               });
               return (
-                <li key={entry.id} className="flex items-start gap-2 text-xs">
-                  <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-medium ${color}`}>
-                    {label}
-                  </span>
-                  <span className="leading-5 text-muted">
-                    {who} · {when}
-                  </span>
+                <li key={entry.id} className="text-xs">
+                  <div className="flex items-start gap-2">
+                    <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-medium ${color}`}>
+                      {label}
+                    </span>
+                    <span className="leading-5 text-muted">
+                      {who} · {when}
+                      {midasOnly && (
+                        <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
+                          Midas only
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {changes.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 pl-1 text-charcoal/60">
+                      {changes.map((c) => (
+                        <li key={c.field} className="break-words">
+                          <span className="font-medium text-charcoal/70">{c.field}:</span>{' '}
+                          <span className="line-through decoration-charcoal/30">{c.before || '—'}</span>
+                          {' → '}
+                          <span className="text-ink">{c.after || '—'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}
@@ -775,13 +774,6 @@ export function ExpenseDetail() {
             </div>
           )}
 
-          {expense.description && (
-            <div className="rounded-xl border border-ink/10 bg-white p-5">
-              <h2 className="mb-2 text-sm font-semibold text-charcoal/80">Description</h2>
-              <p className="break-words text-sm text-charcoal/70">{expense.description}</p>
-            </div>
-          )}
-
           {/* Receipts */}
           <div id="receipts" className="scroll-mt-6 rounded-xl border border-ink/10 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold text-charcoal/80">Receipts</h2>
@@ -872,10 +864,26 @@ export function ExpenseDetail() {
             <EditDetailsCard expense={expense} mode={editMode} />
           )}
 
-          {/* Push-blocker corrections — accountant/admin, on anyone's expense */}
-          {isPrivileged && editMode === 'none' && (
-            <AccountantDetailsEdit expense={expense} />
-          )}
+          {/* Details, with in-place accountant corrections on anyone's expense */}
+          <ExpenseDetailsCard
+            expense={expense}
+            canEdit={!!isPrivileged && editMode === 'none'}
+            history={!!isPrivileged}
+            extraRows={
+              <>
+                <Row label="Created" value={new Date(expense.createdAt).toLocaleDateString()} />
+                <Row label="Last updated" value={new Date(expense.updatedAt).toLocaleDateString()} />
+                {isPrivileged && expense.reviewedBy && (
+                  <Row label="Reviewer" value={expense.reviewedBy.name} />
+                )}
+                {isPrivileged && expense.reviewedAt && (
+                  <Row label="Review started" value={new Date(expense.reviewedAt).toLocaleString()} />
+                )}
+                {expense.sourceApp && <Row label="Source app" value={expense.sourceApp} />}
+                {expense.sourceRefId && <Row label="Source ref" value={expense.sourceRefId} />}
+              </>
+            }
+          />
 
           {isPrivileged && (
             <ReferenceNumberField
@@ -926,51 +934,8 @@ export function ExpenseDetail() {
           {/* Recent Activity — accountant only */}
           {isPrivileged && <RecentActivity expenseId={expense.id} />}
 
-          {/* Details */}
-          <details className="rounded-xl border border-ink/10 bg-white text-sm">
-            <summary className="cursor-pointer p-5 font-semibold text-charcoal/80">
-              Details
-            </summary>
-            <dl className="space-y-2 px-5 pb-5 text-charcoal/70">
-              <Row label="Submitted by" value={expense.user?.name ?? '—'} />
-              <Row label="Created" value={new Date(expense.createdAt).toLocaleDateString()} />
-              <Row label="Last updated" value={new Date(expense.updatedAt).toLocaleDateString()} />
-              {(expense.zohoExpenseAccountName || expense.category) && (
-                <Row
-                  label="Expense account"
-                  value={expense.zohoExpenseAccountName ?? expense.category?.name ?? '—'}
-                />
-              )}
-              {expense.zohoEntity && <Row label="Company" value={expense.zohoEntity} />}
-              {expense.paymentMethod && (
-                <Row
-                  label="Payment method"
-                  value={`${expense.paymentMethod.label}${expense.paymentMethod.lastFour ? ` ···${expense.paymentMethod.lastFour}` : ''}`}
-                />
-              )}
-              {isPrivileged && expense.reviewedBy && (
-                <Row label="Reviewer" value={expense.reviewedBy.name} />
-              )}
-              {isPrivileged && expense.reviewedAt && (
-                <Row label="Review started" value={new Date(expense.reviewedAt).toLocaleString()} />
-              )}
-              {expense.sourceApp && <Row label="Source app" value={expense.sourceApp} />}
-              {expense.sourceRefId && <Row label="Source ref" value={expense.sourceRefId} />}
-              {expense.sourceLabel && <Row label="Source label" value={expense.sourceLabel} />}
-              {expense.sourceType && <Row label="Source type" value={expense.sourceType} />}
-            </dl>
-          </details>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
-      <dt className="text-charcoal/40 sm:shrink-0">{label}</dt>
-      <dd className="min-w-0 break-words font-medium text-ink sm:text-right">{value}</dd>
     </div>
   );
 }

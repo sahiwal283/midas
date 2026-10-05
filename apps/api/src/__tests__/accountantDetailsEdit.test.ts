@@ -321,3 +321,59 @@ describe('planAccountantDetailsEdit — company', () => {
     expect(result.refusal.code).toBe('PERIOD_CLOSED');
   });
 });
+
+describe('planAccountantDetailsEdit — notes after Zoho push', () => {
+  // The accountant's request: the note is Midas-side context, not a Zoho
+  // field, so it stays correctable after the push. Everything else keeps the
+  // refusal — the amount, date, card and company are Zoho's record now.
+  const pushed = { ...base, zohoExpenseId: 'zoho-123', description: 'mop sink' };
+
+  it('allows a notes-only edit on a pushed expense once the Midas-only change is confirmed', () => {
+    const result = planAccountantDetailsEdit(
+      pushed,
+      { description: 'mop sink for the warehouse', confirmSynced: true },
+      [],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: 'mop sink for the warehouse' });
+  });
+
+  it('asks for confirmation before a notes-only edit on a pushed expense', () => {
+    const result = planAccountantDetailsEdit(pushed, { description: 'mop sink for the warehouse' }, []);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('CONFIRM_SYNCED');
+    expect(result.refusal.status).toBe(409);
+    expect(result.refusal.message).toContain('Zoho');
+  });
+
+  it('does not ask for confirmation when the pushed note is unchanged', () => {
+    const result = planAccountantDetailsEdit(pushed, { description: '  mop sink ' }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({});
+  });
+
+  it('still refuses a pushed edit that touches notes together with any other field', () => {
+    const result = planAccountantDetailsEdit(
+      pushed,
+      { description: 'mop sink for the warehouse', amount: 170, confirmSynced: true },
+      [],
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('NOT_EDITABLE');
+  });
+
+  it('ignores the confirmation flag on an expense that was never pushed', () => {
+    const result = planAccountantDetailsEdit(
+      base,
+      { description: 'first note', merchant: 'Summitt Labs', confirmSynced: true },
+      [],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: 'first note', merchant: 'Summitt Labs' });
+  });
+});

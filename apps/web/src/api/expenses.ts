@@ -260,7 +260,7 @@ export const accountantApi = {
   /** Correct the push-blocking fields accountants could see but not fix. */
   updateDetails: (
     id: string,
-    data: { zohoEntity?: string; merchant?: string; amount?: number; date?: string; paymentMethodId?: string; description?: string; eventId?: string | null },
+    data: { zohoEntity?: string; merchant?: string; amount?: number; date?: string; paymentMethodId?: string; description?: string; eventId?: string | null; confirmSynced?: boolean },
   ) =>
     client.patch<{ expense: Expense }>(`/accountant/expenses/${id}/details`, data).then((r) => r.data.expense),
 
