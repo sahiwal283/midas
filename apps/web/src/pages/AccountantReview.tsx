@@ -5,7 +5,7 @@ import { ArrowLeft, CheckCircle2, XCircle, Send, MessageCircleQuestion, FileText
 import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge, ReimbursementBadge, ZohoPushBadge } from '../components/StatusBadge';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
-import { AccountantDetailsEdit } from '../components/AccountantDetailsEdit';
+import { ExpenseDetailsCard } from '../components/ExpenseDetailsCard';
 import { MessageBubble } from '../components/MessageBubble';
 import { MessageComposer } from '../components/MessageComposer';
 import { receiptContentUrl } from '../components/ReceiptPreview';
@@ -234,15 +234,6 @@ function ZohoReadinessCard({
 
 // ── Detail row ────────────────────────────────────────────────────────────────
 
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
-      <dt className="text-charcoal/40 sm:shrink-0">{label}</dt>
-      <dd className="min-w-0 break-words font-medium text-ink sm:text-right">{value}</dd>
-    </div>
-  );
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function AccountantReview() {
@@ -457,41 +448,8 @@ export function AccountantReview() {
 
         {/* Right: details, readiness, conversation */}
         <div className="space-y-4">
-          {/* Expense details */}
-          <div className="rounded-xl border border-ink/10 bg-white p-5 text-sm">
-            <h2 className="mb-3 font-semibold text-charcoal/80">Expense Details</h2>
-            <dl className="space-y-2 text-charcoal/70">
-              {/* Event expenses carry their event name in sourceLabel — the
-                  first thing an accountant needs to place the spend. */}
-              {!isDailyExpense(expense.sourceApp) && (
-                <DetailRow label="Event" value={expense.sourceLabel ?? '—'} />
-              )}
-              <DetailRow label="Merchant" value={expense.merchant} />
-              <DetailRow label="Amount" value={`${expense.currency} ${Number(expense.amount).toFixed(2)}`} />
-              <DetailRow label="Date" value={expense.date} />
-              <DetailRow
-                label="Category"
-                value={expense.zohoExpenseAccountName ?? expense.category?.name ?? '—'}
-              />
-              <DetailRow
-                label="Payment method"
-                value={expense.paymentMethod
-                  ? `${expense.paymentMethod.label}${expense.paymentMethod.lastFour ? ` ···${expense.paymentMethod.lastFour}` : ''}`
-                  : '—'}
-              />
-              <DetailRow label="Company" value={expense.zohoEntity ?? '—'} />
-              <DetailRow label="Submitted by" value={expense.user?.name ?? '—'} />
-            </dl>
-            {expense.description && (
-              <div className="mt-3 border-t border-ink/5 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-charcoal/40">Notes</p>
-                <p className="mt-1 break-words text-sm text-charcoal/70">{expense.description}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Correct push blockers without a round-trip to the submitter */}
-          <AccountantDetailsEdit expense={expense} />
+          {/* Expense details, with in-place accountant corrections */}
+          <ExpenseDetailsCard expense={expense} canEdit history />
 
           {/* Zoho readiness */}
           <ZohoReadinessCard

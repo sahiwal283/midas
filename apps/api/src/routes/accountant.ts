@@ -979,6 +979,8 @@ const detailsSchema = z.object({
   description: z.string().optional(),
   /** Argo event id; null clears the event. */
   eventId: z.string().min(1).nullable().optional(),
+  /** Accepts a notes-only change on a pushed expense as Midas-only. */
+  confirmSynced: z.boolean().optional(),
 });
 
 router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
@@ -1070,6 +1072,9 @@ router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
     action: 'details.corrected',
     before: Object.fromEntries(touched.map((k) => [k, expense[k]])),
     after: { ...changes, ...reimbursementPatch, ...accountPatch },
+    // A post-push edit never reaches Zoho Books; the trail says so, so the
+    // reader does not go looking for a matching change there.
+    ...(expense.zohoExpenseId ? { metadata: { zohoSynced: true, midasOnly: true } } : {}),
   });
 
   res.json({ expense: updated });

@@ -45,6 +45,12 @@ export interface DetailsEditPatch {
   description?: string;
   /** Attach an event, or null to clear it. Absent leaves it alone. */
   event?: { id: string; name: string } | null;
+  /**
+   * The accountant has seen that the expense is already in Zoho Books and
+   * accepts that the change lands in Midas only. Read only for a notes-only
+   * edit on a pushed expense; ignored otherwise.
+   */
+  confirmSynced?: boolean;
 }
 
 /** Column values to write. `amount` is stringified for the numeric column. */
@@ -62,7 +68,7 @@ export interface DetailsEditChanges {
 }
 
 export interface DetailsEditRefusal {
-  code: 'NOT_EDITABLE' | 'PERIOD_CLOSED' | 'EVENT_NOT_EDITABLE';
+  code: 'NOT_EDITABLE' | 'PERIOD_CLOSED' | 'EVENT_NOT_EDITABLE' | 'CONFIRM_SYNCED';
   message: string;
   status: number;
 }
@@ -77,8 +83,11 @@ export function planAccountantDetailsEdit(
   closedPeriods: string[],
 ): DetailsEditPlan {
   // Zoho holds the record once pushed — corrections there need an explicit
-  // adjustment, never a silent Midas-side rewrite.
-  if (expense.zohoExpenseId) {
+  // adjustment, never a silent Midas-side rewrite. The one exception is the
+  // note: it is Midas-side context that Zoho never reads back, so it stays
+  // correctable, with the same "Midas only" confirmation the category recode
+  // asks for. A patch that touches anything else alongside it is refused whole.
+  if (expense.zohoExpenseId && !isNotesOnlyPatch(patch)) {
     return {
       ok: false,
       refusal: {
@@ -111,6 +120,24 @@ export function planAccountantDetailsEdit(
   }
 
   const changes: DetailsEditChanges = {};
+
+  if (expense.zohoExpenseId && patch.description !== undefined) {
+    const description = patch.description.trim() || null;
+    if (description !== (expense.description?.trim() || null)) {
+      if (!patch.confirmSynced) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'CONFIRM_SYNCED',
+            message: 'This expense is already in Zoho Books. Confirm to change the notes in Midas only — Zoho is not changed.',
+            status: 409,
+          },
+        };
+      }
+      changes.description = description;
+    }
+    return { ok: true, changes };
+  }
 
   // An approved expense with no company cannot be pushed, and the company is
   // also what decides which Zoho org — and so which chart of accounts — the
@@ -146,4 +173,10 @@ export function planAccountantDetailsEdit(
   }
 
   return { ok: true, changes };
+}
+
+/** True when the patch carries nothing but the note (and the confirmation flag). */
+function isNotesOnlyPatch(patch: DetailsEditPatch): boolean {
+  return patch.description !== undefined
+    && Object.entries(patch).every(([k, v]) => k === 'description' || k === 'confirmSynced' || v === undefined);
 }
