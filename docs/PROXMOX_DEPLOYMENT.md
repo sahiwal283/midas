@@ -73,10 +73,18 @@ cd /path/to/midas
 # NOTE: --exclude=.env is load-bearing. tar does NOT honour .gitignore, so
 # without it your local dev .env overwrites production's and the API loses its
 # database. (This has happened. /opt/midas/.env is root:root 600 on the box.)
-tar czf - --exclude=node_modules --exclude=.git --exclude=.env \
+tar czf /tmp/midas.tar.gz --exclude=node_modules --exclude=.git --exclude=.env \
   --exclude=extension/dist --exclude=apps/web/dist --exclude=apps/api/dist \
-  --exclude=packages/shared/dist --exclude=packages/ocr-client/dist . | \
-  ssh root@192.168.1.190 "pct exec 3120 -- bash -c 'cd /opt/midas && tar xzf -'"
+  --exclude=packages/shared/dist --exclude=packages/ocr-client/dist .
+tar tzf /tmp/midas.tar.gz | grep -c '^\./\.env$'   # must print 0
+# Copy as a file, then extract inside the CT. Do NOT pipe the archive into
+# `pct exec ... tar xzf -`: pct exec never delivers EOF on stdin, so tar
+# extracts everything and then hangs forever (seen on the v1.17.0 deploy).
+scp /tmp/midas.tar.gz root@192.168.1.190:/root/midas.tar.gz
+ssh root@192.168.1.190 "pct push 3120 /root/midas.tar.gz /root/midas.tar.gz && \
+  pct exec 3120 -- bash -c 'cd /opt/midas && tar xzf /root/midas.tar.gz'"
+# tar never deletes: remove files this release dropped from git by hand.
+git diff --diff-filter=D --name-only <previous-release-tag> HEAD
 
 # On midas-app-prod:
 cd /opt/midas
