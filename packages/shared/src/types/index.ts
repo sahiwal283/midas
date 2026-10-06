@@ -495,4 +495,6 @@ export interface Notification {
   readAt: string | null;
   emailedAt: string | null;
   createdAt: string;
+  /** In-app route this notification opens, resolved for the viewer. */
+  path: string;
 }

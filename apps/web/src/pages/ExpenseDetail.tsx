@@ -16,6 +16,7 @@ import { ReimbursementControl } from '../components/ReimbursementControl';
 import { CategoryRecode } from '../components/CategoryRecode';
 import { ReferenceNumberField } from '../components/ReferenceNumberField';
 import { useAuth } from '../contexts/AuthContext';
+import { useScrollToHash } from '../lib/useScrollToHash';
 import type { Expense, ExpenseMessage, AuditLogEntry } from '../types';
 import { roleAllowed } from '../lib/roles';
 import { ExpenseDetailsCard, DetailRow as Row } from '../components/ExpenseDetailsCard';
@@ -567,6 +568,8 @@ export function ExpenseDetail() {
     },
   });
 
+  useScrollToHash(!!expense);
+
   if (isLoading) return <div className="p-8 text-charcoal/40">Loading…</div>;
   if (!expense) return <div className="p-8 text-danger">Expense not found</div>;
 
@@ -788,8 +791,8 @@ export function ExpenseDetail() {
             />
           </div>
 
-          {/* Conversation */}
-          <div className="rounded-xl border border-ink/10 bg-white p-5">
+          {/* Conversation — #conversation is the target of notification links */}
+          <div id="conversation" className="scroll-mt-4 rounded-xl border border-ink/10 bg-white p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-charcoal/80">
                 {isPrivileged ? 'Conversation & Requests' : 'Messages'}

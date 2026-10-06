@@ -7,7 +7,7 @@ import { getPushState, subscribeToPush, unsubscribeFromPush } from '../lib/push'
 import type { Notification } from '../types';
 
 /** "5m ago" style relative time — small enough to not need a dependency. */
-function timeAgo(iso: string): string {
+export function timeAgo(iso: string): string {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
@@ -73,7 +73,7 @@ export function NotificationBell({
   const openNotification = (n: Notification) => {
     setOpen(false);
     if (!n.readAt) markRead.mutate(n.id);
-    if (n.expenseId) navigate(`/expenses/${n.expenseId}`);
+    navigate(n.path);
   };
 
   return (

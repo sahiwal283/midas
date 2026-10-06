@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.18.0
+
+### Added
+- **Unread notifications are on the dashboard.** A "Needs your attention" card at the top of both the employee and accountant dashboards lists everything unread, with the same one-tap click-through as the bell. Until now the bell icon was the only place a notification appeared, and nobody had opened it.
+- **The installed app asks to turn on push.** When Midas is running from the home screen and push is available but off, the dashboard shows a "Turn on notifications" banner with a single button. The browser will not grant the permission without a tap, so this is as automatic as it can be. "Not now" hides it for a week. In a plain browser tab nothing changes: the bell and the dashboard card carry notifications, and the bell keeps its own opt-in.
+- **Turning on push catches the device up.** The moment a device subscribes it receives one push covering whatever its owner has not read yet: the notification itself if there is one, or a count with the newest spelled out if there are several.
+
+### Fixed
+- **A submitter's reply now reaches the accountant.** Replies were routed only to whoever held the review, and that is recorded only by an approve, reject or request-info decision. An accountant who simply wrote on an auto-approved expense held no claim, so the answer notified nobody. A reply now goes to the staff member who last wrote in the thread, then to the reviewer, then to every active accountant, so it is never dropped.
+- **Notifications open the right page, at the conversation.** Accountants land on the review page for someone else's expense instead of the submitter's view, and message and request-info notifications scroll to the conversation. The bell, the dashboard card and a push all use the same destination.
+- **A reply's wording no longer calls the expense "yours" to the accountant.** It reads "Seri replied on an expense".
+- A second push about the same expense buzzes again instead of silently replacing the first. Open tabs refresh the unread badge as soon as a push arrives rather than up to a minute later, and tapping a push marks that notification read.
+
+### Notes
+- No schema change. `GET /api/v1/notifications` rows gain a `path` field, resolved for the viewer.
+- Push still needs each person to opt in once per device, and on iPhone it only works from the home-screen app.
+
 ## 1.17.0
 
 ### Added

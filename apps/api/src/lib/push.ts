@@ -1,5 +1,5 @@
 import webpush from 'web-push';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index';
 import { pushSubscriptions } from '../db/schema';
 import { env } from '../config/env';
@@ -32,18 +32,27 @@ export interface PushPayload {
   url?: string;
   /** Collapse key — later pushes with the same tag replace earlier ones. */
   tag?: string;
+  /** The in-app notification this push stands for; tapping it marks that read. */
+  notificationId?: string;
 }
 
 /**
- * Send a push to every registered device of a user. Never throws; dead
- * endpoints (404/410 from the push service) are pruned as they are found.
+ * Send a push to every registered device of a user — or, with `endpoint`, to
+ * that one device only. Never throws; dead endpoints (404/410 from the push
+ * service) are pruned as they are found.
  */
-export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+export async function sendPushToUser(
+  userId: string,
+  payload: PushPayload,
+  opts: { endpoint?: string } = {},
+): Promise<void> {
   if (!ensureConfigured()) return;
 
   try {
     const subs = await db.query.pushSubscriptions.findMany({
-      where: eq(pushSubscriptions.userId, userId),
+      where: opts.endpoint
+        ? and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.endpoint, opts.endpoint))
+        : eq(pushSubscriptions.userId, userId),
     });
     if (subs.length === 0) return;
 

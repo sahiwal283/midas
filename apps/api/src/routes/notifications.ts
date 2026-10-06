@@ -1,15 +1,46 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq, and, desc, isNull, sql } from 'drizzle-orm';
+import { eq, and, desc, isNull, sql, type SQL } from 'drizzle-orm';
+import type { UserRole } from '@midas/shared';
 import { db } from '../db/index';
 import { notifications, pushSubscriptions } from '../db/schema';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound } from '../middleware/error';
-import { pushConfigured } from '../lib/push';
+import { pushConfigured, sendPushToUser } from '../lib/push';
+import { notificationPath } from '../lib/notificationLinks';
+import { buildCatchUpPush } from '../lib/notifyMessages';
 import { env } from '../config/env';
 
 const router = Router();
 router.use(authenticate);
+
+/**
+ * A user's notifications newest-first, each with the `path` tapping it opens.
+ * The path depends on who is looking (see lib/notificationLinks), so it is
+ * resolved here rather than stored.
+ */
+async function listWithPaths(
+  user: { id: string; role: UserRole },
+  where: SQL | undefined,
+  limit: number,
+) {
+  const rows = await db.query.notifications.findMany({
+    where,
+    orderBy: [desc(notifications.createdAt)],
+    limit,
+    with: { expense: { columns: { userId: true } } },
+  });
+  return rows.map(({ expense, ...n }) => ({
+    ...n,
+    path: notificationPath({
+      type: n.type,
+      expenseId: n.expenseId,
+      ownerId: expense?.userId ?? null,
+      recipientId: user.id,
+      recipientRole: user.role,
+    }),
+  }));
+}
 
 const listQuerySchema = z.object({
   unread: z.enum(['true', 'false']).optional(),
@@ -24,11 +55,7 @@ router.get('/', asyncHandler(async (req, res) => {
   const conds = [eq(notifications.userId, req.user!.id)];
   if (unread === 'true') conds.push(isNull(notifications.readAt));
 
-  const rows = await db.query.notifications.findMany({
-    where: and(...conds),
-    orderBy: [desc(notifications.createdAt)],
-    limit,
-  });
+  const rows = await listWithPaths(req.user!, and(...conds), limit);
 
   const [{ unreadCount }] = await db
     .select({ unreadCount: sql<number>`count(*)::int` })
@@ -105,6 +132,17 @@ router.post('/push/subscribe', asyncHandler(async (req, res) => {
       },
     })
     .returning({ id: pushSubscriptions.id });
+
+  // Everything raised before this device subscribed only ever reached the
+  // bell. Replay it here as one push so enabling notifications is also how a
+  // user finds out what they already missed. Fire-and-forget.
+  const unread = await listWithPaths(
+    req.user!,
+    and(eq(notifications.userId, req.user!.id), isNull(notifications.readAt)),
+    50,
+  );
+  const catchUp = buildCatchUpPush(unread);
+  if (catchUp) void sendPushToUser(req.user!.id, catchUp, { endpoint });
 
   res.status(201).json({ id: sub.id });
 }));

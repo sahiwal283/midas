@@ -226,6 +226,9 @@ Full request/response contracts: `docs/API_CONTRACTS.md`.
 - Auth state in React Context, populated from `/api/v1/auth/me` on mount
 - Axios with `withCredentials: true`
 - PWA: installable, web-push notifications (iOS requires Add to Home Screen)
+- Notifications surface in three places that share one destination per item
+  (`lib/notificationLinks`): the bell, the dashboard "Needs your attention" card,
+  and push. The installed app prompts for push; subscribing replays unread items
 - Vite dev server proxies `/api/*` to port 4000
 
 Main surfaces: Dashboard, My Expenses, New Expense (mobile capture +
