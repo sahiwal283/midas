@@ -1,4 +1,5 @@
 import client from './client';
+import type { MentionableUser } from '../lib/mentionPicker';
 import type { Expense, ExpenseCategory, Receipt, ExpenseMessage, PaymentMethod, AuditLogEntry, ZohoReadinessResult, ClosedPeriod } from '../types';
 
 export interface DuplicateMatch {
@@ -145,6 +146,9 @@ export const expenseApi = {
 
   postMessage: (expenseId: string, body: string) =>
     client.post<{ message: ExpenseMessage }>(`/expenses/${expenseId}/messages`, { body }).then((r) => r.data.message),
+
+  mentionable: (expenseId: string) =>
+    client.get<{ users: MentionableUser[] }>(`/expenses/${expenseId}/messages/mentionable`).then((r) => r.data.users),
 
   zohoReadiness: (expenseId: string) =>
     client.get<{ readiness: ZohoReadinessResult }>(`/expenses/${expenseId}/zoho-readiness`).then((r) => r.data.readiness),

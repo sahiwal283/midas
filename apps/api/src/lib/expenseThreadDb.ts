@@ -9,14 +9,14 @@
  * not go through postToThread.
  */
 
-import { and, asc, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
-import type { UserRole } from '@midas/shared';
+import { and, asc, desc, eq, inArray, isNotNull, ne, or } from 'drizzle-orm';
+import { resolveMentions, type UserRole } from '@midas/shared';
 import { db } from '../db/index';
 import { expenseMessages, expenses, users } from '../db/schema';
 import { auditLog } from './audit';
 import { notifyUser } from './notify';
 import { truncateExcerpt } from './notifyMessages';
-import { resolveMessageRecipients } from './messageRecipients';
+import { planMessageNotifications } from './messageRecipients';
 import { decideThreadPost } from './expenseThread';
 
 // Base sender columns the session-auth route has always selected — no email
@@ -135,6 +135,12 @@ export async function postToThread(input: PostToThreadInput) {
     with: { sender: { columns: senderColumns } },
   });
 
+  // Only people who can open the thread can be mentioned; any other @handle
+  // is just text. Skip the lookup for the common message with no @ in it.
+  const mentionedIds = input.body.includes('@')
+    ? resolveMentions(input.body, await listMentionable(expense.userId)).map((u) => u.id)
+    : [];
+
   // expense_messages is the canonical conversation record (see CLAUDE.md), so
   // every post is audited — not just the status transition above.
   await auditLog({
@@ -142,13 +148,18 @@ export async function postToThread(input: PostToThreadInput) {
     entityId: expense.id,
     userId: input.senderId,
     action: 'message.posted',
-    after: { messageId: message.id, excerpt: truncateExcerpt(input.body) },
+    after: {
+      messageId: message.id,
+      excerpt: truncateExcerpt(input.body),
+      ...(mentionedIds.length > 0 ? { mentionedUserIds: mentionedIds } : {}),
+    },
   });
 
-  // Tell the other side. In-app + push only: threads would flood an inbox.
-  // Only a submitter's post needs the accountant-side lookups.
+  // Tell the other side, plus anyone mentioned. In-app + push only: threads
+  // would flood an inbox. Only a submitter's post needs the accountant-side
+  // lookups.
   const fromOwner = input.senderId === expense.userId;
-  const recipients = resolveMessageRecipients({
+  const planned = planMessageNotifications({
     isSystem: false,
     senderId: input.senderId,
     senderRole: input.senderRole,
@@ -156,9 +167,10 @@ export async function postToThread(input: PostToThreadInput) {
     reviewedById: expense.reviewedById,
     lastStaffPosterId: fromOwner ? await lastStaffPoster(expense.id, input.senderId) : null,
     accountantIds: fromOwner ? await activeAccountantIds() : [],
+    mentionedIds,
   });
-  for (const recipient of recipients) {
-    await notifyUser(recipient, 'message', {
+  for (const { userId: recipient, type } of planned) {
+    await notifyUser(recipient, type, {
       expenseId: expense.id,
       ownerId: expense.userId,
       merchant: expense.merchant ?? 'an expense',
@@ -174,6 +186,21 @@ export async function postToThread(input: PostToThreadInput) {
 
 /** Roles that answer for the accountant side of a conversation. */
 const STAFF_ROLES = ['accountant', 'admin', 'developer'] as const;
+
+/**
+ * Who can be @-mentioned on an expense: exactly the active users who can open
+ * its thread (see decideThreadAccess) — staff, plus the submitter.
+ */
+export async function listMentionable(ownerId: string) {
+  return db.query.users.findMany({
+    where: and(
+      eq(users.isActive, true),
+      or(inArray(users.role, [...STAFF_ROLES]), eq(users.id, ownerId)),
+    ),
+    columns: { id: true, username: true, name: true, role: true },
+    orderBy: [asc(users.name)],
+  });
+}
 
 /** The active staff member who most recently wrote in this thread, if any. */
 async function lastStaffPoster(expenseId: string, exceptUserId: string): Promise<string | null> {

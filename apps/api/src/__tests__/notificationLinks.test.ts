@@ -14,6 +14,13 @@ describe('notificationPath', () => {
       .toBe('/expenses/exp-1#conversation');
   });
 
+  it('lands a mention on the conversation, on the page that fits the recipient', () => {
+    expect(notificationPath({ ...base, type: 'mention', recipientId: 'user-owner', recipientRole: 'user' }))
+      .toBe('/expenses/exp-1#conversation');
+    expect(notificationPath({ ...base, type: 'mention', recipientId: 'a', recipientRole: 'admin' }))
+      .toBe('/accountant/exp-1#conversation');
+  });
+
   it('lands an information request on the conversation', () => {
     expect(notificationPath({ ...base, type: 'action_required', recipientId: 'user-owner', recipientRole: 'user' }))
       .toBe('/expenses/exp-1#conversation');
