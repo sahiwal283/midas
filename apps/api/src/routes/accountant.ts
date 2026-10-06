@@ -975,11 +975,13 @@ const detailsSchema = z.object({
   amount: z.coerce.number().positive().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   paymentMethodId: z.string().uuid().optional(),
+  /** Validated as an active category below. */
+  categoryId: z.string().uuid().optional(),
   /** Notes; an empty string clears them. */
   description: z.string().optional(),
   /** Argo event id; null clears the event. */
   eventId: z.string().min(1).nullable().optional(),
-  /** Accepts a notes-only change on a pushed expense as Midas-only. */
+  /** Accepts a notes and/or category change on a pushed expense as Midas-only. */
   confirmSynced: z.boolean().optional(),
 });
 
@@ -1045,15 +1047,22 @@ router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
   // chart of accounts is its own. The stored account id wins over the one
   // resolved at push time, so it has to be re-resolved here or the expense
   // would be filed under the previous brand's account.
+  // A recategorised expense needs its account re-read for the same reason, and
+  // when both change in one save the account is the new pair's.
   let accountPatch: { zohoExpenseAccountId?: string | null; zohoExpenseAccountName?: string | null } = {};
-  if (changes.zohoEntity) {
-    const category = expense.categoryId
-      ? await db.query.expenseCategories.findFirst({ where: eq(expenseCategories.id, expense.categoryId) })
+  if (changes.zohoEntity || changes.categoryId) {
+    const categoryId = changes.categoryId ?? expense.categoryId;
+    const category = categoryId
+      ? await db.query.expenseCategories.findFirst({ where: eq(expenseCategories.id, categoryId) })
       : null;
+    // Same guard as the category route: an inactive category is not a target.
+    if (changes.categoryId && !category?.isActive) {
+      throw createError('Category not found or inactive', 400, 'VALIDATION_ERROR');
+    }
     accountPatch = accountColumnsForCompanyChange({
-      categoryId: expense.categoryId,
+      categoryId,
       categoryName: category?.name ?? null,
-      resolvedAccountId: await resolveCategoryEntityAccountId(expense.categoryId, changes.zohoEntity),
+      resolvedAccountId: await resolveCategoryEntityAccountId(categoryId, changes.zohoEntity ?? expense.zohoEntity),
     });
   }
 
@@ -1070,7 +1079,15 @@ router.patch('/expenses/:id/details', asyncHandler(async (req, res) => {
     entityId: expense.id,
     userId: req.user!.id,
     action: 'details.corrected',
-    before: Object.fromEntries(touched.map((k) => [k, expense[k]])),
+    before: {
+      ...Object.fromEntries(touched.map((k) => [k, expense[k]])),
+      // A recategorisation reads as "Expense account: old → new" in the trail,
+      // as it does from the category route.
+      ...(changes.categoryId ? {
+        zohoExpenseAccountId: expense.zohoExpenseAccountId,
+        zohoExpenseAccountName: expense.zohoExpenseAccountName,
+      } : {}),
+    },
     after: { ...changes, ...reimbursementPatch, ...accountPatch },
     // A post-push edit never reaches Zoho Books; the trail says so, so the
     // reader does not go looking for a matching change there.

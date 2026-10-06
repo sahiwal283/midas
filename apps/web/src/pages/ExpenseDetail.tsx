@@ -13,7 +13,6 @@ import { StatusBadge, ReimbursementBadge, ZohoPushBadge } from '../components/St
 import { ReceiptAttachments } from '../components/ReceiptAttachments';
 import { ZohoSyncCard } from '../components/ZohoSyncCard';
 import { ReimbursementControl } from '../components/ReimbursementControl';
-import { CategoryRecode } from '../components/CategoryRecode';
 import { ReferenceNumberField } from '../components/ReferenceNumberField';
 import { useAuth } from '../contexts/AuthContext';
 import { useScrollToHash } from '../lib/useScrollToHash';
@@ -892,16 +891,6 @@ export function ExpenseDetail() {
             <ReferenceNumberField
               expenseId={expense.id}
               value={expense.referenceNumber}
-              zohoExpenseId={expense.zohoExpenseId}
-            />
-          )}
-
-          {/* Category recode — accountant/admin, including after Zoho push */}
-          {isPrivileged && (
-            <CategoryRecode
-              expenseId={expense.id}
-              categoryId={expense.categoryId}
-              categoryName={expense.category?.name ?? expense.zohoExpenseAccountName ?? null}
               zohoExpenseId={expense.zohoExpenseId}
             />
           )}

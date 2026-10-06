@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.19.0
+
+### Added
+- **Category is in the Expense Details edit form.** Edit on the accountant review page and on the expense page now includes Category, next to the other corrections. The review page had no way to change a category at all until now.
+- **Notes and category stay editable after approval and after the Zoho push.** Once an expense is in Zoho Books the form offers only those two fields, and one "Update Midas only" confirmation covers whichever were changed. Zoho Books is not changed; the reports that read from Midas are.
+
+### Changed
+- **Notes can be edited in a closed month.** Closing a month still freezes company, merchant, amount, date, payment method and event. Notes and category only change how a report reads, so both stay open. Category was already editable there; notes were not.
+- The separate "Category" card on the expense page is gone, since the edit form does its job. The quick-view modal keeps its inline category control.
+
+### Notes
+- No schema change. `PATCH /api/v1/accountant/expenses/:id/details` accepts `categoryId`; a save that changes company and category together resolves the expense account for the new pair. The audit entry records the category and expense account before and after.
+
 ## 1.18.0
 
 ### Added
