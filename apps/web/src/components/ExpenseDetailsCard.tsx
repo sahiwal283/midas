@@ -4,6 +4,7 @@ import { AlertCircle } from 'lucide-react';
 import { accountantApi, expenseApi } from '../api/expenses';
 import { companyApi } from '../api/companies';
 import { VendorCombobox } from './VendorCombobox';
+import { CategoryPicker } from './CategoryPicker';
 import { EventPicker, useEventPickerAvailable } from './EventPicker';
 import { SyncedChangeConfirm } from './SyncedChangeConfirm';
 import { cardsForCompany } from '../lib/paymentMethodScope';
@@ -37,9 +38,9 @@ interface Props {
   expense: Expense;
   /**
    * Accountant/admin correction of someone else's expense: company, merchant,
-   * amount, date, payment method, event and notes. Once the expense is in
-   * Zoho Books only the notes stay editable, and saving them asks for a
-   * "Midas only" confirmation first.
+   * amount, date, payment method, event, category and notes. Once the expense
+   * is in Zoho Books only the notes and category stay editable, and saving
+   * them asks for a "Midas only" confirmation first.
    */
   canEdit?: boolean;
   /** Read the audit trail (accountant-only endpoint) to say who last edited the notes. */
@@ -58,11 +59,11 @@ export function ExpenseDetailsCard({ expense, canEdit = false, history = false, 
   const [editing, setEditing] = useState(false);
   const [confirmSynced, setConfirmSynced] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ company: '', merchant: '', amount: '', date: '', paymentMethodId: '', eventId: '', description: '' });
+  const [form, setForm] = useState({ company: '', merchant: '', amount: '', date: '', paymentMethodId: '', eventId: '', categoryId: '', description: '' });
   const pushed = Boolean(expense.zohoExpenseId);
-  // Once pushed, Zoho holds the financial record; the note is Midas-side
-  // context, which is why it is the one field still open here.
-  const notesOnly = pushed;
+  // Once pushed, Zoho holds the financial record; notes and category are the
+  // Midas-side labels the reports read, which is why they alone stay open here.
+  const labelsOnly = pushed;
   // The picker hides itself when the trade show link is off; its label has to
   // go with it, or the form shows an "Event" heading over nothing.
   const eventsAvailable = useEventPickerAvailable();
@@ -70,13 +71,19 @@ export function ExpenseDetailsCard({ expense, canEdit = false, history = false, 
   const { data: paymentMethods = [] } = useQuery({
     queryKey: ['payment-methods'],
     queryFn: () => expenseApi.paymentMethods(),
-    enabled: editing && !notesOnly,
+    enabled: editing && !labelsOnly,
     staleTime: 60_000,
   });
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => companyApi.list(),
-    enabled: editing && !notesOnly,
+    enabled: editing && !labelsOnly,
+    staleTime: 60_000,
+  });
+  const { data: categories = [] } = useQuery({
+    queryKey: ['expense-categories'],
+    queryFn: () => expenseApi.categories(),
+    enabled: editing,
     staleTime: 60_000,
   });
   const { data: auditEntries = [] } = useQuery({
@@ -102,7 +109,8 @@ export function ExpenseDetailsCard({ expense, canEdit = false, history = false, 
     if (form.description.trim() !== (expense.description ?? '').trim()) {
       patch.description = form.description.trim();
     }
-    if (notesOnly) return patch;
+    if (form.categoryId && form.categoryId !== (expense.categoryId ?? '')) patch.categoryId = form.categoryId;
+    if (labelsOnly) return patch;
     if (form.company && form.company !== (expense.zohoEntity ?? '')) patch.zohoEntity = form.company;
     const merchant = form.merchant.trim();
     if (merchant && merchant !== (expense.merchant ?? '').trim()) patch.merchant = merchant;
@@ -152,6 +160,7 @@ export function ExpenseDetailsCard({ expense, canEdit = false, history = false, 
       date: expense.date ?? '',
       paymentMethodId: expense.paymentMethodId ?? '',
       eventId: (expense.sourceContext as { eventId?: string } | null)?.eventId ?? '',
+      categoryId: expense.categoryId ?? '',
       description: expense.description ?? '',
     });
     setError('');
@@ -172,12 +181,19 @@ export function ExpenseDetailsCard({ expense, canEdit = false, history = false, 
       closeEditor();
       return;
     }
-    if (notesOnly) {
+    if (labelsOnly) {
       setConfirmSynced(true);
       return;
     }
     mutation.mutate(false);
   }
+
+  // What the "Midas only" panel names: exactly the labels being changed.
+  const pendingPatch = confirmSynced ? buildPatch() : {};
+  const syncedFieldLabel = [
+    ...('description' in pendingPatch ? ['the notes'] : []),
+    ...('categoryId' in pendingPatch ? ['the category'] : []),
+  ].join(' and ') || 'this expense';
 
   const paymentMethodLabel = expense.paymentMethod
     ? `${expense.paymentMethod.label}${expense.paymentMethod.lastFour ? ` ···${expense.paymentMethod.lastFour}` : ''}`
@@ -236,12 +252,12 @@ export function ExpenseDetailsCard({ expense, canEdit = false, history = false, 
         </>
       ) : (
         <form onSubmit={handleSave} className="space-y-3">
-          {notesOnly && (
+          {labelsOnly && (
             <p className="text-xs text-charcoal/50">
-              Already in Zoho Books — only the notes can be changed here.
+              Already in Zoho Books — only the notes and category can be changed here.
             </p>
           )}
-          {!notesOnly && (
+          {!labelsOnly && (
             <>
               {/* Company first, as on the submit forms: the cards and vendors below
                   are its Zoho org's, and an expense with none cannot be pushed. */}
@@ -336,6 +352,20 @@ export function ExpenseDetailsCard({ expense, canEdit = false, history = false, 
             </>
           )}
           <div>
+            <label htmlFor={`details-cat-${expense.id}`} className="mb-1 block text-xs font-medium text-charcoal/70">Category</label>
+            {categories.length === 0 ? (
+              <p className="text-xs text-charcoal/40">Loading categories…</p>
+            ) : (
+              <CategoryPicker
+                id={`details-cat-${expense.id}`}
+                categories={categories}
+                value={form.categoryId}
+                onChange={(id) => setForm((f) => ({ ...f, categoryId: id }))}
+                disabled={mutation.isPending}
+              />
+            )}
+          </div>
+          <div>
             <label className="mb-1 block text-xs font-medium text-charcoal/70">Notes</label>
             <textarea
               rows={3}
@@ -353,7 +383,7 @@ export function ExpenseDetailsCard({ expense, canEdit = false, history = false, 
           )}
           {confirmSynced ? (
             <SyncedChangeConfirm
-              fieldLabel="the notes"
+              fieldLabel={syncedFieldLabel}
               pending={mutation.isPending}
               onCancel={() => setConfirmSynced(false)}
               onConfirm={() => mutation.mutate(true)}

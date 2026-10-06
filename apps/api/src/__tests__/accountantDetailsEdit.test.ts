@@ -7,6 +7,7 @@ const base: DetailsEditTarget = {
   amount: '948.00',
   date: '2026-05-05',
   paymentMethodId: null,
+  categoryId: null,
   description: null,
   zohoExpenseId: null,
   sourceApp: null,
@@ -181,7 +182,7 @@ describe('planAccountantDetailsEdit — notes', () => {
 describe('planAccountantDetailsEdit — event re-tag', () => {
   const midasOwned = {
     zohoEntity: null, merchant: 'SPEEDEE MART', amount: '10.46', date: '2026-08-25',
-    paymentMethodId: null, description: null, zohoExpenseId: null,
+    paymentMethodId: null, categoryId: null, description: null, zohoExpenseId: null,
     sourceApp: null, sourceRefId: null, sourceContext: {},
   };
 
@@ -375,5 +376,126 @@ describe('planAccountantDetailsEdit — notes after Zoho push', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.changes).toEqual({ description: 'first note', merchant: 'Summitt Labs' });
+  });
+});
+
+describe('planAccountantDetailsEdit — category', () => {
+  const travel = '11111111-1111-4111-8111-111111111111';
+  const booth = '22222222-2222-4222-8222-222222222222';
+
+  it('sets the category alongside other corrections before the push', () => {
+    const result = planAccountantDetailsEdit(
+      { ...base, categoryId: travel },
+      { categoryId: booth, merchant: 'Summitt Labs' },
+      [],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ categoryId: booth, merchant: 'Summitt Labs' });
+  });
+
+  it('writes nothing when the category is unchanged', () => {
+    const result = planAccountantDetailsEdit({ ...base, categoryId: travel }, { categoryId: travel }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({});
+  });
+});
+
+describe('planAccountantDetailsEdit — labels after Zoho push', () => {
+  // Notes and category are what the reports group and read by. Neither is
+  // written back to Zoho, so both stay correctable once the expense is there.
+  const travel = '11111111-1111-4111-8111-111111111111';
+  const booth = '22222222-2222-4222-8222-222222222222';
+  const pushed = { ...base, zohoExpenseId: 'zoho-123', description: 'mop sink', categoryId: travel };
+
+  it('allows a category-only edit on a pushed expense once confirmed', () => {
+    const result = planAccountantDetailsEdit(pushed, { categoryId: booth, confirmSynced: true }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ categoryId: booth });
+  });
+
+  it('asks for confirmation before a category-only edit on a pushed expense', () => {
+    const result = planAccountantDetailsEdit(pushed, { categoryId: booth }, []);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('CONFIRM_SYNCED');
+    expect(result.refusal.message).toContain('the category');
+  });
+
+  it('carries notes and category together under one confirmation', () => {
+    const result = planAccountantDetailsEdit(
+      pushed,
+      { description: 'booth deposit', categoryId: booth, confirmSynced: true },
+      [],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: 'booth deposit', categoryId: booth });
+  });
+
+  it('names both fields when asking to confirm a notes and category edit', () => {
+    const result = planAccountantDetailsEdit(pushed, { description: 'booth deposit', categoryId: booth }, []);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('CONFIRM_SYNCED');
+    expect(result.refusal.message).toContain('the notes and category');
+  });
+
+  it('does not ask for confirmation when neither label actually changes', () => {
+    const result = planAccountantDetailsEdit(pushed, { description: 'mop sink', categoryId: travel }, []);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({});
+  });
+
+  it('still refuses a pushed edit that touches the category together with a financial field', () => {
+    const result = planAccountantDetailsEdit(
+      pushed,
+      { categoryId: booth, date: '2026-05-06', confirmSynced: true },
+      [],
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('NOT_EDITABLE');
+  });
+});
+
+describe('planAccountantDetailsEdit — labels in a closed period', () => {
+  // Closing a month freezes its money: amounts, dates, cards, companies.
+  // Notes and category only change how a report reads, so they stay open.
+  const booth = '22222222-2222-4222-8222-222222222222';
+
+  it('allows a notes edit in a closed period', () => {
+    const result = planAccountantDetailsEdit(base, { description: 'booth deposit' }, ['2026-05']);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: 'booth deposit' });
+  });
+
+  it('allows a category edit in a closed period', () => {
+    const result = planAccountantDetailsEdit(base, { categoryId: booth }, ['2026-05']);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ categoryId: booth });
+  });
+
+  it('allows a confirmed label edit on a pushed expense in a closed period', () => {
+    const result = planAccountantDetailsEdit(
+      { ...base, zohoExpenseId: 'zoho-123' },
+      { description: 'booth deposit', categoryId: booth, confirmSynced: true },
+      ['2026-05'],
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.changes).toEqual({ description: 'booth deposit', categoryId: booth });
+  });
+
+  it('still refuses a label edit that rides with a financial field in a closed period', () => {
+    const result = planAccountantDetailsEdit(base, { description: 'booth deposit', amount: 950 }, ['2026-05']);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('PERIOD_CLOSED');
   });
 });
