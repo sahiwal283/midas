@@ -123,6 +123,7 @@ export function ZohoSyncCard({
       ) : failed ? (
         <FailedBody
           zohoSyncError={sync.zohoSyncError ?? null}
+          recordKind={recordKind}
           onRetry={onRetry}
           retrying={retrying}
         />
@@ -144,16 +145,35 @@ export function ZohoSyncCard({
   );
 }
 
+/**
+ * Split the API's explained failure (lib/zohoFailureExplain.ts) —
+ * `<problem> To fix: <steps> (Zoho said: "<raw>")` — into its parts.
+ * Anything else comes back whole as `problem`.
+ */
+export function splitFailureReason(reason: string): { problem: string; fix: string | null; zohoSaid: string | null } {
+  const said = /\s*\(Zoho said: "(.*)"\)\s*$/s.exec(reason);
+  const body = said ? reason.slice(0, said.index) : reason;
+  const at = body.indexOf(' To fix: ');
+  if (at === -1) return { problem: body, fix: null, zohoSaid: said?.[1] ?? null };
+  return { problem: body.slice(0, at), fix: body.slice(at + ' To fix: '.length), zohoSaid: said?.[1] ?? null };
+}
+
 function FailedBody({
   zohoSyncError,
+  recordKind,
   onRetry,
   retrying,
 }: {
   zohoSyncError: string | null;
+  recordKind: ZohoRecordKind;
   onRetry?: () => void;
   retrying: boolean;
 }) {
   const { category, reason } = parseSyncError(zohoSyncError ?? 'Unknown error');
+  const { problem, fix, zohoSaid } = splitFailureReason(reason);
+  // Failures stored before the API explained account rejections carry only
+  // Zoho's wording, which reads as "pick a category". A retry rewrites them.
+  const bareMappingError = recordKind === 'expense' && category === 'MAPPING_ERROR' && !fix && /account/i.test(reason);
 
   return (
     <div className="space-y-2">
@@ -161,14 +181,29 @@ function FailedBody({
         <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
         Sync failed
       </p>
-      <div className="pl-6 text-xs text-charcoal/60">
-        <span className="font-semibold text-charcoal/50">Reason: </span>
-        {category && (
-          <span className="mr-1 inline-flex items-center rounded bg-danger/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-danger">
-            {category}
-          </span>
+      <div className="space-y-1.5 pl-6 text-xs leading-snug text-charcoal/60">
+        <p>
+          <span className="font-semibold text-charcoal/50">Reason: </span>
+          {category && (
+            <span className="mr-1 inline-flex items-center rounded bg-danger/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-danger">
+              {category}
+            </span>
+          )}
+          <span className="text-danger">{problem}</span>
+        </p>
+        {fix && (
+          <p className="text-charcoal/80">
+            <span className="font-semibold text-ink">To fix: </span>
+            {fix}
+          </p>
         )}
-        <span className="text-danger">{reason}</span>
+        {bareMappingError && (
+          <p className="text-charcoal/80">
+            The category and payment method on this expense are set — Zoho rejected the Zoho account one of
+            them is linked to. Press Retry to see which one and where to fix it.
+          </p>
+        )}
+        {zohoSaid && <p className="text-[11px] text-charcoal/40">Zoho said: “{zohoSaid}”</p>}
       </div>
       {onRetry && (
         <div className="pl-6">

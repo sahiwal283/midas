@@ -69,7 +69,11 @@ export interface PayloadExpense {
   zohoEntity: string | null;
   zohoExpenseAccountId?: string | null;
   zohoExpenseAccountName?: string | null;
-  /** category_zoho_accounts lookup for (category, zoho_entity) — resolved by caller. */
+  /**
+   * resolveCategoryEntityAccountId for (category, zoho_entity) — resolved by caller.
+   * `null` means "resolved, and there is no usable account"; leave it undefined
+   * when no resolution was attempted.
+   */
   categoryEntityAccountId?: string | null;
   reimbursementStatus: string;
   userId: string | null;
@@ -111,11 +115,16 @@ export function resolvePaidThroughAccountId(zohoAccountName: string | null | und
 }
 
 export function buildZohoServicePayload(expense: PayloadExpense): ZohoServicePayload {
-  // Resolution order: live per-expense COA pick → per-entity category map → legacy single-column map.
+  // Resolution order: live per-expense COA pick → the caller's resolution for
+  // (category, company) → legacy single-column map.
+  // The legacy column is read here only when the caller resolved nothing at all
+  // (`undefined` — the readiness preview). The pusher's resolution already
+  // walks the legacy column and refuses an id from another company's Zoho org,
+  // so its `null` is an answer: falling through would send the refused id.
   const accountId =
     expense.zohoExpenseAccountId?.trim()
     || expense.categoryEntityAccountId?.trim()
-    || expense.category?.zohoAccountId?.trim()
+    || (expense.categoryEntityAccountId === undefined ? expense.category?.zohoAccountId?.trim() : null)
     || null;
   const paidThrough = resolvePaidThroughAccountId(expense.paymentMethod?.zohoAccountName);
   const brand = resolveBrandFromEntity(expense.zohoEntity) ?? env.ZOHO_DEFAULT_BRAND;
