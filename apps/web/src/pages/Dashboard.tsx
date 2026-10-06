@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, ReceiptText, AlertCircle, CheckCircle2, Clock, RefreshCw, FileX, Banknote } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { UpcomingEventsCard } from '../components/UpcomingEventsCard';
+import { NotificationsCard } from '../components/NotificationsCard';
 import { expenseApi, accountantApi } from '../api/expenses';
 import { StatusBadge } from '../components/StatusBadge';
 
@@ -78,6 +79,8 @@ function AccountantDashboard({ name }: { name: string }) {
         </h1>
         <p className="mt-1 text-sm text-charcoal/55">Here&apos;s what needs your attention today</p>
       </div>
+
+      <NotificationsCard />
 
       {/* Queue overview */}
       <div className="mb-6 rounded-xl border border-ink/10 bg-white shadow-panel">
@@ -223,6 +226,8 @@ function EmployeeDashboard() {
           Add Transaction
         </Link>
       </div>
+
+      <NotificationsCard />
 
       {actionNeeded.length > 0 && (
         <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4">

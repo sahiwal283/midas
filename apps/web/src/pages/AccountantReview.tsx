@@ -11,6 +11,7 @@ import { MessageComposer } from '../components/MessageComposer';
 import { receiptContentUrl } from '../components/ReceiptPreview';
 import { ReceiptWaiverDialog } from '../components/ReceiptWaiverDialog';
 import { useAuth } from '../contexts/AuthContext';
+import { useScrollToHash } from '../lib/useScrollToHash';
 import { isZohoAccountId } from '@midas/shared';
 import type { Expense, ExpenseMessage, Receipt } from '../types';
 
@@ -321,6 +322,8 @@ export function AccountantReview() {
     });
   }
 
+  useScrollToHash(!!expense);
+
   if (isLoading) return <div className="p-8 text-charcoal/40">Loading…</div>;
   if (!expense) return <div className="p-8 text-danger">Expense not found</div>;
 
@@ -480,8 +483,8 @@ export function AccountantReview() {
             error={zohoPushError || null}
           />
 
-          {/* Conversation */}
-          <div className="rounded-xl border border-ink/10 bg-white p-5">
+          {/* Conversation — #conversation is the target of notification links */}
+          <div id="conversation" className="scroll-mt-4 rounded-xl border border-ink/10 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold text-charcoal/80">Conversation</h2>
             <div className="mb-4 max-h-80 space-y-3 overflow-y-auto">
               {expense.messages && expense.messages.length > 0 ? (

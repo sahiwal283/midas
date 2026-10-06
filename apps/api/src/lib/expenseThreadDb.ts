@@ -9,14 +9,14 @@
  * not go through postToThread.
  */
 
-import { and, asc, eq, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import type { UserRole } from '@midas/shared';
 import { db } from '../db/index';
-import { expenseMessages, expenses } from '../db/schema';
+import { expenseMessages, expenses, users } from '../db/schema';
 import { auditLog } from './audit';
 import { notifyUser } from './notify';
 import { truncateExcerpt } from './notifyMessages';
-import { resolveMessageRecipient } from './messageRecipients';
+import { resolveMessageRecipients } from './messageRecipients';
 import { decideThreadPost } from './expenseThread';
 
 // Base sender columns the session-auth route has always selected — no email
@@ -146,22 +146,57 @@ export async function postToThread(input: PostToThreadInput) {
   });
 
   // Tell the other side. In-app + push only: threads would flood an inbox.
-  const recipient = resolveMessageRecipient({
+  // Only a submitter's post needs the accountant-side lookups.
+  const fromOwner = input.senderId === expense.userId;
+  const recipients = resolveMessageRecipients({
     isSystem: false,
     senderId: input.senderId,
     senderRole: input.senderRole,
     ownerId: expense.userId,
     reviewedById: expense.reviewedById,
+    lastStaffPosterId: fromOwner ? await lastStaffPoster(expense.id, input.senderId) : null,
+    accountantIds: fromOwner ? await activeAccountantIds() : [],
   });
-  if (recipient) {
+  for (const recipient of recipients) {
     await notifyUser(recipient, 'message', {
       expenseId: expense.id,
+      ownerId: expense.userId,
       merchant: expense.merchant ?? 'an expense',
       amount: expense.amount ?? '0',
       senderName: full?.sender?.name,
       excerpt: truncateExcerpt(input.body),
+      toStaff: recipient !== expense.userId,
     }, { email: false });
   }
 
   return full;
+}
+
+/** Roles that answer for the accountant side of a conversation. */
+const STAFF_ROLES = ['accountant', 'admin', 'developer'] as const;
+
+/** The active staff member who most recently wrote in this thread, if any. */
+async function lastStaffPoster(expenseId: string, exceptUserId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ senderId: expenseMessages.senderId })
+    .from(expenseMessages)
+    .innerJoin(users, eq(users.id, expenseMessages.senderId))
+    .where(and(
+      eq(expenseMessages.expenseId, expenseId),
+      eq(expenseMessages.isSystem, false),
+      ne(expenseMessages.senderId, exceptUserId),
+      inArray(users.role, [...STAFF_ROLES]),
+      eq(users.isActive, true),
+    ))
+    .orderBy(desc(expenseMessages.createdAt))
+    .limit(1);
+  return row?.senderId ?? null;
+}
+
+async function activeAccountantIds(): Promise<string[]> {
+  const rows = await db.query.users.findMany({
+    where: and(eq(users.role, 'accountant'), eq(users.isActive, true)),
+    columns: { id: true },
+  });
+  return rows.map((u) => u.id);
 }

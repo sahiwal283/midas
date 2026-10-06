@@ -16,6 +16,11 @@ export interface NotificationInput {
   senderName?: string;
   /** Already-truncated message text — see truncateExcerpt. */
   excerpt?: string;
+  /**
+   * True when a conversation notification goes to the accountant side, for
+   * whom the expense is the sender's, not "yours".
+   */
+  toStaff?: boolean;
 }
 
 /** Longest message excerpt carried into a notification body. */
@@ -72,16 +77,64 @@ export function buildNotification(
           + `${(i.missing ?? []).join(', ')}. Add the missing item(s) and it will be `
           + 'approved automatically — no accountant review needed.',
       };
-    case 'message':
+    case 'message': {
+      const sender = i.senderName ?? 'Someone';
       return {
-        title: 'New message on your expense',
-        body: `${i.senderName ?? 'Someone'} on your ${amount} expense at ${i.merchant}: `
+        title: i.toStaff ? `${sender} replied on an expense` : 'New message on your expense',
+        body: `${sender} on ${i.toStaff ? 'their' : 'your'} ${amount} expense at ${i.merchant}: `
           + `"${i.excerpt ?? ''}"`,
       };
+    }
     case 'reimbursement_paid':
       return {
         title: 'Reimbursement paid',
         body: `Your ${amount} reimbursement for ${i.merchant} was marked paid.`,
       };
   }
+}
+
+export interface UnreadNotification {
+  id: string;
+  title: string;
+  body: string | null;
+  /** Where tapping it leads — see lib/notificationLinks. */
+  path: string;
+}
+
+export interface CatchUpPush {
+  title: string;
+  body: string;
+  url: string;
+  tag: string;
+  /** Set only when the push stands for exactly one notification. */
+  notificationId?: string;
+}
+
+/**
+ * The single push a device gets the moment it enables notifications, covering
+ * whatever its owner has not read yet. Notifications raised before a device
+ * subscribed were never delivered anywhere but the bell, so this is how they
+ * finally reach the lock screen — one push, not one per backlog item.
+ *
+ * `unread` is newest-first. Returns null when there is nothing to say.
+ */
+export function buildCatchUpPush(unread: UnreadNotification[]): CatchUpPush | null {
+  if (unread.length === 0) return null;
+
+  const [latest] = unread;
+  if (unread.length === 1) {
+    return {
+      title: latest.title,
+      body: latest.body ?? '',
+      url: latest.path,
+      tag: 'catch-up',
+      notificationId: latest.id,
+    };
+  }
+  return {
+    title: `You have ${unread.length} unread notifications`,
+    body: `Latest: ${latest.title}${latest.body ? ` — ${latest.body}` : ''}`,
+    url: '/dashboard',
+    tag: 'catch-up',
+  };
 }

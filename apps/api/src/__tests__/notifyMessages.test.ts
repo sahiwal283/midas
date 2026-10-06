@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildNotification, formatAmount, truncateExcerpt, type NotificationType } from '../lib/notifyMessages';
+import { buildCatchUpPush, buildNotification, formatAmount, truncateExcerpt, type NotificationType } from '../lib/notifyMessages';
 
 describe('formatAmount', () => {
   it('formats numeric strings to two decimals', () => {
@@ -71,6 +71,18 @@ describe('message notifications', () => {
     expect(body).toContain('Which card was this on?');
   });
 
+  it('words a reply for the accountant side as someone else\'s expense', () => {
+    const { title, body } = buildNotification('message', {
+      merchant: 'Summitt labs',
+      amount: '948.00',
+      senderName: 'Seri',
+      excerpt: 'Fixed it',
+      toStaff: true,
+    });
+    expect(title).toBe('Seri replied on an expense');
+    expect(body).toBe('Seri on their $948.00 expense at Summitt labs: "Fixed it"');
+  });
+
   it('falls back to a generic sender when the name is missing', () => {
     const { body } = buildNotification('message', {
       merchant: 'Summitt labs',
@@ -106,5 +118,38 @@ describe('truncateExcerpt', () => {
     const out = truncateExcerpt('x'.repeat(200));
     expect(out.length).toBe(121);
     expect(out.endsWith('…')).toBe(true);
+  });
+});
+
+describe('buildCatchUpPush', () => {
+  const one = { id: 'n1', title: 'New message on your expense', body: 'Digi: "hello"', path: '/expenses/e1#conversation' };
+  const two = { id: 'n2', title: 'Expense approved', body: 'Your $5.00 expense was approved.', path: '/expenses/e2' };
+
+  it('sends nothing when there is nothing unread', () => {
+    expect(buildCatchUpPush([])).toBeNull();
+  });
+
+  it('replays a single missed notification as itself', () => {
+    expect(buildCatchUpPush([one])).toEqual({
+      title: one.title,
+      body: one.body,
+      url: one.path,
+      tag: 'catch-up',
+      notificationId: 'n1',
+    });
+  });
+
+  it('summarises several, leading with the newest, and opens the dashboard', () => {
+    expect(buildCatchUpPush([one, two])).toEqual({
+      title: 'You have 2 unread notifications',
+      body: 'Latest: New message on your expense — Digi: "hello"',
+      url: '/dashboard',
+      tag: 'catch-up',
+    });
+  });
+
+  it('copes with a notification that has no body', () => {
+    expect(buildCatchUpPush([{ ...one, body: null }, two])?.body)
+      .toBe('Latest: New message on your expense');
   });
 });

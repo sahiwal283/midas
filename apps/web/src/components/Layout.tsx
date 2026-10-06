@@ -4,8 +4,11 @@ import { MobileNav } from './MobileNav';
 import { UploadRetryBanner } from './UploadRetryBanner';
 import { NotificationBell } from './NotificationBell';
 import { ExtensionSetupModal } from './ExtensionSetupModal';
+import { useNotificationPushSync } from '../lib/useNotificationPushSync';
 
 export function Layout() {
+  useNotificationPushSync();
+
   return (
     <div className="flex h-screen overflow-hidden bg-cream">
       <div className="hidden lg:flex">

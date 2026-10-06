@@ -6,9 +6,15 @@ import { logger } from './logger';
 import { sendEmail } from './email';
 import { sendPushToUser } from './push';
 import { buildNotification, type NotificationType, type NotificationInput } from './notifyMessages';
+import { notificationPath } from './notificationLinks';
 
 export interface NotifyInput extends NotificationInput {
   expenseId: string;
+  /**
+   * The expense's submitter. Defaults to the recipient, which is right for
+   * every notification except a reply travelling to the accountant side.
+   */
+  ownerId?: string;
 }
 
 export interface NotifyOptions {
@@ -34,6 +40,12 @@ export async function notifyUser(
   try {
     const { title, body } = buildNotification(type, input);
 
+    const recipient = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true, role: true },
+    });
+    if (!recipient) return;
+
     const [row] = await db.insert(notifications).values({
       userId,
       type,
@@ -47,8 +59,15 @@ export async function notifyUser(
     void sendPushToUser(userId, {
       title,
       body,
-      url: `/expenses/${input.expenseId}`,
+      url: notificationPath({
+        type,
+        expenseId: input.expenseId,
+        ownerId: input.ownerId ?? userId,
+        recipientId: userId,
+        recipientRole: recipient.role,
+      }),
       tag: `expense-${input.expenseId}`,
+      notificationId: row.id,
     });
 
     if (opts.email === false) return;
@@ -56,15 +75,11 @@ export async function notifyUser(
     // Fire-and-forget email — the caller's response never waits on SMTP.
     void (async () => {
       try {
-        const user = await db.query.users.findFirst({
-          where: eq(users.id, userId),
-          columns: { email: true },
-        });
-        if (!user?.email) return;
+        if (!recipient.email) return;
 
         const webBase = env.MIDAS_WEB_BASE_URL || env.CORS_ORIGIN;
         const text = `${body}\n\n${webBase}/expenses/${input.expenseId}`;
-        const sent = await sendEmail(user.email, title, text);
+        const sent = await sendEmail(recipient.email, title, text);
         if (sent) {
           await db.update(notifications)
             .set({ emailedAt: new Date() })
