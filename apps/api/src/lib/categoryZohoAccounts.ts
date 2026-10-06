@@ -1,8 +1,11 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../db/index';
-import { categoryZohoAccounts, expenseCategories } from '../db/schema';
-import { ancestryChain } from './categoryTree';
+import { categoryZohoAccounts, expenseCategories, expenses } from '../db/schema';
+import { ancestryChain, descendantIds } from './categoryTree';
 import { pickCategoryAccountId } from './categoryAccountPick';
+import { planStoredAccountRefresh } from './storedAccountRefresh';
+import { syncExpenseToTransaction } from './syncExpenseTransaction';
+import { auditLog } from './audit';
 
 /**
  * Zoho COA account for (category, company), inheriting up the category tree.
@@ -65,4 +68,70 @@ export function accountColumnsForCompanyChange(input: {
     zohoExpenseAccountId: input.resolvedAccountId,
     zohoExpenseAccountName: input.categoryName,
   };
+}
+
+/** What a category and its descendants resolve to for one company, right now. */
+async function resolveSubtreeAccounts(categoryId: string, companyName: string) {
+  const cats = await db.select({
+    id: expenseCategories.id,
+    parentId: expenseCategories.parentId,
+    isActive: expenseCategories.isActive,
+    zohoAccountId: expenseCategories.zohoAccountId,
+  }).from(expenseCategories);
+  const categoryIds = descendantIds(cats, categoryId);
+  const accounts = new Map<string, string | null>();
+  for (const id of categoryIds) {
+    accounts.set(id, await resolveCategoryEntityAccountId(id, companyName));
+  }
+  return { categoryIds, accounts, legacyById: new Map(cats.map((c) => [c.id, c.zohoAccountId])) };
+}
+
+/**
+ * Runs a change to one (category, company) mapping, then carries it to the
+ * unpushed expenses still holding a copy of the account the category resolved
+ * to before. Pushed expenses are left alone: their account is whatever Zoho
+ * Books recorded. Returns the write's result and how many expenses moved.
+ */
+export async function withStoredAccountRefresh<T>(
+  input: { categoryId: string; companyName: string; actorUserId: string },
+  write: () => Promise<T>,
+): Promise<{ result: T; refreshed: number }> {
+  const before = await resolveSubtreeAccounts(input.categoryId, input.companyName);
+  const result = await write();
+  const after = await resolveSubtreeAccounts(input.categoryId, input.companyName);
+
+  let refreshed = 0;
+  for (const plan of planStoredAccountRefresh({
+    categoryIds: after.categoryIds,
+    before: before.accounts,
+    after: after.accounts,
+    legacyById: after.legacyById,
+  })) {
+    const stale = await db.select({ id: expenses.id, zohoExpenseAccountId: expenses.zohoExpenseAccountId })
+      .from(expenses)
+      .where(and(
+        eq(expenses.categoryId, plan.categoryId),
+        eq(expenses.zohoEntity, input.companyName),
+        isNull(expenses.zohoExpenseId),
+        inArray(expenses.zohoExpenseAccountId, plan.from),
+      ));
+    for (const row of stale) {
+      const [updated] = await db.update(expenses)
+        .set({ zohoExpenseAccountId: plan.to, updatedAt: new Date() })
+        .where(eq(expenses.id, row.id))
+        .returning();
+      await syncExpenseToTransaction(updated);
+      await auditLog({
+        entityType: 'expense',
+        entityId: row.id,
+        userId: input.actorUserId,
+        action: 'zoho.account_remapped',
+        before: { zohoExpenseAccountId: row.zohoExpenseAccountId },
+        after: { zohoExpenseAccountId: plan.to },
+        metadata: { reason: 'category mapping changed', companyName: input.companyName },
+      });
+      refreshed += 1;
+    }
+  }
+  return { result, refreshed };
 }

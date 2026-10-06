@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.19.1
+
+### Fixed
+- **A rejected Zoho account now says what is wrong and where to fix it.** A failed push used to show only Zoho's own wording, "Please enter valid expense account", on an expense whose category was plainly set. The Zoho card now says that the category is set and the Zoho account behind it was rejected, names the company, and gives the fix: Settings → Chart of Accounts for an expense account, Settings → Payment Methods for a paid-through account. Zoho's wording is kept underneath. Failures recorded before this release show a short explanation and get the full one on the next Retry.
+- **A category with no account for the company stops in Midas instead of being rejected by Zoho.** When a category had no account attached for a company, the push sent the category's default account even after Midas had identified it as another company's. The push now stops with a message naming the category, the company and the Settings page to fix it on.
+- **Changing a category's Zoho account carries over to expenses waiting to be pushed.** Each expense keeps a copy of the account its category pointed to, and that copy wins at push time, so fixing a mapping in Settings left the affected expenses failing on Retry. Attaching, moving or removing a category in Chart of Accounts now updates the unpushed expenses in that company that still hold the previous account, including sub-categories that inherit it. Expenses already in Zoho Books, and expenses whose account was picked directly in the browser extension, are not touched.
+
+### Notes
+- No schema change. Each updated expense gets a `zoho.account_remapped` audit entry, and the `zoho.failed` audit entry now records the account ids that were sent. `PUT` and `DELETE /api/v1/admin/category-zoho-accounts` return `refreshedExpenses`.
+- Expenses that already hold an outdated account from a mapping fixed before this release are not updated retroactively: change the category on the expense to another one and back, then Retry.
+
 ## 1.19.0
 
 ### Added

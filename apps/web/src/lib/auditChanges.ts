@@ -40,6 +40,7 @@ const ACTION_LABELS: Record<string, string> = {
   'reference_number.set': 'Reference number set',
   'zoho.pushed': 'Pushed to Zoho',
   'zoho.failed': 'Zoho push failed',
+  'zoho.account_remapped': 'Expense account updated (mapping changed)',
   'zoho_entity.set': 'Company set',
   'submitted': 'Submitted for review',
   'created': 'Expense created',

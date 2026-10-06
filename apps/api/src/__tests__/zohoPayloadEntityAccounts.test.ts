@@ -44,8 +44,17 @@ describe('per-entity Zoho account resolution', () => {
     expect(p.account_id).toBe('live-pick-id');
   });
 
-  it('falls back to legacy category.zohoAccountId when no entity mapping', () => {
-    const p = buildZohoServicePayload({ ...base, categoryEntityAccountId: null });
+  it('falls back to legacy category.zohoAccountId when the caller resolved nothing', () => {
+    const p = buildZohoServicePayload(base);
     expect(p.account_id).toBe('legacy-fallback-id');
+  });
+
+  // The pusher's resolution refuses a legacy id that belongs to another
+  // company's Zoho org and returns null. Reading the legacy column again here
+  // sent that refused id anyway, and Zoho answered "Please enter valid expense
+  // account" on an expense whose category was plainly set.
+  it('does not fall back to the legacy id when the caller resolved to no account', () => {
+    const p = buildZohoServicePayload({ ...base, categoryEntityAccountId: null });
+    expect(p.account_id).toBeNull();
   });
 });

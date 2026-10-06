@@ -20,6 +20,7 @@ import { issueInvite } from '../lib/invites';
 import { parseAuditFilters } from '../lib/auditFilters';
 import { wouldCreateCycle } from '../lib/categoryTree';
 import { syncCategoriesFromZoho } from '../lib/categorySyncDb';
+import { withStoredAccountRefresh } from '../lib/categoryZohoAccounts';
 
 const router = Router();
 router.use(authenticate);
@@ -683,13 +684,18 @@ router.put('/category-zoho-accounts', accounting, asyncHandler(async (req, res) 
   const company = await db.query.companies.findFirst({ where: eq(companies.name, body.companyName) });
   if (!company) throw notFound('Company not found');
 
-  const [mapping] = await db.insert(categoryZohoAccounts)
-    .values(body)
-    .onConflictDoUpdate({
-      target: [categoryZohoAccounts.categoryId, categoryZohoAccounts.companyName],
-      set: { zohoAccountId: body.zohoAccountId },
-    })
-    .returning();
+  // Unpushed expenses carry a copy of the account their category resolved to;
+  // move those along with the mapping, or a retry sends the old id again.
+  const { result: [mapping], refreshed } = await withStoredAccountRefresh(
+    { categoryId: body.categoryId, companyName: body.companyName, actorUserId: req.user!.id },
+    () => db.insert(categoryZohoAccounts)
+      .values(body)
+      .onConflictDoUpdate({
+        target: [categoryZohoAccounts.categoryId, categoryZohoAccounts.companyName],
+        set: { zohoAccountId: body.zohoAccountId },
+      })
+      .returning(),
+  );
 
   await auditLog({
     entityType: 'category_zoho_account',
@@ -697,9 +703,9 @@ router.put('/category-zoho-accounts', accounting, asyncHandler(async (req, res) 
     userId: req.user!.id,
     action: 'admin.coa.mapped',
     after: mapping,
-    metadata: { categoryName: category.name },
+    metadata: { categoryName: category.name, refreshedExpenses: refreshed },
   });
-  res.json({ mapping });
+  res.json({ mapping, refreshedExpenses: refreshed });
 }));
 
 router.delete('/category-zoho-accounts', accounting, asyncHandler(async (req, res) => {
@@ -707,12 +713,15 @@ router.delete('/category-zoho-accounts', accounting, asyncHandler(async (req, re
   const companyName = typeof req.query.companyName === 'string' ? req.query.companyName.trim() : '';
   if (!categoryId || !companyName) throw createError('categoryId and companyName are required', 400, 'MISSING_PARAMS');
 
-  const [removed] = await db.delete(categoryZohoAccounts)
-    .where(and(
-      eq(categoryZohoAccounts.categoryId, categoryId),
-      eq(categoryZohoAccounts.companyName, companyName),
-    ))
-    .returning();
+  const { result: [removed], refreshed } = await withStoredAccountRefresh(
+    { categoryId, companyName, actorUserId: req.user!.id },
+    () => db.delete(categoryZohoAccounts)
+      .where(and(
+        eq(categoryZohoAccounts.categoryId, categoryId),
+        eq(categoryZohoAccounts.companyName, companyName),
+      ))
+      .returning(),
+  );
   if (!removed) throw notFound('Mapping not found');
 
   await auditLog({
@@ -721,8 +730,9 @@ router.delete('/category-zoho-accounts', accounting, asyncHandler(async (req, re
     userId: req.user!.id,
     action: 'admin.coa.unmapped',
     before: removed,
+    metadata: { refreshedExpenses: refreshed },
   });
-  res.json({ ok: true });
+  res.json({ ok: true, refreshedExpenses: refreshed });
 }));
 
 // ── App Connections (app-to-app API keys) ──────────────────────────────────

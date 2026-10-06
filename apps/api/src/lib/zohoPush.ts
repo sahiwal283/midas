@@ -14,6 +14,7 @@ import { logger } from './logger';
 import { buildZohoServicePayload, type PayloadExpense } from './zohoPayload';
 import { resolveCategoryEntityAccountId } from './categoryZohoAccounts';
 import { classifyZohoError } from './zohoErrors';
+import { explainZohoFailure, expenseAccountSource } from './zohoFailureExplain';
 import { syncExpenseToTransaction } from './syncExpenseTransaction';
 import { isCompanyZohoEnabled } from './companies';
 import { resolveUserNames, toDateOnly } from './userNames';
@@ -179,7 +180,8 @@ export async function pushExpenseToZoho(
   if (!payload.account_id) {
     return {
       ok: false, status: 409, code: 'MISSING_ZOHO_EXPENSE_ACCOUNT',
-      message: 'No Zoho expense account on this expense — select one from the Zoho COA (or map a Trade Show category)',
+      message: `The category${expense.category?.name ? ` "${expense.category.name}"` : ''} is not attached to a Zoho account for ${expense.zohoEntity}. `
+        + `To fix: Settings → Chart of Accounts → ${expense.zohoEntity} → attach this category to an account, then push again.`,
     };
   }
   if (!payload.paid_through_account_id) {
@@ -333,7 +335,20 @@ export async function pushExpenseToZoho(
   } catch (err) {
     const zohoErr = err instanceof ZohoServiceError ? err : null;
     const { category } = classifyZohoError(err);
-    const syncError = `[${category}] ${zohoErr?.message ?? (err instanceof Error ? err.message : String(err))}`.slice(0, 500);
+    const rawMessage = zohoErr?.message ?? (err instanceof Error ? err.message : String(err));
+    // Zoho's wording for a rejected account reads as "pick a category", which
+    // the accountant has already done. Say what was rejected and where to fix it.
+    const accountSource = expenseAccountSource({
+      pinned: expense.zohoExpenseAccountId,
+      resolved: categoryEntityAccountId,
+      legacy: expense.category?.zohoAccountId,
+    });
+    const syncError = `[${category}] ${explainZohoFailure(category, rawMessage, {
+      company: expense.zohoEntity,
+      categoryName: expense.category?.name ?? expense.zohoExpenseAccountName ?? null,
+      paymentMethodLabel: expense.paymentMethod?.label ?? null,
+      accountSource,
+    })}`.slice(0, 800);
 
     await db.update(expenses)
       .set({
@@ -358,6 +373,11 @@ export async function pushExpenseToZoho(
         code: zohoErr?.code ?? 'ZOHO_SYNC_FAILED',
         category,
         requestId: zohoErr?.requestId ?? null,
+        // The ids Zoho was actually sent — the first thing anyone asks when a
+        // mapping is rejected, and otherwise only recoverable from service logs.
+        accountId: payload.account_id,
+        accountSource,
+        paidThroughAccountId: payload.paid_through_account_id,
       },
     });
 
