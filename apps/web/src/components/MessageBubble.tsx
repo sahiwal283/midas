@@ -1,4 +1,6 @@
+import { splitMentions } from '@midas/shared';
 import type { ExpenseMessage, MessageRequestType } from '../types';
+import { useMentionable } from '../lib/mentionPicker';
 
 /**
  * One message in an expense conversation. Shared by the employee's
@@ -25,6 +27,8 @@ export function MessageBubble({
   /** Internal notes are accountant-only; the API also strips them server-side. */
   isPrivileged?: boolean;
 }) {
+  const mentionable = useMentionable(message.expenseId);
+
   if (message.isSystem) {
     return (
       <div className="rounded-lg border border-ink/10 bg-cream px-3 py-2 text-center text-xs text-muted break-words">
@@ -67,7 +71,23 @@ export function MessageBubble({
         )}
         <span className="text-xs opacity-60">{new Date(message.createdAt).toLocaleString()}</span>
       </div>
-      <p className="break-words">{message.body}</p>
+      <p className="break-words">
+        {splitMentions(message.body, mentionable).map((segment, i) => (
+          segment.type === 'text' ? segment.text : (
+            <span
+              key={i}
+              title={segment.user.name}
+              className={`rounded px-1 py-0.5 font-medium ${
+                segment.user.id === currentUserId
+                  ? 'bg-gold-200 text-gold-900'
+                  : 'bg-brand-100 text-brand-700'
+              }`}
+            >
+              {segment.text}
+            </span>
+          )
+        ))}
+      </p>
     </div>
   );
 }

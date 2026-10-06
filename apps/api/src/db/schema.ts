@@ -543,7 +543,7 @@ export const categoryMappings = pgTable('category_mappings', {
 export const notifications = pgTable('notifications', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  /** 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' */
+  /** 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete' | 'message' | 'mention' */
   type: text('type').notNull(),
   title: text('title').notNull(),
   body: text('body'),

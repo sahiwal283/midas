@@ -27,6 +27,13 @@ export {
   matchZohoItem,
 } from './zohoItemMatch';
 export type { MatchableZohoItem, ZohoItemMatch } from './zohoItemMatch';
+export {
+  splitMentions,
+  resolveMentions,
+  activeMentionQuery,
+  insertMention,
+} from './mentions';
+export type { MentionCandidate, MentionSegment, MentionQuery } from './mentions';
 
 // ── Roles ────────────────────────────────────────────────────────────────────
 
@@ -483,7 +490,7 @@ export interface ClosedPeriod {
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 
-export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete';
+export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete' | 'message' | 'mention';
 
 export interface Notification {
   id: string;

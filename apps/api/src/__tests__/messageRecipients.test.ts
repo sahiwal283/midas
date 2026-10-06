@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { resolveMessageRecipients, type MessageRecipientInput } from '../lib/messageRecipients';
+import {
+  planMessageNotifications, resolveMessageRecipients, type MessageRecipientInput,
+} from '../lib/messageRecipients';
 
 const owner = 'user-owner';
 const accountant = 'user-accountant';
@@ -106,5 +108,62 @@ describe('resolveMessageRecipients', () => {
     expect(resolveMessageRecipients(input({
       senderId: owner, senderRole: 'partner', reviewedById: reviewer,
     }))).toEqual([reviewer]);
+  });
+});
+
+describe('planMessageNotifications', () => {
+  const admin = 'user-admin';
+
+  it('matches the usual routing when nobody is mentioned', () => {
+    expect(planMessageNotifications(input({}))).toEqual([{ userId: owner, type: 'message' }]);
+    expect(planMessageNotifications(input({ mentionedIds: [] })))
+      .toEqual([{ userId: owner, type: 'message' }]);
+  });
+
+  it('notifies a mentioned colleague as well as the owner', () => {
+    expect(planMessageNotifications(input({ mentionedIds: [admin] }))).toEqual([
+      { userId: admin, type: 'mention' },
+      { userId: owner, type: 'message' },
+    ]);
+  });
+
+  it('sends one notification, as a mention, to someone who is both', () => {
+    expect(planMessageNotifications(input({ mentionedIds: [owner] })))
+      .toEqual([{ userId: owner, type: 'mention' }]);
+  });
+
+  it('adds mentions to an owner reply without dropping the usual recipient', () => {
+    expect(planMessageNotifications(input({
+      senderId: owner, senderRole: 'user', lastStaffPosterId: accountant, mentionedIds: [admin],
+    }))).toEqual([
+      { userId: admin, type: 'mention' },
+      { userId: accountant, type: 'message' },
+    ]);
+  });
+
+  it('narrows nothing when the owner mentions one of several accountants', () => {
+    expect(planMessageNotifications(input({
+      senderId: owner, senderRole: 'user',
+      accountantIds: [accountant, otherAccountant], mentionedIds: [otherAccountant],
+    }))).toEqual([
+      { userId: otherAccountant, type: 'mention' },
+      { userId: accountant, type: 'message' },
+    ]);
+  });
+
+  it('never notifies someone for mentioning themselves', () => {
+    expect(planMessageNotifications(input({ mentionedIds: [accountant] })))
+      .toEqual([{ userId: owner, type: 'message' }]);
+  });
+
+  it('notifies a repeated mention once', () => {
+    expect(planMessageNotifications(input({ mentionedIds: [admin, admin] }))).toEqual([
+      { userId: admin, type: 'mention' },
+      { userId: owner, type: 'message' },
+    ]);
+  });
+
+  it('notifies nobody for system messages, mentions included', () => {
+    expect(planMessageNotifications(input({ isSystem: true, mentionedIds: [admin] }))).toEqual([]);
   });
 });

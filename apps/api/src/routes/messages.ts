@@ -6,7 +6,7 @@ import { expenses } from '../db/schema';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden } from '../middleware/error';
 import { decideThreadAccess } from '../lib/expenseThread';
-import { listThread, postToThread } from '../lib/expenseThreadDb';
+import { listMentionable, listThread, postToThread } from '../lib/expenseThreadDb';
 
 const router = Router({ mergeParams: true });
 router.use(authenticate);
@@ -35,6 +35,12 @@ router.get('/', asyncHandler(async (req, res) => {
     includeInternal: access.includeInternal,
   });
   res.json({ messages });
+}));
+
+// Who can be @-mentioned in this thread
+router.get('/mentionable', asyncHandler(async (req, res) => {
+  const { expense } = await loadAndAuthorize(req as never);
+  res.json({ users: await listMentionable(expense.userId) });
 }));
 
 // Post a message

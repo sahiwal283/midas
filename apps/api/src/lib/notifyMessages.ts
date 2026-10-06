@@ -3,7 +3,7 @@
  * this without a database (see src/__tests__/notifyMessages.test.ts).
  */
 
-export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete' | 'message';
+export type NotificationType = 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete' | 'message' | 'mention';
 
 export interface NotificationInput {
   merchant: string;
@@ -17,8 +17,8 @@ export interface NotificationInput {
   /** Already-truncated message text — see truncateExcerpt. */
   excerpt?: string;
   /**
-   * True when a conversation notification goes to the accountant side, for
-   * whom the expense is the sender's, not "yours".
+   * True when a conversation notification goes to someone other than the
+   * submitter, for whom the expense is not "yours".
    */
   toStaff?: boolean;
 }
@@ -82,6 +82,16 @@ export function buildNotification(
       return {
         title: i.toStaff ? `${sender} replied on an expense` : 'New message on your expense',
         body: `${sender} on ${i.toStaff ? 'their' : 'your'} ${amount} expense at ${i.merchant}: `
+          + `"${i.excerpt ?? ''}"`,
+      };
+    }
+    case 'mention': {
+      const sender = i.senderName ?? 'Someone';
+      // A mentioned colleague may have no tie to the expense at all, so it is
+      // "an expense" to them — only the submitter is told it is theirs.
+      return {
+        title: `${sender} mentioned you on ${i.toStaff ? 'an' : 'your'} expense`,
+        body: `${sender} on ${i.toStaff ? 'a' : 'your'} ${amount} expense at ${i.merchant}: `
           + `"${i.excerpt ?? ''}"`,
       };
     }

@@ -19,7 +19,7 @@ export interface NotificationPathInput {
 }
 
 /** Notification types that are about the conversation rather than the record. */
-const CONVERSATION_TYPES = new Set(['message', 'action_required']);
+const CONVERSATION_TYPES = new Set(['message', 'mention', 'action_required']);
 
 export function notificationPath(input: NotificationPathInput): string {
   if (!input.expenseId) return '/dashboard';

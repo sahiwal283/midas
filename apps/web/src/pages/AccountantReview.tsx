@@ -496,6 +496,7 @@ export function AccountantReview() {
               )}
             </div>
             <MessageComposer
+              expenseId={expense.id}
               value={reply}
               onChange={setReply}
               onSubmit={() => messageMutation.mutate(reply.trim())}

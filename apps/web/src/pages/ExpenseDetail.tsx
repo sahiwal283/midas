@@ -821,6 +821,7 @@ export function ExpenseDetail() {
               )}
             </div>
             <MessageComposer
+              expenseId={expense.id}
               value={message}
               onChange={setMessage}
               onSubmit={() => messageMutation.mutate(message.trim())}
