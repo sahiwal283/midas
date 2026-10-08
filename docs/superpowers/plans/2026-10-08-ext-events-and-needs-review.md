@@ -1989,8 +1989,12 @@ git commit -m "chore: bump version to 1.21.0"
 These steps change production and are run by the controller, in this order, together with the Argo plan (`trade-show-app/docs/superpowers/plans/2026-10-08-midas-expense-notifications-argo.md`).
 
 1. **Merge and push Midas** (`main`).
-2. **Deploy Midas v1.21.0 to CT 3120** with the verified tarball recipe: `git archive` of the changed files → `scp` to the Proxmox host → `pct push 3120` → `tar -xzf` in `/opt/midas` (never include `.env`) → `docker compose -f docker-compose.prod.yml up -d --build api web`. Remove any file deleted in git by hand (none in this release).
-3. **Verify the migration** from the migrator log (`docker logs midas-migrator-1 2>&1 | grep -E "applying|applied"` shows `0033_ext_events_needs_review`) and the schema itself on CT 3220 (`ext_events` exists; `app_connections.events_enabled` exists). `/api/v1/meta` reports `1.21.0` and `environment: production`.
+2. **Deploy Midas v1.21.0 to CT 3120**, migrating BEFORE the new API starts (new code fails against the old schema: Drizzle selects the new columns by name). Order, per `docs/OPERATIONS.md` (extract → migrate → rebuild):
+   a. `git archive` of the changed files → `scp` to the Proxmox host → `pct push 3120` → `tar -xzf` in `/opt/midas` (never include `.env`). Remove any file deleted in git by hand (none in this release).
+   b. `docker compose -f docker-compose.prod.yml run --rm --build migrator` and confirm its output contains `applying 0033_ext_events_needs_review` and `applied 0033_ext_events_needs_review`. `--build` is required: a stale migrator image exits 0 having applied nothing. Old code is safe on the new schema (every new column is nullable or defaulted).
+   c. Verify the schema itself on CT 3220 (`ext_events` exists; `app_connections.events_enabled` and `expenses.incomplete_notified_at` exist).
+   d. Only then: `docker compose -f docker-compose.prod.yml up -d --build api web`.
+3. **Verify the release**: `/api/v1/meta` reports `1.21.0` and `environment: production`; the API log shows `Missing-details sweep started` and no `column … does not exist` errors.
    Then grant `events:read` to the production Argo connection (`PATCH /api/v1/admin/connections/:id` with the full permissions list plus `events:read`). It is harmless while events are off.
 4. **Set `EXT_EVENTS_PING_SECRET`** in `/opt/midas/.env` on CT 3120 (generate with `openssl rand -hex 32`) and recreate the api container so it is read. Put the same value in Argo's `/etc/expenseapp/backend.env` as `MIDAS_EVENTS_PING_SECRET`.
 5. **Deploy Argo v2.33.0** (Argo plan).
