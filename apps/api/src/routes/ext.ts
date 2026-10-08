@@ -40,6 +40,7 @@ import { ExtImportTargetPort } from '../lib/ext/importTarget';
 import { mapImportExpenseStatus, mapImportReimbursementStatus } from '../lib/ext/maps';
 import { toExtMessageDto } from '../lib/ext/messageDto';
 import { connectionSourceApp } from '../lib/ext/connectionScope';
+import { buildEventsPage } from './extEventsHandler';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { resolveExtUser } from '../lib/ext/users';
 import { ocr } from '../lib/ocr';
@@ -869,6 +870,15 @@ router.post('/expenses/:id/messages', requireScope('messages:write'), asyncHandl
   if (!message) throw notFound('Expense not found');
 
   res.status(201).json({ message: toExtMessageDto(message as never) });
+}));
+
+// ── Events feed ──────────────────────────────────────────────────────────────
+// Submitter-facing events handed off by notifyUser (lib/extEvents), in seq
+// order. The app keeps the cursor; Midas keeps no delivery state.
+router.get('/events', requireScope('events:read'), asyncHandler(async (req, res) => {
+  const page = await buildEventsPage(req.appConnection, { since: req.query.since, limit: req.query.limit });
+  if (!page.ok) throw createError('Invalid cursor', 400, 'VALIDATION_ERROR');
+  res.json(page.body);
 }));
 
 /**
