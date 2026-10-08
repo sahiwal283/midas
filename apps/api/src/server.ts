@@ -32,6 +32,7 @@ import transactionsRouter from './routes/transactions';
 import zohoRouter from './routes/zoho';
 import zohoServiceRouter from './routes/zohoService';
 import { auditProductionConfig, authentikGroupsLookUnconfigured } from './lib/configAudit';
+import { startIncompleteSweep } from './lib/incompleteSweep';
 
 const app = express();
 
@@ -119,6 +120,7 @@ app.listen(env.PORT, env.HOST, () => {
   logger.info(`OCR mode: ${env.OCR_MODE} | Zoho mode: ${env.ZOHO_MODE} | Storage: ${env.STORAGE_MODE}`);
   logger.info(`Web base (midasUrl): ${env.MIDAS_WEB_BASE_URL || env.CORS_ORIGIN}`);
   reportConfigGaps();
+  startIncompleteSweep();
 });
 
 /**
