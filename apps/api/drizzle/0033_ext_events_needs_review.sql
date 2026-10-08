@@ -11,10 +11,13 @@ ALTER TABLE expense_categories ADD COLUMN IF NOT EXISTS needs_accountant boolean
 
 -- When the missing-details sweep looked at this expense. Set once, whether or
 -- not anything was missing, so no expense is examined twice.
-ALTER TABLE expenses ADD COLUMN IF NOT EXISTS incomplete_notified_at timestamp;
--- Everything that exists today predates the sweep: mark it looked-at so the
--- first pass after deploy tells nobody about old expenses.
-UPDATE expenses SET incomplete_notified_at = now() WHERE incomplete_notified_at IS NULL;
+-- Every expense that exists when the column is added is stamped by the column
+-- default: they predate the sweep, so the first pass after deploy tells nobody
+-- about old expenses.
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS incomplete_notified_at timestamp DEFAULT now();
+-- The default is then dropped so new expenses start NULL. A re-run is a no-op:
+-- ADD COLUMN IF NOT EXISTS skips and DROP DEFAULT is repeatable.
+ALTER TABLE expenses ALTER COLUMN incomplete_notified_at DROP DEFAULT;
 
 -- Grouped bell rows: one unread row per recipient per group, with a count.
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS group_key text;
