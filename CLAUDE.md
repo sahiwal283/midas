@@ -91,6 +91,14 @@ Midas does NOT implement Zoho OAuth or OCR. Those belong in separate services.
 
 **Conversation ownership**: `expense_messages` is the canonical record. Telegram is notify-only. Never let Telegram be the source of truth.
 
+**Notification hand-off.** `notifyUser` (lib/notify.ts) is the one path for
+submitter-facing notifications. For the owner of an expense whose source app
+has `events_enabled`, it writes `ext_events` and pings the app instead of
+delivering in Midas (lib/extEvents.ts decides; the app pulls
+`GET /ext/events`). Accountant `needs_review` notifications go through
+`notifyNeedsReview` (lib/notifyNeedsReview.ts): one push per expense, one
+grouped and counted bell row per submitter per show or day.
+
 ### Key file locations
 - DB schema: `apps/api/src/db/schema.ts`
 - Auth middleware: `apps/api/src/middleware/auth.ts`

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.21.0
+
+### Added
+- **Accountants are told when an expense needs them.** Each expense that lands in the review queue sends its own push. The bell shows one line per submitter per show (or per day for non-show expenses), such as "Ana submitted 6 expenses for Expo", and its count grows until it is read. The badge counts every expense. No email. An expense that is only waiting for its submitter to add something they can add themselves (a receipt, a category, a payment method) does not alert the accountant; one that is blocked on something only an accountant can fix does.
+- **"Needs accountant" on categories.** Settings → Categories has a new toggle. Expenses in a category with it on notify accountants even when they are auto-approved.
+- **Apps that send expenses to Midas can notify their own users.** With events turned on for a connection, Midas stops notifying that app's submitters itself and records each event (approved, rejected, more info requested, message, mention, reimbursement paid, expense missing details) for the app to collect from `GET /ext/events`. Argo uses this from v2.33.0.
+- **Missing details are reported for app-submitted expenses.** Fifteen minutes after an app creates an expense, if it still has no receipt, category or payment method, the submitter is told once what to add.
+
+### Notes
+- Migration `0033_ext_events_needs_review`: `ext_events` table; `app_connections.events_enabled` and `events_ping_url`; `notifications.group_key` and `count`; `expense_categories.needs_accountant`; `expenses.incomplete_notified_at` (existing expenses are stamped so none are reported retroactively).
+- New optional env `EXT_EVENTS_PING_SECRET`. New Ext scope `events:read`. `PATCH /api/v1/admin/connections/:id` accepts `eventsEnabled` and `eventsPingUrl`. `GET /api/v1/notifications` `unreadCount` now sums grouped rows.
+- `scripts/merge-users.ts` marks the source user's duplicate unread grouped notifications read before reassigning, so the new one-unread-row-per-group index cannot fail a merge.
+- Events are off for every connection until switched on, so nothing changes for submitters at upgrade. `GET /ext/messages` is unchanged.
+
 ## 1.19.1
 
 ### Fixed

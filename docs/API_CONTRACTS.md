@@ -702,6 +702,53 @@ Env: `EXT_AUTO_PROVISION_USERS` (default `false`) auto-creates Midas users by em
 
 Smoke: `MIDAS_API_KEY=… npm run ext:smoke --workspace=@midas/api`
 
+### GET /ext/events
+
+Scope: `events:read`. Submitter-facing events on the calling connection's
+source app, handed off by Midas instead of being delivered to the submitter
+in Midas (see "Event hand-off" below). Ordered by `seq`.
+
+Query: `since` (the last `seq` processed; omit for the start), `limit`
+(default 100, max 200). A non-numeric `since` is a 400.
+
+```json
+{
+  "events": [
+    {
+      "seq": 42,
+      "id": "22222222-2222-4222-8222-222222222222",
+      "type": "rejected",
+      "createdAt": "2026-10-08T15:01:00.000Z",
+      "externalUserId": "<the app's user id for the submitter>",
+      "expense": { "id": "<midas id>", "sourceRefId": "<the app's expense id>", "merchant": "Staples", "amount": "42.10", "status": "rejected" },
+      "note": "Duplicate submission"
+    }
+  ],
+  "nextCursor": "42"
+}
+```
+
+`type` is one of `approved`, `rejected`, `action_required`, `message`,
+`mention`, `reimbursement_paid`, `expense_incomplete`. Optional fields by
+type: `senderName`, `excerpt`, `messageId` (message, mention,
+action_required); `requestType` (action_required); `note` (rejected);
+`missing` (expense_incomplete). Consumers must ignore types and fields they
+do not know. `id` is stable and unique: use it to de-duplicate, since a page
+may be re-read after a crash. `nextCursor` is null for an empty page.
+
+### Event hand-off
+
+A connection with `events_enabled = true` takes over notifying its own users.
+For an expense from that source app that carries an `externalUserId`, every
+notification addressed to the submitter is written to `ext_events` and
+nothing is delivered in Midas (no bell row, push or email). Notifications to
+anyone else are unaffected. After recording an event Midas POSTs an empty
+JSON body to the connection's `events_ping_url` with `X-Midas-Timestamp`
+(Unix seconds) and `X-Midas-Signature` (hex HMAC-SHA256 of the timestamp,
+keyed with `EXT_EVENTS_PING_SECRET`). The ping is best-effort: the consumer
+must also poll. Set both fields with `PATCH /api/v1/admin/connections/:id`
+(`eventsEnabled`, `eventsPingUrl`) and grant the `events:read` permission.
+
 ---
 
 
