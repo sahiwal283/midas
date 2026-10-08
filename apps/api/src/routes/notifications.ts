@@ -38,6 +38,7 @@ async function listWithPaths(
       ownerId: expense?.userId ?? null,
       recipientId: user.id,
       recipientRole: user.role,
+      groupKey: n.groupKey,
     }),
   }));
 }
@@ -58,7 +59,7 @@ router.get('/', asyncHandler(async (req, res) => {
   const rows = await listWithPaths(req.user!, and(...conds), limit);
 
   const [{ unreadCount }] = await db
-    .select({ unreadCount: sql<number>`count(*)::int` })
+    .select({ unreadCount: sql<number>`coalesce(sum(${notifications.count}), 0)::int` })
     .from(notifications)
     .where(and(eq(notifications.userId, req.user!.id), isNull(notifications.readAt)));
 

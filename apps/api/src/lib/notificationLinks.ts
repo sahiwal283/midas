@@ -8,6 +8,7 @@
 
 import type { UserRole } from '@midas/shared';
 import { roleAllowed } from './roles';
+import { groupTarget } from './needsReview';
 
 export interface NotificationPathInput {
   type: string;
@@ -16,12 +17,20 @@ export interface NotificationPathInput {
   ownerId: string | null;
   recipientId: string;
   recipientRole: UserRole;
+  /** Set on grouped rows (needs_review). */
+  groupKey?: string | null;
 }
 
 /** Notification types that are about the conversation rather than the record. */
 const CONVERSATION_TYPES = new Set(['message', 'mention', 'action_required']);
 
 export function notificationPath(input: NotificationPathInput): string {
+  // A grouped needs_review row stands for several expenses: open the queue
+  // they sit in, not whichever one happened to arrive last.
+  if (input.type === 'needs_review') {
+    return groupTarget(input.groupKey) === 'event' ? '/accountant/events' : '/accountant/daily';
+  }
+
   if (!input.expenseId) return '/dashboard';
 
   // Staff looking at someone else's expense work from the review page; on
