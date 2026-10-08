@@ -542,8 +542,9 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
 
   await syncExpenseToTransaction(updated);
 
+  let requestMessageId: string | undefined;
   if (action === 'request_info') {
-    await db.insert(expenseMessages).values({
+    const [requestMessage] = await db.insert(expenseMessages).values({
       expenseId: expense.id,
       senderId: req.user!.id,
       body: parsed.note,
@@ -551,7 +552,8 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
       requestType: parsed.requestType,
       internalNote: parsed.internalNote ?? null,
       isResolved: false,
-    });
+    }).returning({ id: expenseMessages.id });
+    requestMessageId = requestMessage.id;
   } else if ('note' in parsed && parsed.note) {
     await db.insert(expenseMessages).values({
       expenseId: expense.id,
@@ -583,7 +585,14 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
       merchant: expense.merchant,
       amount: expense.amount,
       ...(action === 'reject' && parsed.note ? { note: parsed.note } : {}),
-      ...(action === 'request_info' ? { requestType: parsed.requestType, excerpt: truncateExcerpt(parsed.note) } : {}),
+      // senderName and messageId are for the source app's own wording (see
+      // docs/API_CONTRACTS.md); Midas's action_required text reads neither.
+      ...(action === 'request_info' ? {
+        requestType: parsed.requestType,
+        excerpt: truncateExcerpt(parsed.note),
+        senderName: req.user!.name,
+        messageId: requestMessageId,
+      } : {}),
     });
   }
 

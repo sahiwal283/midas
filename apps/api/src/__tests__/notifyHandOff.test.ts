@@ -62,6 +62,18 @@ describe('notifyUser hand-off', () => {
     }));
   });
 
+  it('carries the request fields for an action_required event', async () => {
+    vi.mocked(loadHandOffContext).mockResolvedValueOnce({ expense, eventsEnabled: true, pingUrls: [] });
+    await notifyUser('owner', 'action_required', {
+      ...input, note: undefined, senderName: 'Rita', excerpt: 'Please add the receipt', requestType: 'receipt', messageId: 'm-2',
+    });
+    expect(recordExtEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'action_required' }));
+    expect(vi.mocked(recordExtEvent).mock.calls[0][0].payload).toEqual(expect.objectContaining({
+      senderName: 'Rita', excerpt: 'Please add the receipt', requestType: 'receipt', messageId: 'm-2',
+    }));
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
   it('delivers natively, exactly as before, when the switch is off', async () => {
     vi.mocked(loadHandOffContext).mockResolvedValueOnce({ expense, eventsEnabled: false, pingUrls: [] });
     await notifyUser('owner', 'rejected', input);
