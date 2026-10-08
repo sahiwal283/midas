@@ -28,6 +28,8 @@ import { authenticateApiKey } from '../middleware/auth';
 import { requireScope } from '../middleware/requireScope';
 import { asyncHandler, createError, notFound } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { shouldQueueNotify } from '../lib/needsReview';
+import { notifyNeedsReview } from '../lib/notifyNeedsReview';
 import { assertActiveCompany } from '../lib/companies';
 import { decideThreadPost } from '../lib/expenseThread';
 import { listThread, postToThread } from '../lib/expenseThreadDb';
@@ -40,6 +42,7 @@ import { ExtImportTargetPort } from '../lib/ext/importTarget';
 import { mapImportExpenseStatus, mapImportReimbursementStatus } from '../lib/ext/maps';
 import { toExtMessageDto } from '../lib/ext/messageDto';
 import { connectionSourceApp } from '../lib/ext/connectionScope';
+import { buildEventsPage } from './extEventsHandler';
 import { nextReimbursementOnCardLink } from '../lib/reimbursement';
 import { resolveExtUser } from '../lib/ext/users';
 import { ocr } from '../lib/ocr';
@@ -516,6 +519,10 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
     after: inserted,
   });
 
+  if (shouldQueueNotify({ before: null, after: inserted.status })) {
+    void notifyNeedsReview(inserted.id, 'queued');
+  }
+
   const expense = await loadExpenseDto(inserted.id);
   res.status(201).json({
     expense, midasUrl: expense!.midasUrl, created: true, warnings,
@@ -650,6 +657,10 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
     after: updated,
     metadata: { appConnectionId: req.appConnection?.id },
   });
+
+  if (shouldQueueNotify({ before: existing.status, after: updated.status })) {
+    void notifyNeedsReview(updated.id, 'queued');
+  }
 
   const expense = await loadExpenseDto(updated.id);
   res.json({ expense, midasUrl: expense!.midasUrl, warnings });
@@ -869,6 +880,15 @@ router.post('/expenses/:id/messages', requireScope('messages:write'), asyncHandl
   if (!message) throw notFound('Expense not found');
 
   res.status(201).json({ message: toExtMessageDto(message as never) });
+}));
+
+// ── Events feed ──────────────────────────────────────────────────────────────
+// Submitter-facing events handed off by notifyUser (lib/extEvents), in seq
+// order. The app keeps the cursor; Midas keeps no delivery state.
+router.get('/events', requireScope('events:read'), asyncHandler(async (req, res) => {
+  const page = await buildEventsPage(req.appConnection, { since: req.query.since, limit: req.query.limit });
+  if (!page.ok) throw createError('Invalid cursor', 400, 'VALIDATION_ERROR');
+  res.json(page.body);
 }));
 
 /**

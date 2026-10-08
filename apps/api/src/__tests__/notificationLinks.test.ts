@@ -48,3 +48,16 @@ describe('notificationPath', () => {
       .toBe('/dashboard');
   });
 });
+
+describe('needs_review', () => {
+  const base = { type: 'needs_review', expenseId: 'e-1', ownerId: 'u-1', recipientId: 'acc-1', recipientRole: 'accountant' as const };
+  it('a show group opens event review', () => {
+    expect(notificationPath({ ...base, groupKey: 'nr:u-1:event:ev-9' })).toBe('/accountant/events');
+  });
+  it('a day group opens daily review', () => {
+    expect(notificationPath({ ...base, groupKey: 'nr:u-1:day:2026-10-08' })).toBe('/accountant/daily');
+  });
+  it('still opens the queue when the newest expense in the group was deleted', () => {
+    expect(notificationPath({ ...base, expenseId: null, groupKey: 'nr:u-1:event:ev-9' })).toBe('/accountant/events');
+  });
+});

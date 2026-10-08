@@ -6,6 +6,7 @@ import { expenses, expenseCategories, paymentMethods, companies, expenseMessages
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { notifyNeedsReview } from '../lib/notifyNeedsReview';
 import { storage } from '../lib/storage';
 import { canSessionDeleteExpense } from '../lib/expenseDelete';
 import { isInClosedPeriods, periodOf, closedPeriodMessage } from '../lib/closedPeriods';
@@ -22,7 +23,7 @@ import { reportOcrCorrectionsForExpense } from '../lib/reportOcrCorrections';
 import { syncExpenseToTransaction, removeSyncedTransaction } from '../lib/syncExpenseTransaction';
 import { effectivelyActiveIds, descendantIds } from '../lib/categoryTree';
 import { assertActiveCompany } from '../lib/companies';
-import { isDailyAutoPushCandidate, incompleteSubmissionMessage } from '../lib/pendingCompletion';
+import { isDailyAutoPushCandidate, incompleteSubmissionMessage, waitingOnSubmitter } from '../lib/pendingCompletion';
 import { maybeAutoPushPending } from '../lib/pendingCompletionDb';
 import { notifyUser } from '../lib/notify';
 import { normalizeReferenceNumber } from '@midas/shared';
@@ -497,6 +498,7 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
       after: { status: 'approved' },
       metadata: { reason: 'complete daily expense', zohoMode: readiness.zohoMode },
     });
+    void notifyNeedsReview(expense.id, 'auto_approved');
 
     const outcome = await pushExpenseToZoho({ ...expense, ...approved }, req.user!.id);
     void reportOcrCorrectionsForExpense(expense.id);
@@ -539,6 +541,9 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
       missing: missingForAutoPush,
     });
   }
+  // Notify unless the expense is genuinely waiting on the submitter; items only
+  // an accountant can fix (e.g. Zoho paid-through mapping) still need the queue told.
+  if (!waitingOnSubmitter(missingForAutoPush)) void notifyNeedsReview(expense.id, 'queued');
 
   void reportOcrCorrectionsForExpense(expense.id);
   res.json({ expense: updated, missing: missingForAutoPush ?? undefined });

@@ -18,6 +18,7 @@ import { asyncHandler, createError } from '../middleware/error';
 import { storage } from '../lib/storage';
 import { runReceiptOcr } from '../lib/runReceiptOcr';
 import { auditLog } from '../lib/audit';
+import { notifyNeedsReview } from '../lib/notifyNeedsReview';
 import { env } from '../config/env';
 import { normalizeReferenceNumber } from '@midas/shared';
 
@@ -157,6 +158,8 @@ router.post('/expenses', asyncHandler(async (req, res) => {
     after: { expenseId: expense.id, status: 'linked' },
     metadata: { expenseId: expense.id, hasSelectedText: Boolean(body.selectedText) },
   });
+
+  void notifyNeedsReview(expense.id, 'queued');
 
   // 7. Sync-primary OCR — response includes completed OCR state (see docs/SYNC_AND_OFFLINE.md)
   const receiptWithOcr = await runReceiptOcr(receipt.id, stored.storagePath);

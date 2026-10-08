@@ -575,6 +575,7 @@ router.post('/categories', accounting, asyncHandler(async (req, res) => {
     name: z.string().trim().min(1),
     description: z.string().optional(),
     parentId: z.string().uuid().nullable().optional(),
+    needsAccountant: z.boolean().optional(),
   }).parse(req.body);
 
   await ensureUniqueCategoryName(body.name);
@@ -588,6 +589,7 @@ router.patch('/categories/:id', accounting, asyncHandler(async (req, res) => {
     description: z.string().optional(),
     isActive: z.boolean().optional(),
     parentId: z.string().uuid().nullable().optional(),
+    needsAccountant: z.boolean().optional(),
   }).parse(req.body);
 
   if (body.name !== undefined) await ensureUniqueCategoryName(body.name, req.params.id);
@@ -815,14 +817,19 @@ router.patch('/connections/:id', adminOnly, asyncHandler(async (req, res) => {
   const body = z.object({
     isActive: z.boolean().optional(),
     permissions: z.array(z.string()).optional(),
+    eventsEnabled: z.boolean().optional(),
+    eventsPingUrl: z.string().url().nullable().optional(),
   }).parse(req.body);
-  if (body.isActive === undefined && body.permissions === undefined) {
-    throw createError('Provide isActive and/or permissions', 400, 'VALIDATION_ERROR');
+  if (body.isActive === undefined && body.permissions === undefined
+    && body.eventsEnabled === undefined && body.eventsPingUrl === undefined) {
+    throw createError('Provide isActive, permissions, eventsEnabled and/or eventsPingUrl', 400, 'VALIDATION_ERROR');
   }
   const [updated] = await db.update(appConnections)
     .set({
       ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
       ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
+      ...(body.eventsEnabled !== undefined ? { eventsEnabled: body.eventsEnabled } : {}),
+      ...(body.eventsPingUrl !== undefined ? { eventsPingUrl: body.eventsPingUrl } : {}),
     })
     .where(eq(appConnections.id, req.params.id))
     .returning({
@@ -830,6 +837,8 @@ router.patch('/connections/:id', adminOnly, asyncHandler(async (req, res) => {
       appName: appConnections.appName,
       isActive: appConnections.isActive,
       permissions: appConnections.permissions,
+      eventsEnabled: appConnections.eventsEnabled,
+      eventsPingUrl: appConnections.eventsPingUrl,
     });
   if (!updated) throw notFound('Connection not found');
   res.json({ connection: updated });

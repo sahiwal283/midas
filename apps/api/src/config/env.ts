@@ -67,6 +67,10 @@ const schema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   // Contact URI sent to push services (mailto: or https:).
   VAPID_SUBJECT: z.string().default('mailto:admin@midas.local'),
+  // ── Ext events ping ────────────────────────────────────────────────────────
+  // Shared secret for the "you have events" ping to an external app (see
+  // lib/extPing). Unset = no pings; the app's own poll still delivers.
+  EXT_EVENTS_PING_SECRET: z.string().optional(),
   // Optional integrations
   // Auth rate limiting — max login attempts per 15-minute window per IP.
   // Default 20 is appropriate for production; set 200 in .env for dev/LAN.

@@ -7,6 +7,7 @@ import { getPushState, subscribeToPush } from '../lib/push';
 import {
   dismissPushPrompt, isStandalone, readPushPromptDismissedAt, shouldPromptForPush,
 } from '../lib/pushPrompt';
+import { shownUnreadCount } from '../lib/notificationCount';
 import { timeAgo } from './NotificationBell';
 import type { Notification } from '../types';
 
@@ -33,6 +34,8 @@ export function NotificationsCard() {
 
   const unread = (data?.notifications ?? []).filter((n) => !n.readAt);
   const unreadCount = data?.unreadCount ?? 0;
+  // unreadCount sums grouped rows, so what is shown is counted the same way.
+  const shown = shownUnreadCount(unread);
 
   const open = (n: Notification) => {
     markRead.mutate(n.id);
@@ -76,9 +79,9 @@ export function NotificationsCard() {
               </li>
             ))}
           </ul>
-          {unreadCount > unread.length && (
+          {unreadCount > shown && (
             <p className="border-t border-ink/5 px-4 py-2.5 text-xs text-charcoal/40 lg:px-6">
-              Showing the latest {unread.length} of {unreadCount}. Open the bell for the full list.
+              Showing the latest {shown} of {unreadCount}. Open the bell for the full list.
             </p>
           )}
         </section>

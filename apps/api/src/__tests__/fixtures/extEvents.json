@@ -1,0 +1,26 @@
+{
+  "rows": [
+    { "seq": 41, "id": "11111111-1111-4111-8111-111111111111", "type": "approved", "createdAt": "2026-10-08T15:00:00.000Z",
+      "payload": { "externalUserId": "argo-user-1", "expense": { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "sourceRefId": "argo-exp-1", "merchant": "Staples", "amount": "42.10", "status": "approved" } } },
+    { "seq": 42, "id": "22222222-2222-4222-8222-222222222222", "type": "rejected", "createdAt": "2026-10-08T15:01:00.000Z",
+      "payload": { "externalUserId": "argo-user-1", "expense": { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "sourceRefId": "argo-exp-1", "merchant": "Staples", "amount": "42.10", "status": "rejected" }, "note": "Duplicate submission" } },
+    { "seq": 43, "id": "33333333-3333-4333-8333-333333333333", "type": "message", "createdAt": "2026-10-08T15:02:00.000Z",
+      "payload": { "externalUserId": "argo-user-1", "expense": { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "sourceRefId": "argo-exp-1", "merchant": "Staples", "amount": "42.10", "status": "pending" }, "senderName": "Rita", "excerpt": "Which show was this for?", "messageId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" } },
+    { "seq": 44, "id": "44444444-4444-4444-8444-444444444444", "type": "action_required", "createdAt": "2026-10-08T15:03:00.000Z",
+      "payload": { "externalUserId": "argo-user-1", "expense": { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "sourceRefId": "argo-exp-1", "merchant": "Staples", "amount": "42.10", "status": "awaiting_info" }, "senderName": "Rita", "excerpt": "Please attach the itemised receipt", "requestType": "missing_receipt" } },
+    { "seq": 45, "id": "55555555-5555-4555-8555-555555555555", "type": "expense_incomplete", "createdAt": "2026-10-08T15:04:00.000Z",
+      "payload": { "externalUserId": "argo-user-2", "expense": { "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "sourceRefId": null, "merchant": "Uber", "amount": "18.00", "status": "pending" }, "missing": ["receipt", "payment method"] } }
+  ],
+  "events": [
+    { "seq": 41, "id": "11111111-1111-4111-8111-111111111111", "type": "approved", "createdAt": "2026-10-08T15:00:00.000Z",
+      "externalUserId": "argo-user-1", "expense": { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "sourceRefId": "argo-exp-1", "merchant": "Staples", "amount": "42.10", "status": "approved" } },
+    { "seq": 42, "id": "22222222-2222-4222-8222-222222222222", "type": "rejected", "createdAt": "2026-10-08T15:01:00.000Z",
+      "externalUserId": "argo-user-1", "expense": { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "sourceRefId": "argo-exp-1", "merchant": "Staples", "amount": "42.10", "status": "rejected" }, "note": "Duplicate submission" },
+    { "seq": 43, "id": "33333333-3333-4333-8333-333333333333", "type": "message", "createdAt": "2026-10-08T15:02:00.000Z",
+      "externalUserId": "argo-user-1", "expense": { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "sourceRefId": "argo-exp-1", "merchant": "Staples", "amount": "42.10", "status": "pending" }, "senderName": "Rita", "excerpt": "Which show was this for?", "messageId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" },
+    { "seq": 44, "id": "44444444-4444-4444-8444-444444444444", "type": "action_required", "createdAt": "2026-10-08T15:03:00.000Z",
+      "externalUserId": "argo-user-1", "expense": { "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "sourceRefId": "argo-exp-1", "merchant": "Staples", "amount": "42.10", "status": "awaiting_info" }, "senderName": "Rita", "excerpt": "Please attach the itemised receipt", "requestType": "missing_receipt" },
+    { "seq": 45, "id": "55555555-5555-4555-8555-555555555555", "type": "expense_incomplete", "createdAt": "2026-10-08T15:04:00.000Z",
+      "externalUserId": "argo-user-2", "expense": { "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "sourceRefId": null, "merchant": "Uber", "amount": "18.00", "status": "pending" }, "missing": ["receipt", "payment method"] }
+  ]
+}

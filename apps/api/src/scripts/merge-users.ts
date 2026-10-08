@@ -64,6 +64,21 @@ async function main() {
   await db.transaction(async (tx) => {
     const moved: Record<string, number> = {};
 
+    // notifications_unread_group_idx allows one unread row per (user_id, group_key).
+    // If both accounts hold an unread row for the same group, reassigning the
+    // source's row would violate it and roll the whole merge back. Mark the
+    // source's duplicate read first (its count is dropped; the target keeps its own).
+    if (!dryRun) {
+      await tx.execute(sql`
+        UPDATE notifications SET read_at = now()
+        WHERE user_id = ${from.id} AND read_at IS NULL AND group_key IS NOT NULL
+          AND group_key IN (
+            SELECT group_key FROM notifications
+            WHERE user_id = ${to.id} AND read_at IS NULL AND group_key IS NOT NULL
+          )
+      `);
+    }
+
     for (const ref of REFERENCES) {
       const countRows = await tx.execute(
         sql`SELECT count(*)::int AS n FROM ${sql.identifier(ref.table)} WHERE ${sql.identifier(ref.column)} = ${from.id}`,

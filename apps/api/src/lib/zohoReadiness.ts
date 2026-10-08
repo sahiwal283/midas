@@ -6,6 +6,10 @@ import {
   type PayloadExpense,
 } from './zohoPayload';
 import { resolveBrandFromEntity } from './zohoBrand';
+import {
+  MISSING_MERCHANT, MISSING_AMOUNT, MISSING_DATE, MISSING_EXPENSE_ACCOUNT,
+  MISSING_PAYMENT_METHOD, MISSING_ENTITY, MISSING_RECEIPT,
+} from './readinessMissing';
 
 export interface ZohoReadinessCheck {
   label: string;
@@ -100,12 +104,12 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
   ];
 
   if (!isApproved) missing.push('expense must be approved');
-  if (!hasMerchant) missing.push('merchant name');
-  if (!hasAmount) missing.push('valid amount');
-  if (!hasDate) missing.push('expense date');
+  if (!hasMerchant) missing.push(MISSING_MERCHANT);
+  if (!hasAmount) missing.push(MISSING_AMOUNT);
+  if (!hasDate) missing.push(MISSING_DATE);
   if (!hasSubmitter) missing.push('submitter (user)');
-  if (!hasExpenseAccount) missing.push('expense account (Zoho COA or category)');
-  if (!hasPaymentMethod) missing.push('payment method');
+  if (!hasExpenseAccount) missing.push(MISSING_EXPENSE_ACCOUNT);
+  if (!hasPaymentMethod) missing.push(MISSING_PAYMENT_METHOD);
   if (!hasPaidThrough) {
     // A label in zoho_account_name looks mapped in the UI but cannot be sent to Zoho.
     missing.push(
@@ -114,8 +118,8 @@ export function evaluateZohoReadiness(expense: ReadinessExpense): ZohoReadinessR
         : 'Zoho paid-through mapping on the payment method (Settings → Payment Methods)',
     );
   }
-  if (!hasZohoEntity) missing.push('accounting entity (zohoEntity)');
-  if (!hasReceipt) missing.push('receipt attachment');
+  if (!hasZohoEntity) missing.push(MISSING_ENTITY);
+  if (!hasReceipt) missing.push(MISSING_RECEIPT);
   if (hasOpenRequests) missing.push('unresolved accountant requests');
 
   if (mode !== 'live') {
