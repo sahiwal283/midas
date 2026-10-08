@@ -1,6 +1,6 @@
 import {
   pgTable, pgEnum, uuid, text, timestamp, boolean,
-  numeric, date, jsonb, integer, char, index, uniqueIndex, bigint, check,
+  numeric, date, jsonb, integer, bigserial, char, index, uniqueIndex, bigint, check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
@@ -13,6 +13,18 @@ export type ExpenseSourceContext = {
   cardUsed?: string | null;
   externalUserId?: string;
   [key: string]: unknown;
+};
+
+/** Snapshot an external app needs to notify its own user (see lib/extEvents). */
+export type ExtEventPayload = {
+  externalUserId: string;
+  expense: { id: string; sourceRefId: string | null; merchant: string; amount: string; status: string };
+  senderName?: string;
+  excerpt?: string;
+  messageId?: string;
+  requestType?: string;
+  note?: string;
+  missing?: string[];
 };
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
@@ -107,6 +119,8 @@ export const expenseCategories = pgTable('expense_categories', {
   /** Tree: null = top-level. Arbitrary depth; cycles rejected at the API layer. */
   parentId: uuid('parent_id').references((): AnyPgColumn => expenseCategories.id, { onDelete: 'set null' }),
   isActive: boolean('is_active').default(true).notNull(),
+  /** "Ask the accountant": an expense in this category always notifies accountants, even when auto-approved. */
+  needsAccountant: boolean('needs_accountant').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -229,6 +243,8 @@ export const expenses = pgTable('expenses', {
   receiptWaiverReason: text('receipt_waiver_reason'),
   receiptWaivedById: uuid('receipt_waived_by_id').references(() => users.id, { onDelete: 'set null' }),
   receiptWaivedAt: timestamp('receipt_waived_at'),
+  /** When the missing-details sweep looked at this expense (set once; see lib/incompleteSweep). */
+  incompleteNotifiedAt: timestamp('incomplete_notified_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [
@@ -504,6 +520,10 @@ export const appConnections = pgTable('app_connections', {
   apiKeyHash: text('api_key_hash').notNull(),
   permissions: jsonb('permissions').$type<string[]>().default([]).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
+  /** When true, submitter-facing notifications for this app's expenses go to ext_events instead of Midas delivery. */
+  eventsEnabled: boolean('events_enabled').default(false).notNull(),
+  /** Where to POST the signed "you have events" ping. Null = no ping. */
+  eventsPingUrl: text('events_ping_url'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   lastUsedAt: timestamp('last_used_at'),
 });
@@ -543,16 +563,38 @@ export const categoryMappings = pgTable('category_mappings', {
 export const notifications = pgTable('notifications', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  /** 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete' | 'message' | 'mention' */
+  /** 'action_required' | 'approved' | 'rejected' | 'reimbursement_paid' | 'expense_incomplete' | 'message' | 'mention' | 'needs_review' */
   type: text('type').notNull(),
   title: text('title').notNull(),
   body: text('body'),
   expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+  /** Set on grouped rows (needs_review): one unread row per user per key. */
+  groupKey: text('group_key'),
+  /** How many events this row stands for; the unread badge sums it. */
+  count: integer('count').default(1).notNull(),
   readAt: timestamp('read_at'),
   emailedAt: timestamp('emailed_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => [
   index('notifications_user_id_idx').on(t.userId),
+  uniqueIndex('notifications_unread_group_idx').on(t.userId, t.groupKey)
+    .where(sql`read_at is null and group_key is not null`),
+]);
+
+// ── Ext events ────────────────────────────────────────────────────────────────
+// Outbox of submitter-facing events on an external app's expenses. The app
+// pulls these by seq (GET /ext/events); Midas keeps no delivery state.
+
+export const extEvents = pgTable('ext_events', {
+  seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+  id: uuid('id').defaultRandom().notNull().unique(),
+  sourceApp: text('source_app').notNull(),
+  type: text('type').notNull(),
+  expenseId: uuid('expense_id').references(() => expenses.id, { onDelete: 'cascade' }),
+  payload: jsonb('payload').$type<ExtEventPayload>().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => [
+  index('ext_events_source_app_seq_idx').on(t.sourceApp, t.seq),
 ]);
 
 // ── Push subscriptions ────────────────────────────────────────────────────────
