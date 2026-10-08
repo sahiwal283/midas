@@ -5,6 +5,7 @@ import { isDailyAutoPushCandidate } from './pendingCompletion';
 import { evaluateZohoReadiness } from './zohoReadiness';
 import { pushExpenseToZoho } from './zohoPush';
 import { auditLog } from './audit';
+import { notifyNeedsReview } from './notifyNeedsReview';
 
 export interface CompletionOutcome {
   autoPushed: boolean;
@@ -54,6 +55,7 @@ export async function maybeAutoPushPending(expenseId: string, actorUserId: strin
     after: { status: 'approved' },
     metadata: { reason: 'completed after submission', zohoMode: readiness.zohoMode },
   });
+  void notifyNeedsReview(expense.id, 'auto_approved');
 
   const outcome = await pushExpenseToZoho({ ...expense, ...approved }, actorUserId);
   return {

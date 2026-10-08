@@ -28,6 +28,8 @@ import { authenticateApiKey } from '../middleware/auth';
 import { requireScope } from '../middleware/requireScope';
 import { asyncHandler, createError, notFound } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { shouldQueueNotify } from '../lib/needsReview';
+import { notifyNeedsReview } from '../lib/notifyNeedsReview';
 import { assertActiveCompany } from '../lib/companies';
 import { decideThreadPost } from '../lib/expenseThread';
 import { listThread, postToThread } from '../lib/expenseThreadDb';
@@ -517,6 +519,10 @@ router.post('/expenses', requireScope('expenses:create'), asyncHandler(async (re
     after: inserted,
   });
 
+  if (shouldQueueNotify({ before: null, after: inserted.status })) {
+    void notifyNeedsReview(inserted.id, 'queued');
+  }
+
   const expense = await loadExpenseDto(inserted.id);
   res.status(201).json({
     expense, midasUrl: expense!.midasUrl, created: true, warnings,
@@ -651,6 +657,10 @@ router.patch('/expenses/:id', requireScope('expenses:update'), asyncHandler(asyn
     after: updated,
     metadata: { appConnectionId: req.appConnection?.id },
   });
+
+  if (shouldQueueNotify({ before: existing.status, after: updated.status })) {
+    void notifyNeedsReview(updated.id, 'queued');
+  }
 
   const expense = await loadExpenseDto(updated.id);
   res.json({ expense, midasUrl: expense!.midasUrl, warnings });

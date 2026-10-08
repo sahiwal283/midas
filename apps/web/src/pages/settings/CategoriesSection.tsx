@@ -39,7 +39,7 @@ export function CategoriesSection() {
     onError: (err: unknown) => setError(axiosMessage(err, 'Could not add category')),
   });
   const patchMutation = useMutation({
-    mutationFn: ({ id, ...body }: { id: string; name?: string; isActive?: boolean; parentId?: string | null }) =>
+    mutationFn: ({ id, ...body }: { id: string; name?: string; isActive?: boolean; needsAccountant?: boolean; parentId?: string | null }) =>
       client.patch(`/admin/categories/${id}`, body),
     onSuccess: (_data, vars) => {
       invalidate();
@@ -218,6 +218,17 @@ export function CategoriesSection() {
                   inputClassName="w-full rounded-lg border border-ink/10 px-2 py-1.5 text-xs text-charcoal/70 focus:border-brand-500 focus:outline-none"
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => patchMutation.mutate({ id: cat.id, needsAccountant: !cat.needsAccountant })}
+                className={`rounded-full px-2.5 py-0.5 text-xs ${cat.needsAccountant ? 'bg-gold-100 text-gold-800' : 'bg-brand-50 text-muted'}`}
+                title={cat.needsAccountant
+                  ? 'Accountants are notified about every expense in this category, even auto-approved ones. Click to turn off.'
+                  : 'Click to notify accountants about every expense in this category, even auto-approved ones.'}
+                aria-pressed={Boolean(cat.needsAccountant)}
+              >
+                {cat.needsAccountant ? 'Needs accountant' : 'No alert'}
+              </button>
               <button
                 onClick={() => patchMutation.mutate({ id: cat.id, isActive: !cat.isActive })}
                 className={`rounded-full px-2.5 py-0.5 text-xs ${cat.isActive ? 'bg-success/15 text-success' : 'bg-brand-50 text-muted'}`}

@@ -575,6 +575,7 @@ router.post('/categories', accounting, asyncHandler(async (req, res) => {
     name: z.string().trim().min(1),
     description: z.string().optional(),
     parentId: z.string().uuid().nullable().optional(),
+    needsAccountant: z.boolean().optional(),
   }).parse(req.body);
 
   await ensureUniqueCategoryName(body.name);
@@ -588,6 +589,7 @@ router.patch('/categories/:id', accounting, asyncHandler(async (req, res) => {
     description: z.string().optional(),
     isActive: z.boolean().optional(),
     parentId: z.string().uuid().nullable().optional(),
+    needsAccountant: z.boolean().optional(),
   }).parse(req.body);
 
   if (body.name !== undefined) await ensureUniqueCategoryName(body.name, req.params.id);

@@ -50,3 +50,15 @@ export function pushText(i: {
   }
   return { title: 'Expense needs review', body: `${line}${i.eventName ? ` · ${i.eventName}` : ''}` };
 }
+
+/** Statuses from which a move to `pending` is a fresh arrival in the accountant's queue. */
+const ENTERS_QUEUE_FROM = new Set<string | null>([null, 'draft', 'rejected', 'cancelled']);
+
+/**
+ * Whether a write put the expense into the review queue. An expense that was
+ * already with the accountant (pending, in review, awaiting info) coming back
+ * to pending is a reply, which the conversation routing already reports.
+ */
+export function shouldQueueNotify(i: { before: string | null; after: string }): boolean {
+  return i.after === 'pending' && ENTERS_QUEUE_FROM.has(i.before);
+}

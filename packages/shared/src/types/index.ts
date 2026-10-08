@@ -174,6 +174,8 @@ export interface ExpenseCategory {
   /** Tree: null = top-level. Arbitrary depth. */
   parentId: string | null;
   isActive: boolean;
+  /** Accountants are notified about every expense in this category, even auto-approved ones. */
+  needsAccountant?: boolean;
 }
 
 export interface TransactionLineItem {

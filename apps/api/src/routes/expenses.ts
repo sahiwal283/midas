@@ -6,6 +6,7 @@ import { expenses, expenseCategories, paymentMethods, companies, expenseMessages
 import { authenticate } from '../middleware/auth';
 import { asyncHandler, notFound, forbidden, createError } from '../middleware/error';
 import { auditLog } from '../lib/audit';
+import { notifyNeedsReview } from '../lib/notifyNeedsReview';
 import { storage } from '../lib/storage';
 import { canSessionDeleteExpense } from '../lib/expenseDelete';
 import { isInClosedPeriods, periodOf, closedPeriodMessage } from '../lib/closedPeriods';
@@ -497,6 +498,7 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
       after: { status: 'approved' },
       metadata: { reason: 'complete daily expense', zohoMode: readiness.zohoMode },
     });
+    void notifyNeedsReview(expense.id, 'auto_approved');
 
     const outcome = await pushExpenseToZoho({ ...expense, ...approved }, req.user!.id);
     void reportOcrCorrectionsForExpense(expense.id);
@@ -539,6 +541,8 @@ router.post('/:id/submit', asyncHandler(async (req, res) => {
       missing: missingForAutoPush,
     });
   }
+  // Waiting on the accountant, not on the submitter completing it.
+  if (!missingForAutoPush) void notifyNeedsReview(expense.id, 'queued');
 
   void reportOcrCorrectionsForExpense(expense.id);
   res.json({ expense: updated, missing: missingForAutoPush ?? undefined });
