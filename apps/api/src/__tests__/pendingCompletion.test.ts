@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isDailyAutoPushCandidate, incompleteSubmissionMessage } from '../lib/pendingCompletion';
+import { isDailyAutoPushCandidate, incompleteSubmissionMessage, waitingOnSubmitter } from '../lib/pendingCompletion';
+import { MISSING_MERCHANT, MISSING_RECEIPT } from '../lib/readinessMissing';
 
 describe('isDailyAutoPushCandidate', () => {
   it('true for Midas-entered business expense with Zoho-enabled company', () => {
@@ -36,5 +37,28 @@ describe('incompleteSubmissionMessage', () => {
   it('handles a single missing item', () => {
     const body = incompleteSubmissionMessage(['receipt attachment']);
     expect(body).toContain('receipt attachment');
+  });
+});
+
+describe('waitingOnSubmitter', () => {
+  const MAPPING = 'Zoho paid-through mapping on the payment method (Settings → Payment Methods)';
+
+  it('false when nothing is missing', () => {
+    expect(waitingOnSubmitter(null)).toBe(false);
+    expect(waitingOnSubmitter([])).toBe(false);
+  });
+
+  it('true when every missing item is something the submitter can add', () => {
+    expect(waitingOnSubmitter([MISSING_RECEIPT])).toBe(true);
+    expect(waitingOnSubmitter([MISSING_MERCHANT, 'payment method', MISSING_RECEIPT])).toBe(true);
+  });
+
+  it('false for a settings or mapping item alone', () => {
+    expect(waitingOnSubmitter([MAPPING])).toBe(false);
+    expect(waitingOnSubmitter(['unresolved accountant requests'])).toBe(false);
+  });
+
+  it('false for a mix of fixable and accountant-only items', () => {
+    expect(waitingOnSubmitter([MISSING_RECEIPT, MAPPING])).toBe(false);
   });
 });
