@@ -69,7 +69,23 @@ describe('notifyUser hand-off', () => {
     expect(recordExtEvent).not.toHaveBeenCalled();
     expect(sendPings).not.toHaveBeenCalled();
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
+    expect(dbMock.values).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'rejected',
+      title: 'Expense rejected',
+      body: 'Your $42.10 expense at Staples was rejected. Note: Duplicate submission',
+    }));
     expect(sendPushToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to native delivery when the pre-check fails', async () => {
+    vi.mocked(loadHandOffContext).mockRejectedValueOnce(new Error('column missing'));
+    await expect(notifyUser('owner', 'rejected', input)).resolves.toBeUndefined();
+    await flush();
+    expect(recordExtEvent).not.toHaveBeenCalled();
+    expect(sendPings).not.toHaveBeenCalled();
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+    expect(sendPushToUser).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalled();
   });
 
   it('delivers natively to a non-owner even when the switch is on (a staff reply recipient)', async () => {

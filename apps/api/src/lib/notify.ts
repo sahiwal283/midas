@@ -32,10 +32,17 @@ export interface NotifyOptions {
 /**
  * Hand the notification to the external app that owns the expense, when it
  * is addressed to that app's own user (see lib/extEvents). True means the
- * event was recorded and Midas must deliver nothing itself.
+ * event was recorded and Midas must deliver nothing itself. A failed
+ * pre-check falls back to delivering in Midas (nothing was recorded).
  */
 async function handOffToSourceApp(userId: string, type: NotificationType, input: NotifyInput): Promise<boolean> {
-  const ctx = await loadHandOffContext(input.expenseId);
+  let ctx: Awaited<ReturnType<typeof loadHandOffContext>>;
+  try {
+    ctx = await loadHandOffContext(input.expenseId);
+  } catch (err) {
+    logger.error({ err, expenseId: input.expenseId, type }, 'Hand-off pre-check failed; delivering in Midas');
+    return false;
+  }
   if (!ctx) return false;
   if (!shouldHandOff({
     type,
