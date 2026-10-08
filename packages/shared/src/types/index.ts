@@ -501,6 +501,10 @@ export interface Notification {
   title: string;
   body: string | null;
   expenseId: string | null;
+  /** Set on a grouped row (needs_review): the group it counts. */
+  groupKey?: string | null;
+  /** How many expenses a grouped row stands for; absent means one. */
+  count?: number;
   readAt: string | null;
   emailedAt: string | null;
   createdAt: string;
