@@ -7,6 +7,9 @@ import { sendEmail } from './email';
 import { sendPushToUser } from './push';
 import { buildNotification, type NotificationType, type NotificationInput } from './notifyMessages';
 import { notificationPath } from './notificationLinks';
+import { shouldHandOff, buildExtEventPayload } from './extEvents';
+import { loadHandOffContext, recordExtEvent } from './extEventsDb';
+import { sendPings } from './extPing';
 
 export interface NotifyInput extends NotificationInput {
   expenseId: string;
@@ -27,9 +30,40 @@ export interface NotifyOptions {
 }
 
 /**
+ * Hand the notification to the external app that owns the expense, when it
+ * is addressed to that app's own user (see lib/extEvents). True means the
+ * event was recorded and Midas must deliver nothing itself.
+ */
+async function handOffToSourceApp(userId: string, type: NotificationType, input: NotifyInput): Promise<boolean> {
+  const ctx = await loadHandOffContext(input.expenseId);
+  if (!ctx) return false;
+  if (!shouldHandOff({
+    type,
+    recipientId: userId,
+    ownerId: ctx.expense.userId,
+    sourceApp: ctx.expense.sourceApp,
+    externalUserId: ctx.expense.externalUserId,
+    eventsEnabled: ctx.eventsEnabled,
+  })) return false;
+
+  await recordExtEvent({
+    sourceApp: ctx.expense.sourceApp!,
+    type,
+    expenseId: ctx.expense.id,
+    payload: buildExtEventPayload(ctx.expense, input),
+  });
+  // After the row is durable: tell the app to pull. Fire-and-forget.
+  void sendPings(ctx.pingUrls);
+  return true;
+}
+
+/**
  * Insert an in-app notification for a user, then attempt email delivery
  * fire-and-forget (emailed_at set on success). Never throws — notification
  * failures must never break the review/reimbursement request that triggered them.
+ * For the submitter of an expense whose source app has events enabled, the
+ * notification is handed to that app instead (see handOffToSourceApp) and
+ * nothing is delivered here.
  */
 export async function notifyUser(
   userId: string,
@@ -38,6 +72,8 @@ export async function notifyUser(
   opts: NotifyOptions = {},
 ): Promise<void> {
   try {
+    if (await handOffToSourceApp(userId, type, input)) return;
+
     const { title, body } = buildNotification(type, input);
 
     const recipient = await db.query.users.findFirst({

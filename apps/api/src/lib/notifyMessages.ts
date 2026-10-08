@@ -21,6 +21,10 @@ export interface NotificationInput {
    * submitter, for whom the expense is not "yours".
    */
   toStaff?: boolean;
+  /** The message this notification is about, when it is about one. */
+  messageId?: string;
+  /** What an info request asked for (accountant "request info"). */
+  requestType?: string;
 }
 
 /** Longest message excerpt carried into a notification body. */

@@ -21,6 +21,7 @@ import { isTradeShowLinkEnabled, listWindowedEvents, findSelectableEvent } from 
 import { EVENTS_UNAVAILABLE_REFUSAL } from '../lib/eventSelection';
 import { localTodayIso } from '../lib/cashLedger';
 import { notifyUser } from '../lib/notify';
+import { truncateExcerpt } from '../lib/notifyMessages';
 import { syncExpenseToTransaction } from '../lib/syncExpenseTransaction';
 import { pushPurchaseOrderToZoho } from '../lib/zohoPoPush';
 import { assertActiveCompany, isCompanyZohoEnabled } from '../lib/companies';
@@ -582,6 +583,7 @@ router.patch('/expenses/:id/review', asyncHandler(async (req, res) => {
       merchant: expense.merchant,
       amount: expense.amount,
       ...(action === 'reject' && parsed.note ? { note: parsed.note } : {}),
+      ...(action === 'request_info' ? { requestType: parsed.requestType, excerpt: truncateExcerpt(parsed.note) } : {}),
     });
   }
 

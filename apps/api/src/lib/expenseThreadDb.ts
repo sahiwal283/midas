@@ -178,6 +178,7 @@ export async function postToThread(input: PostToThreadInput) {
       senderName: full?.sender?.name,
       excerpt: truncateExcerpt(input.body),
       toStaff: recipient !== expense.userId,
+      messageId: message.id,
     }, { email: false });
   }
 
