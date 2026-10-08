@@ -56,10 +56,13 @@ export async function activeAccountantIds(exceptUserId: string): Promise<string[
  * WHERE on the conflict target must repeat the index predicate exactly, or
  * Postgres will not match the partial index.
  */
-export async function bumpGroup(userId: string, groupKey: string, expenseId: string): Promise<{ id: string; count: number }> {
+export async function bumpGroup(
+  userId: string, groupKey: string, expenseId: string,
+  initial: { title: string; body: string },
+): Promise<{ id: string; count: number }> {
   const result = await db.execute(sql`
-    INSERT INTO notifications (user_id, type, title, expense_id, group_key, count)
-    VALUES (${userId}, 'needs_review', '', ${expenseId}, ${groupKey}, 1)
+    INSERT INTO notifications (user_id, type, title, body, expense_id, group_key, count)
+    VALUES (${userId}, 'needs_review', ${initial.title}, ${initial.body}, ${expenseId}, ${groupKey}, 1)
     ON CONFLICT (user_id, group_key) WHERE read_at IS NULL AND group_key IS NOT NULL
     DO UPDATE SET count = notifications.count + 1,
                   expense_id = EXCLUDED.expense_id,
@@ -70,6 +73,12 @@ export async function bumpGroup(userId: string, groupKey: string, expenseId: str
   return { id: row.id, count: Number(row.count) };
 }
 
-export async function setGroupText(notificationId: string, title: string, body: string): Promise<void> {
-  await db.update(notifications).set({ title, body }).where(eq(notifications.id, notificationId));
+/**
+ * Rewrite a group's wording for a count above one. Conditional on the row still
+ * holding the count this writer saw, so a writer overtaken by a later bump
+ * changes nothing and the text never lags the count.
+ */
+export async function setGroupText(notificationId: string, count: number, title: string, body: string): Promise<void> {
+  await db.update(notifications).set({ title, body })
+    .where(and(eq(notifications.id, notificationId), eq(notifications.count, count)));
 }

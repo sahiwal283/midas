@@ -29,9 +29,11 @@ describe('notifyNeedsReview', () => {
     await notifyNeedsReview('e-1', 'queued');
 
     expect(activeAccountantIds).toHaveBeenCalledWith('u-1');
-    expect(bumpGroup).toHaveBeenCalledWith('acc-1', 'nr:u-1:event:ev-9', 'e-1');
-    expect(setGroupText).toHaveBeenCalledWith('n-1', 'Ana submitted 3 expenses for Expo', 'Open the review queue to see it.');
-    expect(setGroupText).toHaveBeenCalledWith('n-2', 'Ana submitted an expense for Expo', 'Open the review queue to see it.');
+    const first = { title: 'Ana submitted an expense for Expo', body: 'Open the review queue to see it.' };
+    expect(bumpGroup).toHaveBeenCalledWith('acc-1', 'nr:u-1:event:ev-9', 'e-1', first);
+    expect(bumpGroup).toHaveBeenCalledWith('acc-2', 'nr:u-1:event:ev-9', 'e-1', first);
+    expect(setGroupText).toHaveBeenCalledTimes(1);
+    expect(setGroupText).toHaveBeenCalledWith('n-1', 3, 'Ana submitted 3 expenses for Expo', 'Open the review queue to see it.');
     expect(sendPushToUser).toHaveBeenCalledTimes(2);
     expect(sendPushToUser).toHaveBeenCalledWith('acc-1', {
       title: 'Expense needs review',
@@ -72,6 +74,15 @@ describe('notifyNeedsReview', () => {
     await expect(notifyNeedsReview('e-1', 'queued')).resolves.toBeUndefined();
     expect(sendPushToUser).toHaveBeenCalledTimes(1);
     expect(sendPushToUser).toHaveBeenCalledWith('acc-2', expect.anything());
+  });
+
+  it('a failed text rewrite neither blocks the push nor throws', async () => {
+    vi.mocked(loadNeedsReviewExpense).mockResolvedValueOnce(expense);
+    vi.mocked(bumpGroup).mockResolvedValueOnce({ id: 'n-1', count: 3 }).mockResolvedValueOnce({ id: 'n-2', count: 1 });
+    vi.mocked(setGroupText).mockRejectedValueOnce(new Error('db blip'));
+    await expect(notifyNeedsReview('e-1', 'queued')).resolves.toBeUndefined();
+    expect(sendPushToUser).toHaveBeenCalledTimes(2);
+    expect(sendPushToUser).toHaveBeenCalledWith('acc-1', expect.anything());
   });
 
   it('never throws when the expense cannot be loaded', async () => {
