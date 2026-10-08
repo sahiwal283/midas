@@ -55,17 +55,21 @@ export async function activeAccountantIds(exceptUserId: string): Promise<string[
  * so two expenses arriving together still end as one row with count 2. The
  * WHERE on the conflict target must repeat the index predicate exactly, or
  * Postgres will not match the partial index.
+ *
+ * The row points at no expense: notifications.expense_id is ON DELETE CASCADE,
+ * so pointing it at one member would delete the whole group's row and count
+ * with that expense. Nothing reads it on a grouped row; the link comes from
+ * group_key.
  */
 export async function bumpGroup(
-  userId: string, groupKey: string, expenseId: string,
+  userId: string, groupKey: string,
   initial: { title: string; body: string },
 ): Promise<{ id: string; count: number }> {
   const result = await db.execute(sql`
     INSERT INTO notifications (user_id, type, title, body, expense_id, group_key, count)
-    VALUES (${userId}, 'needs_review', ${initial.title}, ${initial.body}, ${expenseId}, ${groupKey}, 1)
+    VALUES (${userId}, 'needs_review', ${initial.title}, ${initial.body}, NULL, ${groupKey}, 1)
     ON CONFLICT (user_id, group_key) WHERE read_at IS NULL AND group_key IS NOT NULL
     DO UPDATE SET count = notifications.count + 1,
-                  expense_id = EXCLUDED.expense_id,
                   created_at = now()
     RETURNING id, count
   `);

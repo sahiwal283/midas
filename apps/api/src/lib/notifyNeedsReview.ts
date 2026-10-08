@@ -31,7 +31,7 @@ export async function notifyNeedsReview(expenseId: string, reason: NeedsReviewRe
         const textFor = (count: number) => groupText({
           submitterName: expense.submitterName, count, eventName, date: expense.date,
         });
-        const group = await bumpGroup(userId, groupKey, expense.id, textFor(1));
+        const group = await bumpGroup(userId, groupKey, textFor(1));
         // One push per expense. No notificationId: tapping one expense's push
         // must not mark the whole group read. A per-expense tag keeps pushes
         // from replacing each other on the lock screen.

@@ -30,8 +30,9 @@ describe('notifyNeedsReview', () => {
 
     expect(activeAccountantIds).toHaveBeenCalledWith('u-1');
     const first = { title: 'Ana submitted an expense for Expo', body: 'Open the review queue to see it.' };
-    expect(bumpGroup).toHaveBeenCalledWith('acc-1', 'nr:u-1:event:ev-9', 'e-1', first);
-    expect(bumpGroup).toHaveBeenCalledWith('acc-2', 'nr:u-1:event:ev-9', 'e-1', first);
+    // No expense id: the grouped row must outlive any one expense in it.
+    expect(bumpGroup).toHaveBeenCalledWith('acc-1', 'nr:u-1:event:ev-9', first);
+    expect(bumpGroup).toHaveBeenCalledWith('acc-2', 'nr:u-1:event:ev-9', first);
     expect(setGroupText).toHaveBeenCalledTimes(1);
     expect(setGroupText).toHaveBeenCalledWith('n-1', 3, 'Ana submitted 3 expenses for Expo', 'Open the review queue to see it.');
     expect(sendPushToUser).toHaveBeenCalledTimes(2);
