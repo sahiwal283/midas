@@ -1991,9 +1991,10 @@ These steps change production and are run by the controller, in this order, toge
 1. **Merge and push Midas** (`main`).
 2. **Deploy Midas v1.21.0 to CT 3120** with the verified tarball recipe: `git archive` of the changed files → `scp` to the Proxmox host → `pct push 3120` → `tar -xzf` in `/opt/midas` (never include `.env`) → `docker compose -f docker-compose.prod.yml up -d --build api web`. Remove any file deleted in git by hand (none in this release).
 3. **Verify the migration** from the migrator log (`docker logs midas-migrator-1 2>&1 | grep -E "applying|applied"` shows `0033_ext_events_needs_review`) and the schema itself on CT 3220 (`ext_events` exists; `app_connections.events_enabled` exists). `/api/v1/meta` reports `1.21.0` and `environment: production`.
+   Then grant `events:read` to the production Argo connection (`PATCH /api/v1/admin/connections/:id` with the full permissions list plus `events:read`). It is harmless while events are off.
 4. **Set `EXT_EVENTS_PING_SECRET`** in `/opt/midas/.env` on CT 3120 (generate with `openssl rand -hex 32`) and recreate the api container so it is read. Put the same value in Argo's `/etc/expenseapp/backend.env` as `MIDAS_EVENTS_PING_SECRET`.
 5. **Deploy Argo v2.33.0** (Argo plan).
-6. **Switch on**, as a Midas admin: add `events:read` to the production Argo connection's permissions and set `eventsEnabled: true` and `eventsPingUrl: http://192.168.1.201:3000/api/midas/events-ping` with `PATCH /api/v1/admin/connections/:id`. Leave the sandbox connection off.
+6. **Switch on**, as a Midas admin: set `eventsEnabled: true` and `eventsPingUrl: http://192.168.1.201:3000/api/midas/events-ping` on the production Argo connection with `PATCH /api/v1/admin/connections/:id`. (Its `events:read` permission is granted earlier, right after step 3, so the new Argo scanner can read the still-empty feed.) Leave the sandbox connection off.
 7. **End-to-end check with the user** as listed in the spec's Testing section.
 
 Rollback: `PATCH` the connection with `eventsEnabled: false`. Midas notifies submitters itself again at once.
